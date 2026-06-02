@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tool 包 · 统一工具层</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/tutorial.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <nav class="nav-links">
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a class="active" href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="layout">
+      <article>
+        <section class="section" id="what">
+          <p class="eyebrow">Package · dev.agentmvp.tool</p>
+          <h1>tool 包：所有工具先变成同一种语言。</h1>
+          <p class="lead">Tool 层像一个转接板。本地 Java 工具、MCP 远端工具、Skill 加载工具，最终都对 AgentLoop 呈现成 `Tool`、`ToolCall`、`ToolResult`。</p>
+          <p class="lead">当前版本里，`ToolResult` 还会带成功失败和耗时，TUI 可以把工具调用渲染成可折叠的工具块。</p>
+        </section>
+
+        <section class="section" id="cards">
+          <div class="grid">
+            <div class="card"><span class="num">read</span><h2>读取文件</h2><p>文本支持分页，图片可返回 data URL。</p></div>
+            <div class="card"><span class="num">write</span><h2>写入文件</h2><p>创建或覆盖文件，并自动创建父目录。</p></div>
+            <div class="card"><span class="num">bash</span><h2>执行命令</h2><p>执行 bash，输出只保留最后 2000 行 / 50KB。</p></div>
+            <div class="card"><span class="num">edit</span><h2>精确编辑</h2><p>用 oldText/newText 做不重叠替换。</p></div>
+          </div>
+        </section>
+
+        <section class="section" id="registry">
+          <h2>源码对照：统一注册本地工具</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">ToolRegistry.java</span>
+              <pre><code>public void registerLocal(Tool tool, ToolHandler handler) {
+    localExecutor.register(tool.name(), handler);
+    register(tool);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">本地工具要登记两件事：模型看得见的工具定义，以及 Java 里的执行函数。</p>
+              <p class="note-line">`registerLocal` 把两步合在一起，防止调用处只注册 schema、忘了注册 handler。</p>
+              <p class="note-line">这就是“最后统一注册到 ToolRegistry”的落点。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="builtin">
+          <h2>源码对照：每个工具一个类</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">BuiltinTools.java</span>
+              <pre><code>public static List&lt;BuiltinTool&gt; defaultTools(Path workingDirectory) {
+    return List.of(
+            new ReadTool(workingDirectory),
+            new WriteTool(workingDirectory),
+            new BashTool(workingDirectory),
+            new EditTool(workingDirectory)
+    );
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">`BuiltinTools` 不实现具体逻辑，只负责组装默认工具列表。</p>
+              <p class="note-line">`ReadTool`、`WriteTool`、`BashTool`、`EditTool` 各自继承同一个抽象基类。</p>
+              <p class="note-line">以后加工具时，新增类并放进列表，不需要维护一个巨大 switch。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="route">
+          <h2>源码对照：本地还是 MCP，由 ToolRegistry 路由</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">ToolRegistry.java</span>
+              <pre><code>if (tool.source() == ToolSource.MCP) {
+    // MCP 工具不侵入 AgentLoop。这里只按 ToolSource 路由到远程执行器。
+    return mcpExecutor.execute(tool, call);
+}
+// 本地工具和 MCP 工具返回同一种 ToolResult，后续统一转成 role=tool 消息。
+return localExecutor.execute(tool, call);</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">AgentLoop 不需要知道工具在哪儿执行。</p>
+              <p class="note-line">`ToolSource.MCP` 走远端执行器，本地工具走本地执行器。</p>
+              <p class="note-line">无论哪条路，最后都返回 `ToolResult`，再写回 `role=tool`。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="result">
+          <h2>源码对照：ToolResult 带执行元信息</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">ParallelToolExecutor.java</span>
+              <pre><code>private ToolResult executeOneWithTiming(ToolCall call) {
+    long start = System.nanoTime();
+    ToolResult result = toolRegistry.execute(call);
+    long elapsedMillis = Math.max(0, (System.nanoTime() - start) / 1_000_000);
+    return result.withExecutionMetadata(call.function().name(), elapsedMillis);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">具体工具只负责返回业务结果。</p>
+              <p class="note-line">并行执行器统一记录耗时，并补上工具名。</p>
+              <p class="note-line">TUI 收到 `ToolCallDone` 后，就能显示成功失败、输出和 Took 时间。</p>
+              <p class="note-line">长输出默认折叠，用户用 `ctrl+o` 展开或折叠。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="quiz">
+          <div class="quiz" data-answer="b" data-right="对。新增工具应该实现 BuiltinTool，再通过 BuiltinTools 进入 ToolRegistry。" data-wrong="不对。直接改 AgentLoop 或绕过 ToolRegistry 会让工具体系变散。">
+            <h2>场景题</h2>
+            <p>你要新增一个 `web_fetch` 本地工具，最符合当前结构的做法是什么？</p>
+            <button class="quiz-option" data-value="a">在 AgentLoop 里加 if 判断工具名。</button>
+            <button class="quiz-option" data-value="b">新增 WebFetchTool 实现 BuiltinTool，并加入 BuiltinTools.defaultTools。</button>
+            <button class="quiz-option" data-value="c">让 LLM 直接读文件系统。</button>
+            <div class="quiz-actions"><button data-check-quiz>检查答案</button></div>
+            <div class="quiz-feedback"></div>
+          </div>
+        </section>
+
+        <nav class="footer-nav">
+          <a class="button secondary" href="context.html">上一包：context</a>
+          <a class="button" href="skill.html">下一包：skill</a>
+        </nav>
+      </article>
+      <aside class="toc">
+        <strong>本页导航</strong>
+        <a href="#what">统一工具层</a>
+        <a href="#cards">内置工具</a>
+        <a href="#registry">注册入口</a>
+        <a href="#builtin">工具类结构</a>
+        <a href="#route">执行路由</a>
+        <a href="#result">结果元信息</a>
+        <a href="#quiz">场景题</a>
+      </aside>
+    </div>
+  </main>
+  <script src="assets/tutorial.js"></script>
+</body>
+</html>

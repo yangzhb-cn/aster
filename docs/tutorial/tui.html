@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>tui 包 · 终端展示层</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/tutorial.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <nav class="nav-links">
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a class="active" href="tui.html">tui</a><a href="chat.html">chat</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="layout">
+      <article>
+        <section class="section" id="what">
+          <p class="eyebrow">Package · dev.agentmvp.tui</p>
+          <h1>tui 包：把 Agent 事件变成终端里的结构化消息。</h1>
+          <p class="lead">TUI 不直接理解模型协议，也不直接执行工具。它只接收 `AgentEvent`，再转换成 `UiBlock`：用户块、thinking 块、工具块、assistant 正文块。</p>
+        </section>
+
+        <section class="section" id="blocks">
+          <h2>源码对照：为什么不用字符串 history</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">UiBlock.java</span>
+              <pre><code>public sealed interface UiBlock permits UserBlock, AssistantBlock, ReasoningBlock, ToolBlock, SystemBlock, ErrorBlock {
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">旧做法是 `List&lt;String&gt; history`，只能靠前缀判断颜色。</p>
+              <p class="note-line">现在每种展示内容都有类型，TUI 可以分别画 thinking、工具和正文。</p>
+              <p class="note-line">这也是后续做折叠、Markdown、状态样式的基础。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="events">
+          <h2>源码对照：事件转展示块</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">TuiAgentEventHandler.java</span>
+              <pre><code>if (event instanceof AgentEvent.AssistantToken token) {
+    window.appendAssistantToken(token.text());
+    return;
+}
+if (event instanceof AgentEvent.ReasoningToken token) {
+    window.appendReasoningToken(token.text());
+    return;
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">正文和 DeepSeek thinking 分成两个事件。</p>
+              <p class="note-line">TUI 因此可以把 reasoning_content 显示成灰色 thinking 块。</p>
+              <p class="note-line">这比把所有 token 拼进一段 assistant 文本更清楚。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="markdown">
+          <h2>源码对照：轻量 Markdown 渲染</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">MarkdownRenderer.java</span>
+              <pre><code>if (trimmed.matches("^#{1,6}\\s+.*")) {
+    String heading = trimmed.replaceFirst("^#{1,6}\\s+", "");
+    result.add(new MarkdownLine(cleanInlineMarkdown(heading), MarkdownLineType.HEADING));
+    return;
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">这是教学版轻量 renderer，不是完整 CommonMark。</p>
+              <p class="note-line">它支持标题、引用、分隔线、代码块、表格、编号列表、bullet 列表和行内 code 清理。</p>
+              <p class="note-line">目标是让模型常见 Markdown 输出在终端里更容易读。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="tool-fold">
+          <h2>源码对照：工具输出折叠</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">ToolBlock.java</span>
+              <pre><code>public void finish(String outputText, boolean success, long elapsedMillis) {
+    this.outputText = outputText == null ? "" : outputText;
+    this.status = success ? ToolStatus.DONE : ToolStatus.FAILED;
+    this.elapsedMillis = elapsedMillis;
+    this.collapsed = shouldCollapse(this.outputText);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">工具块开始时只有工具名和参数。</p>
+              <p class="note-line">工具完成后补输出、成功失败和耗时。</p>
+              <p class="note-line">长输出默认折叠，用户可以用 `ctrl+o` 展开或折叠。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="emoji">
+          <h2>源码对照：emoji fallback</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">TerminalTextSanitizer.java</span>
+              <pre><code>if (codePoint &lt;= Character.MAX_VALUE) {
+    result.appendCodePoint(codePoint);
+    continue;
+}
+
+result.append(fallbackForSupplementary(codePoint));</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">部分 emoji 是 supplementary-plane 字符，Java 里要两个 char 表示。</p>
+              <p class="note-line">Lanterna 某些绘制路径会把它拆坏，终端里显示成两个问号。</p>
+              <p class="note-line">这里仅在显示层做 fallback，内部消息和发给 LLM 的内容不变。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="quiz">
+          <div class="quiz" data-answer="b" data-right="对。先用 UiBlock 保存语义，再让渲染层决定颜色、折叠和 Markdown 展示。" data-wrong="不对。字符串前缀判断会让后续折叠、Markdown 和工具状态都变难维护。">
+            <h2>场景题</h2>
+            <p>为什么 TUI 不继续使用 `List&lt;String&gt; history`？</p>
+            <button class="quiz-option" data-value="a">因为字符串不能保存中文。</button>
+            <button class="quiz-option" data-value="b">因为需要保留 thinking、工具、正文等不同展示语义。</button>
+            <button class="quiz-option" data-value="c">因为 Lanterna 不能显示字符串。</button>
+            <div class="quiz-actions"><button data-check-quiz>检查答案</button></div>
+            <div class="quiz-feedback"></div>
+          </div>
+        </section>
+
+        <nav class="footer-nav">
+          <a class="button secondary" href="session.html">上一包：session</a>
+          <a class="button" href="chat.html">下一包：chat</a>
+        </nav>
+      </article>
+      <aside class="toc">
+        <strong>本页导航</strong>
+        <a href="#what">TUI 职责</a>
+        <a href="#blocks">UiBlock</a>
+        <a href="#events">事件转换</a>
+        <a href="#markdown">Markdown</a>
+        <a href="#tool-fold">工具折叠</a>
+        <a href="#emoji">Emoji fallback</a>
+        <a href="#quiz">场景题</a>
+      </aside>
+    </div>
+  </main>
+  <script src="assets/tutorial.js"></script>
+</body>
+</html>

@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>llm 包 · 流式模型客户端</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/tutorial.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <nav class="nav-links">
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a class="active" href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="layout">
+      <article>
+        <section class="section" id="what">
+          <p class="eyebrow">Package · dev.agentmvp.llm</p>
+          <h1>llm 包：只保留流式模型调用。</h1>
+          <p class="lead">当前项目没有非流式路径。`OkHttpStreamingChatClient` 负责把 `ChatRequest` 变成 HTTP 请求，再逐行解析 <span class="term" data-tip="SSE 是 Server-Sent Events，服务端可以一小段一小段把数据推给客户端，常用于流式模型输出。">SSE</span>。DeepSeek V4 默认打开 thinking mode。</p>
+        </section>
+
+        <section class="section" id="provider">
+          <h2>源码对照：DeepSeek 是默认，不是写死</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">OpenAiCompatibleProviderFactory.java</span>
+              <pre><code>public static OpenAiCompatibleProvider fromEnvWithDeepSeekDefaults() {
+    return fromEnvWithDefaults(new DeepSeekProvider());
+}
+
+public static OpenAiCompatibleProvider fromEnvWithDefaults(OpenAiCompatibleProviderDefinition providerDefinition) {
+    String providerName = envOrDefault(PROVIDER_ENV, providerDefinition.name());
+    String baseUrl = envOrDefault(BASE_URL_ENV, providerDefinition.defaultBaseUrl());
+    String model = envOrDefault(MODEL_ENV, providerDefinition.defaultModel());</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">默认 provider 是 DeepSeek，但通过接口传进去。</p>
+              <p class="note-line">通用环境变量可以覆盖 provider、baseUrl、model。</p>
+              <p class="note-line">后面接 Kimi、Step，只要实现同一个 provider definition。</p>
+              <p class="note-line">只有默认 DeepSeek provider 会打开 `thinkingEnabled`，通用 provider 覆盖时不会强行带 DeepSeek 私有能力。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="thinking">
+          <h2>源码对照：DeepSeek thinking 请求字段</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">ChatRequest.java</span>
+              <pre><code>return new ChatRequest(
+        model,
+        messages,
+        tools,
+        toolChoice,
+        true,
+        thinkingEnabled ? Map.of("type", "enabled") : null,
+        thinkingEnabled ? reasoningEffort : null
+);</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">`stream=true` 仍然表示流式输出。</p>
+              <p class="note-line">`thinking.type=enabled` 打开 DeepSeek V4 thinking mode。</p>
+              <p class="note-line">`reasoning_effort=high` 表示默认使用较强推理强度。</p>
+              <p class="note-line">这些字段只在 provider 支持时发送，不影响其他 OpenAI-compatible 服务。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="stream">
+          <h2>源码对照：发送流式请求</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">OkHttpStreamingChatClient.java</span>
+              <pre><code>Request.Builder builder = new Request.Builder()
+        .url(endpoint)
+        .post(RequestBody.create(json, JSON))
+        .header("Content-Type", "application/json")
+        .header("Accept", "text/event-stream");
+
+if (apiKey != null &amp;&amp; !apiKey.isBlank()) {
+    builder.header("Authorization", "Bearer " + apiKey);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">请求体是 OpenAI-compatible 的 JSON。</p>
+              <p class="note-line">`Accept: text/event-stream` 告诉服务端：我要流式返回。</p>
+              <p class="note-line">API Key 用 Bearer token 放进 Authorization 头。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="sse">
+          <h2>源码对照：解析 SSE 行</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">OkHttpStreamingChatClient.java</span>
+              <pre><code>String data = line.substring("data:".length()).trim();
+if ("[DONE]".equals(data)) {
+    handler.onDone();
+    return;
+}
+
+handler.onChunk(objectMapper.readValue(data, ChatStreamChunk.class));</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">每行 `data:` 后面是一个 JSON 增量。</p>
+              <p class="note-line">`[DONE]` 表示模型这轮输出结束。</p>
+              <p class="note-line">普通增量会反序列化成 `ChatStreamChunk`，再交给 AgentLoop 拼完整消息。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="reasoning">
+          <h2>源码对照：reasoning_content 不是普通正文</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">AgentLoop.java</span>
+              <pre><code>if (delta.content() != null) {
+    eventHandler.onEvent(new AgentEvent.AssistantToken(delta.content()));
+}
+if (delta.reasoningContent() != null) {
+    eventHandler.onEvent(new AgentEvent.ReasoningToken(delta.reasoningContent()));
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">`delta.content` 是 assistant 最终正文。</p>
+              <p class="note-line">`delta.reasoning_content` 是 DeepSeek thinking 返回的可展示思考内容。</p>
+              <p class="note-line">两者分成不同事件，TUI 才能把 thinking 和正文分开显示。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="quiz">
+          <div class="quiz" data-answer="a" data-right="对。新的兼容供应商应该实现 provider definition，并复用 OpenAI-compatible 客户端。" data-wrong="不对。复制客户端会让 SSE、工具 schema 和错误处理重复。">
+            <h2>场景题</h2>
+            <p>你要接入另一个 OpenAI-compatible 模型服务，最小改动是什么？</p>
+            <button class="quiz-option" data-value="a">新增一个 provider definition，复用现有 StreamingChatClient。</button>
+            <button class="quiz-option" data-value="b">复制一份 OkHttpStreamingChatClient。</button>
+            <button class="quiz-option" data-value="c">把模型调用写进 AgentLoop。</button>
+            <div class="quiz-actions"><button data-check-quiz>检查答案</button></div>
+            <div class="quiz-feedback"></div>
+          </div>
+        </section>
+
+        <nav class="footer-nav">
+          <a class="button secondary" href="skill.html">上一包：skill</a>
+          <a class="button" href="mcp.html">下一包：mcp</a>
+        </nav>
+      </article>
+      <aside class="toc">
+        <strong>本页导航</strong>
+        <a href="#what">流式客户端</a>
+        <a href="#provider">Provider</a>
+        <a href="#stream">请求构造</a>
+        <a href="#thinking">Thinking 请求</a>
+        <a href="#sse">SSE 解析</a>
+        <a href="#reasoning">Reasoning 事件</a>
+        <a href="#quiz">场景题</a>
+      </aside>
+    </div>
+  </main>
+  <script src="assets/tutorial.js"></script>
+</body>
+</html>

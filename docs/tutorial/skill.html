@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>skill 包 · Skill 适配层</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/tutorial.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <nav class="nav-links">
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a class="active" href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="layout">
+      <article>
+        <section class="section" id="what">
+          <p class="eyebrow">Package · dev.agentmvp.skill</p>
+          <h1>skill 包：只做适配，不做完整 Skill 系统。</h1>
+          <p class="lead">这里的 Skill 不是可执行插件。它更像一本按场景摆放的操作手册：启动时只告诉模型“有哪些手册”，需要时再用 `load_skill` 读取全文。</p>
+        </section>
+
+        <section class="section" id="progress">
+          <div class="panel">
+            <h2>当前实现范围</h2>
+            <div class="steps">
+              <div class="step"><b>1</b><p>按 `skills/*/SKILL.md` 扫描本地目录。</p></div>
+              <div class="step"><b>2</b><p>只解析 frontmatter 里的 `name` 和 `description`。</p></div>
+              <div class="step"><b>3</b><p>把索引注入 system prompt，让 LLM 自己判断是否需要加载。</p></div>
+              <div class="step"><b>4</b><p>通过 `load_skill(name)` 渐进式读取完整 `SKILL.md`。</p></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="repo">
+          <h2>源码对照：扫描 Skill 索引</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">SkillRepository.java</span>
+              <pre><code>public static SkillRepository scan(Path skillsDirectory) throws IOException {
+    Path root = skillsDirectory.toAbsolutePath().normalize();
+    if (!Files.isDirectory(root)) {
+        return new SkillRepository(Map.of());
+    }
+
+    List&lt;Path&gt; skillFiles = new ArrayList&lt;&gt;();
+    try (var stream = Files.list(root)) {
+        stream
+                .filter(Files::isDirectory)
+                .map(directory -&gt; directory.resolve(SKILL_FILE_NAME))
+                .filter(Files::isRegularFile)
+                .sorted(Comparator.comparing(path -&gt; path.getParent().getFileName().toString()))
+                .forEach(skillFiles::add);
+    }</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">目录不存在时返回空仓库，CLI 仍能正常启动。</p>
+              <p class="note-line">只看一级子目录下的 `SKILL.md`，这就是教学版目录规范。</p>
+              <p class="note-line">这里只收集文件路径，还没有把完整正文塞进上下文。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="load">
+          <h2>源码对照：按 name 加载全文</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">SkillRepository.java</span>
+              <pre><code>public SkillDocument load(String name) throws IOException {
+    SkillMetadata metadata = skillsByName.get(name);
+    if (metadata == null) {
+        throw new IllegalArgumentException("未知 Skill: " + name);
+    }
+
+    String content = Files.readString(metadata.skillFile(), StandardCharsets.UTF_8);
+    return new SkillDocument(metadata.name(), content);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">`load_skill` 不接收路径，只接收扫描过的 Skill name。</p>
+              <p class="note-line">这避免把它变成另一个任意文件读取工具。</p>
+              <p class="note-line">返回的是完整 `SKILL.md`，但 references/scripts 仍然不会自动加载。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="flow">
+          <div class="flow" data-steps='[
+            {"node":"index","text":"system prompt 只列出 Skill name 和 description。"},
+            {"node":"judge","text":"LLM 判断某个 Skill 和任务相关。"},
+            {"node":"load","text":"LLM 调用 load_skill(name) 加载完整 SKILL.md。"},
+            {"node":"reuse","text":"如果还需要 references 或 scripts，继续复用 read/bash。"}
+          ]'>
+            <span class="label">渐进式加载</span>
+            <div class="flow-row">
+              <div class="flow-node" data-node="index">索引常驻</div>
+              <div class="flow-node" data-node="judge">模型判断</div>
+              <div class="flow-node" data-node="load">加载全文</div>
+              <div class="flow-node" data-node="reuse">复用工具</div>
+            </div>
+            <div class="flow-status"></div>
+            <div class="flow-controls"><button data-flow-next>下一步</button><button class="secondary" data-flow-reset>重来</button></div>
+          </div>
+        </section>
+
+        <section class="section" id="quiz">
+          <div class="quiz" data-answer="c" data-right="对。Skill 适配层的价值就是索引常驻、正文按需加载。" data-wrong="不对。启动时加载全部 Skill 会浪费上下文，也破坏渐进式加载。">
+            <h2>场景题</h2>
+            <p>如果项目有 30 个 Skill，启动时应该怎么处理？</p>
+            <button class="quiz-option" data-value="a">把所有 SKILL.md 全文塞进 system prompt。</button>
+            <button class="quiz-option" data-value="b">完全不告诉模型有哪些 Skill。</button>
+            <button class="quiz-option" data-value="c">只注入 name/description，完整内容用 load_skill 按需加载。</button>
+            <div class="quiz-actions"><button data-check-quiz>检查答案</button></div>
+            <div class="quiz-feedback"></div>
+          </div>
+        </section>
+
+        <nav class="footer-nav">
+          <a class="button secondary" href="tool.html">上一包：tool</a>
+          <a class="button" href="llm.html">下一包：llm</a>
+        </nav>
+      </article>
+      <aside class="toc">
+        <strong>本页导航</strong>
+        <a href="#what">适配边界</a>
+        <a href="#progress">当前范围</a>
+        <a href="#repo">扫描索引</a>
+        <a href="#load">加载全文</a>
+        <a href="#flow">渐进式加载</a>
+        <a href="#quiz">场景题</a>
+      </aside>
+    </div>
+  </main>
+  <script src="assets/tutorial.js"></script>
+</body>
+</html>

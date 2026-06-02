@@ -1,0 +1,39 @@
+package dev.agentmvp;
+
+import dev.agentmvp.prompt.PromptLoader;
+import dev.agentmvp.prompt.PromptPaths;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+/**
+ * 内置 prompt 资源读取测试。
+ */
+class PromptLoaderTest {
+    /**
+     * 验证 jar classpath 里的两个 Markdown prompt 都能读取。
+     */
+    @Test
+    void loadsBuiltinMarkdownPromptsFromClasspath() throws Exception {
+        PromptLoader loader = new PromptLoader();
+
+        String systemPrompt = loader.load(PromptPaths.SYSTEM);
+        String summaryPrompt = loader.load(PromptPaths.CONTEXT_SUMMARY);
+
+        assertTrue(systemPrompt.contains("Agent System Prompt"));
+        assertTrue(systemPrompt.contains("Skill 使用"));
+        assertTrue(summaryPrompt.contains("Context Summary Prompt"));
+        assertTrue(summaryPrompt.contains("工具协议安全"));
+    }
+
+    /**
+     * 验证缺失资源会直接报错，避免静默使用空 prompt。
+     */
+    @Test
+    void failsWhenPromptResourceDoesNotExist() {
+        PromptLoader loader = new PromptLoader();
+
+        assertThrows(IllegalArgumentException.class, () -> loader.load("/prompts/missing.md"));
+    }
+}

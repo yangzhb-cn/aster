@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>chat 包 · 消息协议</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/tutorial.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <nav class="nav-links">
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a class="active" href="chat.html">chat</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="layout">
+      <article>
+        <section class="section" id="what">
+          <p class="eyebrow">Package · dev.agentmvp.chat</p>
+          <h1>chat 包：消息字段放错位置，协议就会坏。</h1>
+          <p class="lead">OpenAI-compatible Chat API 不是普通聊天记录。`assistant.tool_calls` 和 `tool.tool_call_id` 必须配对。DeepSeek thinking 还要求某些 assistant 消息保留 `reasoning_content`。</p>
+        </section>
+
+        <section class="section" id="roles">
+          <div class="panel">
+            <h2>四种角色</h2>
+            <div class="package-map">
+              <div class="package-pill"><code>system</code><span>系统规则，比如 Skill 索引、行为约束。</span></div>
+              <div class="package-pill"><code>user</code><span>用户输入，也用于干净的历史摘要。</span></div>
+              <div class="package-pill"><code>assistant</code><span>模型回复，可以带 tool_calls。</span></div>
+              <div class="package-pill"><code>tool</code><span>工具结果，必须带 tool_call_id。</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="code">
+          <h2>源码对照：Message 模型</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">Message.java</span>
+              <pre><code>@JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
+public record Message(
+        String role,
+        String content,
+        @JsonProperty("reasoning_content") String reasoningContent,
+        @JsonProperty("tool_calls") List&lt;ToolCall&gt; toolCalls,
+        @JsonProperty("tool_call_id") String toolCallId
+) {
+    public Message {
+        // 空数组对很多 chat API 没有意义，这里统一归一化，避免序列化出多余字段。
+        if (toolCalls == null) {
+            toolCalls = List.of();
+        }
+    }</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">`role` 决定这条消息是谁说的。</p>
+              <p class="note-line">`reasoning_content` 只应该出现在 assistant 消息上，用来保存 DeepSeek thinking 内容。</p>
+              <p class="note-line">`tool_calls` 只应该出现在 assistant 消息上。</p>
+              <p class="note-line">`tool_call_id` 只应该出现在 tool 消息上，用来配对上一条 assistant 工具调用。</p>
+              <p class="note-line">空字段不序列化，减少兼容模型误判。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="factory">
+          <h2>源码对照：用工厂方法防止字段乱放</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">Message.java</span>
+              <pre><code>public static Message assistantToolCalls(String content, String reasoningContent, List&lt;ToolCall&gt; toolCalls) {
+    // DeepSeek thinking + tool call 场景下，reasoning_content 后续请求还要带回 API。
+    return new Message("assistant", content, reasoningContent, toolCalls, null);
+}
+
+public static Message tool(String toolCallId, String content) {
+    return new Message("tool", content, null, List.of(), toolCallId);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">assistant 工具调用消息可以带 `tool_calls` 和 `reasoning_content`，但不能带 `tool_call_id`。</p>
+              <p class="note-line">tool 结果消息只带 `tool_call_id`，不带 `tool_calls`，也不带 `reasoning_content`。</p>
+              <p class="note-line">这种小工厂方法能减少调用方手写字段导致的协议错误。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="quiz">
+          <div class="quiz" data-answer="c" data-right="对。压缩后保留残留 tool_calls，但删掉 tool 结果，会导致 API 发现 tool_call_id 没有对应结果。" data-wrong="不对。真正危险的是 tool_calls 和 tool_result 配对关系被压缩破坏。">
+            <h2>场景题</h2>
+            <p>为什么压缩旧 assistant 消息时不能保留它原来的 `tool_calls` 字段？</p>
+            <button class="quiz-option" data-value="a">因为 assistant 永远不能调用工具。</button>
+            <button class="quiz-option" data-value="b">因为 tool_calls 会让文本变长。</button>
+            <button class="quiz-option" data-value="c">因为对应 tool 结果可能已经被摘要吃掉，API 会发现配对缺失。</button>
+            <div class="quiz-actions"><button data-check-quiz>检查答案</button></div>
+            <div class="quiz-feedback"></div>
+          </div>
+        </section>
+
+        <nav class="footer-nav">
+          <a class="button secondary" href="tui.html">上一包：tui</a>
+          <a class="button" href="index.html">回到导航</a>
+        </nav>
+      </article>
+      <aside class="toc">
+        <strong>本页导航</strong>
+        <a href="#what">消息协议</a>
+        <a href="#roles">四种角色</a>
+        <a href="#code">Message 模型</a>
+        <a href="#factory">工厂方法</a>
+        <a href="#quiz">场景题</a>
+      </aside>
+    </div>
+  </main>
+  <script src="assets/tutorial.js"></script>
+</body>
+</html>

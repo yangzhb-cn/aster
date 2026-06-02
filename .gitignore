@@ -1,0 +1,27 @@
+# Maven 构建产物
+target/
+
+# Java / JVM 临时文件
+*.class
+*.jar
+*.war
+*.ear
+hs_err_pid*
+replay_pid*
+
+# 本地配置和密钥
+.env
+.env.*
+*.local
+
+# IDE 文件
+.idea/
+*.iml
+.vscode/
+
+# macOS
+.DS_Store
+
+# 日志
+*.log
+logs/

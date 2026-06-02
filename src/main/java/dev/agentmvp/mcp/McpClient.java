@@ -5,13 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.agentmvp.llm.model.ToolCall;
 import dev.agentmvp.mcp.model.JsonRpcRequest;
 import dev.agentmvp.mcp.model.JsonRpcResponse;
+import dev.agentmvp.mcp.transport.HttpMcpTransport;
+import dev.agentmvp.mcp.transport.McpTransport;
 import dev.agentmvp.tool.model.Tool;
 import dev.agentmvp.tool.model.ToolResult;
-import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -21,26 +19,28 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 最小 HTTP JSON-RPC MCP 客户端。
+ * 最小 JSON-RPC MCP 客户端。
  *
  * <p>这个客户端只实现 MVP 需要的 MCP 方法：
- * initialize、tools/list 和 tools/call。</p>
+ * initialize、tools/list 和 tools/call。
+ * HTTP、本地 stdio 等传输细节交给 McpTransport。</p>
  */
-public class McpClient {
-    private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
+public class McpClient implements AutoCloseable {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
 
     private final String serverId;
-    private final String endpoint;
-    private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
+    private final McpTransport transport;
     private final AtomicLong ids = new AtomicLong(1);
 
     public McpClient(String serverId, String endpoint, OkHttpClient httpClient, ObjectMapper objectMapper) {
+        this(serverId, new HttpMcpTransport(endpoint, httpClient), objectMapper);
+    }
+
+    public McpClient(String serverId, McpTransport transport, ObjectMapper objectMapper) {
         this.serverId = Objects.requireNonNull(serverId);
-        this.endpoint = Objects.requireNonNull(endpoint);
-        this.httpClient = Objects.requireNonNull(httpClient);
+        this.transport = Objects.requireNonNull(transport);
         this.objectMapper = Objects.requireNonNull(objectMapper);
     }
 
@@ -91,30 +91,22 @@ public class McpClient {
     }
 
     private JsonRpcResponse send(String method, Object params) throws IOException {
-        // MCP over HTTP 的核心仍然是 JSON-RPC 2.0：
+        // MCP 的核心是 JSON-RPC 2.0：
         // { jsonrpc: "2.0", id, method, params } -> { result | error }。
         JsonRpcRequest rpcRequest = JsonRpcRequest.of(ids.getAndIncrement(), method, params);
         String json = objectMapper.writeValueAsString(rpcRequest);
+        String body = transport.send(json);
 
-        Request request = new Request.Builder()
-                .url(endpoint)
-                .post(RequestBody.create(json, JSON))
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json, text/event-stream")
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String body = response.body() == null ? "" : response.body().string();
-            if (!response.isSuccessful()) {
-                throw new IOException("MCP request failed: HTTP " + response.code() + "\n" + body);
-            }
-
-            JsonRpcResponse rpcResponse = objectMapper.readValue(body, JsonRpcResponse.class);
-            if (rpcResponse.hasError()) {
-                // JSON-RPC error 是业务协议错误，和 HTTP 4xx/5xx 分开处理。
-                throw new IOException("MCP error " + rpcResponse.error().code() + ": " + rpcResponse.error().message());
-            }
-            return rpcResponse;
+        JsonRpcResponse rpcResponse = objectMapper.readValue(body, JsonRpcResponse.class);
+        if (rpcResponse.hasError()) {
+            // JSON-RPC error 是业务协议错误，和 HTTP 4xx/5xx 分开处理。
+            throw new IOException("MCP error " + rpcResponse.error().code() + ": " + rpcResponse.error().message());
         }
+        return rpcResponse;
+    }
+
+    @Override
+    public void close() throws IOException {
+        transport.close();
     }
 }

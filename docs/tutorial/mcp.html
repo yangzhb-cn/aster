@@ -23,7 +23,49 @@
         <section class="section" id="what">
           <p class="eyebrow">Package · dev.agentmvp.mcp</p>
           <h1>mcp 包：把外部工具翻译成项目内部 Tool。</h1>
-          <p class="lead">MCP 的协议细节被包在 `McpClient`、`McpToolAdapter`、`McpToolExecutor` 里。AgentLoop 只看见普通 `Tool`，不需要知道背后是不是 JSON-RPC。</p>
+          <p class="lead">MCP 的协议细节被包在 `McpClient`、`McpToolAdapter`、`McpToolExecutor` 里。AgentLoop 只看见普通 `Tool`，不需要知道背后是本地 stdio 进程还是 HTTP JSON-RPC。</p>
+        </section>
+
+        <section class="section" id="config">
+          <h2>源码对照：通过 mcp.json 接入外部 MCP</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">AgentRuntimeFactory.java</span>
+              <pre><code>McpConfig mcpConfig = new McpConfigLoader(objectMapper).loadIfExists(Path.of("mcp.json"));
+McpClientFactory clientFactory = new McpClientFactory(httpClient, objectMapper);
+McpToolLoader toolLoader = new McpToolLoader(toolRegistry, mcpToolExecutor);
+
+for (McpServerConfig serverConfig : mcpConfig.servers()) {
+    // 每个 MCP Server 都会 initialize，再 tools/list，最后注册进 ToolRegistry。
+    toolLoader.load(clientFactory.create(serverConfig));
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">没有 `mcp.json` 时返回空配置，Agent 仍然只用内置工具启动。</p>
+              <p class="note-line">有 `mcp.json` 时，配置里的每个 server 都会变成一个 `McpClient`。</p>
+              <p class="note-line">本地 MCP 用 stdio 启动子进程；HTTP MCP 走 POST JSON-RPC。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="config-shape">
+          <h2>配置形状：先不安装具体 MCP，也能保留接入能力</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">mcp.json.example</span>
+              <pre><code>{
+  "mcpServers": {
+  }
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">仓库提交空模板，表示当前不绑定任何具体 MCP。</p>
+              <p class="note-line">真实 `mcp.json` 是本地配置，已加入 `.gitignore`。</p>
+              <p class="note-line">以后要接 MCP，只改 JSON，不改 AgentLoop。</p>
+            </div>
+          </div>
         </section>
 
         <section class="section" id="flow">
@@ -113,6 +155,8 @@
       <aside class="toc">
         <strong>本页导航</strong>
         <a href="#what">MCP 职责</a>
+        <a href="#config">外部配置</a>
+        <a href="#config-shape">配置形状</a>
         <a href="#flow">接入流程</a>
         <a href="#client">客户端</a>
         <a href="#server">本地服务端</a>

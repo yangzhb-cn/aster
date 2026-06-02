@@ -2,6 +2,7 @@ package dev.agentmvp.runtime;
 
 import dev.agentmvp.agent.AgentLoop;
 import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
+import dev.agentmvp.mcp.McpToolExecutor;
 import dev.agentmvp.tool.ParallelToolExecutor;
 
 import java.io.IOException;
@@ -16,17 +17,20 @@ import java.util.Objects;
 public class AgentRuntime implements AutoCloseable {
     private final AgentLoop agentLoop;
     private final ParallelToolExecutor parallelToolExecutor;
+    private final McpToolExecutor mcpToolExecutor;
     private final OpenAiCompatibleProvider provider;
     private final int skillCount;
 
     public AgentRuntime(
             AgentLoop agentLoop,
             ParallelToolExecutor parallelToolExecutor,
+            McpToolExecutor mcpToolExecutor,
             OpenAiCompatibleProvider provider,
             int skillCount
     ) {
         this.agentLoop = Objects.requireNonNull(agentLoop);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
+        this.mcpToolExecutor = Objects.requireNonNull(mcpToolExecutor);
         this.provider = Objects.requireNonNull(provider);
         this.skillCount = skillCount;
     }
@@ -53,10 +57,11 @@ public class AgentRuntime implements AutoCloseable {
     }
 
     /**
-     * 关闭工具并行执行器。
+     * 关闭运行时资源。
      */
     @Override
     public void close() {
         parallelToolExecutor.close();
+        mcpToolExecutor.close();
     }
 }

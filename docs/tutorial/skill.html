@@ -30,7 +30,7 @@
           <div class="panel">
             <h2>当前实现范围</h2>
             <div class="steps">
-              <div class="step"><b>1</b><p>按 `skills/*/SKILL.md` 扫描本地目录。</p></div>
+              <div class="step"><b>1</b><p>按项目根目录 `skills/*/SKILL.md` 扫描本地目录，放进去就能被索引。</p></div>
               <div class="step"><b>2</b><p>只解析 frontmatter 里的 `name` 和 `description`。</p></div>
               <div class="step"><b>3</b><p>把索引注入 system prompt，让 LLM 自己判断是否需要加载。</p></div>
               <div class="step"><b>4</b><p>通过 `load_skill(name)` 渐进式读取完整 `SKILL.md`。</p></div>
@@ -62,7 +62,7 @@
             <div class="explain-pane">
               <span class="label">中文解释</span>
               <p class="note-line">目录不存在时返回空仓库，CLI 仍能正常启动。</p>
-              <p class="note-line">只看一级子目录下的 `SKILL.md`，这就是教学版目录规范。</p>
+              <p class="note-line">只看一级子目录下的 `SKILL.md`，所以新增 Skill 不需要改 Java 代码。</p>
               <p class="note-line">这里只收集文件路径，还没有把完整正文塞进上下文。</p>
             </div>
           </div>

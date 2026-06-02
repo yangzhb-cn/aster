@@ -14,7 +14,7 @@ import java.util.Map;
  * <p>ToolRegistry 只保存工具定义，真正调用 MCP 服务端的能力在这里。
  * 这样 AgentLoop 不需要知道工具到底是本地 Java 实现，还是远端 MCP 工具。</p>
  */
-public class McpToolExecutor implements ToolExecutor {
+public class McpToolExecutor implements ToolExecutor, AutoCloseable {
     private final Map<String, McpClient> clientsByServerId = new HashMap<>();
 
     /**
@@ -39,6 +39,23 @@ public class McpToolExecutor implements ToolExecutor {
         } catch (Exception e) {
             // 即使 MCP 调用失败，也返回配对的工具结果，避免 LLM 工具协议断掉。
             return ToolResult.error(call.id(), e.getMessage());
+        }
+    }
+
+    /**
+     * 关闭所有 MCP 客户端。
+     *
+     * <p>HTTP MCP 没什么可释放；本地 stdio MCP 背后是子进程，
+     * 必须在 Agent 退出时关闭，否则进程会残留。</p>
+     */
+    @Override
+    public void close() {
+        for (McpClient client : clientsByServerId.values()) {
+            try {
+                client.close();
+            } catch (Exception ignored) {
+                // 关闭阶段不再打断主流程，避免一个 MCP 关闭失败影响其它资源释放。
+            }
         }
     }
 }

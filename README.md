@@ -64,21 +64,31 @@
     │   │   ├── McpToolAdapter.java
     │   │   ├── McpToolExecutor.java
     │   │   ├── McpToolLoader.java
+    │   │   ├── config
+    │   │   │   ├── McpClientFactory.java
+    │   │   │   ├── McpConfigLoader.java
+    │   │   │   └── model
+    │   │   │       ├── McpConfig.java
+    │   │   │       └── McpServerConfig.java
     │   │   ├── model
     │   │   │   ├── JsonRpcError.java
     │   │   │   ├── JsonRpcProtocol.java
     │   │   │   ├── JsonRpcRequest.java
     │   │   │   └── JsonRpcResponse.java
-    │   │   └── server
-    │   │       ├── LocalMcpHttpServer.java
-    │   │       ├── LocalMcpServer.java
-    │   │       ├── LocalMcpToolHandler.java
-    │   │       ├── LocalMcpToolRegistry.java
-    │   │       └── model
-    │   │           ├── ContentBlock.java
-    │   │           ├── LocalMcpTool.java
-    │   │           ├── McpToolCallParams.java
-    │   │           └── McpToolCallResult.java
+    │   │   ├── server
+    │   │   │   ├── LocalMcpHttpServer.java
+    │   │   │   ├── LocalMcpServer.java
+    │   │   │   ├── LocalMcpToolHandler.java
+    │   │   │   ├── LocalMcpToolRegistry.java
+    │   │   │   └── model
+    │   │   │       ├── ContentBlock.java
+    │   │   │       ├── LocalMcpTool.java
+    │   │   │       ├── McpToolCallParams.java
+    │   │   │       └── McpToolCallResult.java
+    │   │   └── transport
+    │   │       ├── HttpMcpTransport.java
+    │   │       ├── McpTransport.java
+    │   │       └── StdioMcpTransport.java
     │   ├── session
     │   │   ├── InMemorySessionStore.java
     │   │   └── SessionStore.java
@@ -148,7 +158,9 @@
         ├── ContextBuilderTest.java
         ├── DeepSeekProviderTest.java
         ├── LocalMcpServerTest.java
+        ├── McpConfigLoaderTest.java
         ├── McpClientTest.java
+        ├── MarkdownRendererTest.java
         ├── PromptLoaderTest.java
         ├── TranscriptSummarizerTest.java
         └── SkillRepositoryTest.java
@@ -386,6 +398,9 @@ description: 网页访问经验。用于判断什么时候用 web_fetch，什么
 这里写完整 Skill 说明。
 ```
 
+所以新增 Skill 不需要改 Java 代码：只要在项目根目录新建 `skills/某个目录/SKILL.md`，
+并在 frontmatter 写好 `name` 和 `description`，下次启动时就会被扫描进 Skill 索引。
+
 启动时只扫描轻量索引：
 
 ```text
@@ -474,11 +489,49 @@ src/main/java/dev/agentmvp/mcp/McpClient.java
 src/main/java/dev/agentmvp/mcp/McpToolAdapter.java
 src/main/java/dev/agentmvp/mcp/McpToolExecutor.java
 src/main/java/dev/agentmvp/mcp/McpToolLoader.java
+src/main/java/dev/agentmvp/mcp/config/McpConfigLoader.java
+src/main/java/dev/agentmvp/mcp/config/McpClientFactory.java
+src/main/java/dev/agentmvp/mcp/transport/StdioMcpTransport.java
+src/main/java/dev/agentmvp/mcp/transport/HttpMcpTransport.java
 ```
 
-### 8. 本地 MCP Server
+外部 MCP 通过项目根目录的 `mcp.json` 加载。
+仓库只提交 `mcp.json.example`，真实 `mcp.json` 会被 `.gitignore` 忽略，避免把本地路径或密钥提交出去。
 
-本地 MCP Server 是 MCP 的另一侧：它不是 Agent，也不调用 LLM，只负责通过 JSON-RPC 暴露本地工具。
+本地 stdio MCP 示例：
+
+```json
+{
+  "mcpServers": {
+    "local-demo": {
+      "command": "npx",
+      "args": ["-y", "your-mcp-package"],
+      "env": {
+        "TOKEN": "your-token"
+      },
+      "cwd": "/your/project"
+    }
+  }
+}
+```
+
+HTTP MCP 示例：
+
+```json
+{
+  "mcpServers": {
+    "http-demo": {
+      "type": "http",
+      "url": "http://127.0.0.1:7777/mcp"
+    }
+  }
+}
+```
+
+### 8. 内置本地 MCP Server
+
+内置本地 MCP Server 是 MCP 的另一侧：它不是 Agent，也不调用 LLM，只负责通过 JSON-RPC 暴露本地工具。
+这部分用于教学和测试，证明项目自己的 McpClient 能调通一个最小 MCP Server。
 
 当前 MVP 支持三个方法：
 
@@ -642,11 +695,13 @@ mvn test
 - `AgentLoopTest`：SSE delta 能组装成 assistant；多个工具调用后能写回 `tool` 消息；`reasoning_content` 会独立进入事件流并保存到 assistant message。
 - `DeepSeekProviderTest`：DeepSeek 使用 OpenAI-compatible `/chat/completions` + `stream=true` 请求形状，并默认带 `thinking.type=enabled`、`reasoning_effort=high`。
 - `McpClientTest`：通过 Mock MCP Server 跑通 `initialize`、`tools/list`、`tools/call`。
+- `McpConfigLoaderTest`：验证没有 `mcp.json` 时为空配置，并能解析 stdio/HTTP 两种 MCP 配置。
 - `LocalMcpServerTest`：不用任何 MCP SDK，启动本地 HTTP JSON-RPC Server，再用 `McpClient` 调通本地工具。
 - `BuiltinToolsTest`：四个内置工具统一注册到 `ToolRegistry`，并验证 read/write/edit/bash 的核心行为。
 - `SkillRepositoryTest`：扫描 Skill 索引，渲染 system prompt，并按 name 加载完整 SKILL.md。
 - `PromptLoaderTest`：从 jar classpath 读取内置 Markdown prompt。
 - `TranscriptSummarizerTest`：验证上下文摘要 prompt 会进入摘要输入。
+- `MarkdownRendererTest`：验证 TUI 中 Markdown 行类型可以被正确识别。
 
 ## 当前边界
 
@@ -666,6 +721,6 @@ mvn test
 - web_fetch 安全规则
 - 持久化 session
 - 真实 tokenizer
-- MCP stdio transport
+- MCP 鉴权、通知处理和完整生命周期管理
 
 这些都可以在当前结构上继续扩展，但不属于这个 MVP。

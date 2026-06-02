@@ -23,9 +23,22 @@ public record Message(
         @JsonProperty("tool_call_id") String toolCallId
 ) {
     public Message {
+        if (content != null && content.isBlank()) {
+            content = null;
+        }
+        if (reasoningContent != null && reasoningContent.isBlank()) {
+            reasoningContent = null;
+        }
         // 空数组对很多 chat API 没有意义，这里统一归一化，避免序列化出多余字段。
         if (toolCalls == null) {
             toolCalls = List.of();
+        }
+        if ("assistant".equals(role) && content == null && toolCalls.isEmpty() && reasoningContent != null) {
+            // DeepSeek thinking mode 偶尔可能只返回 reasoning_content，没有可见 content。
+            // 但 OpenAI-compatible 请求历史里 assistant 必须有 content 或 tool_calls。
+            // 教学版把这类 reasoning-only 回复降级成可见 content，避免恢复历史后请求 400。
+            content = reasoningContent;
+            reasoningContent = null;
         }
     }
 

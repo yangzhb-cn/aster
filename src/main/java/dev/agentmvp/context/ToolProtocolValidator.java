@@ -63,6 +63,11 @@ public final class ToolProtocolValidator {
         if (message.toolCallId() != null) {
             throw new IllegalStateException("assistant message must not have tool_call_id");
         }
+        if (!message.hasToolCalls() && (message.content() == null || message.content().isBlank())) {
+            // OpenAI-compatible Chat API 要求 assistant 至少有 content 或 tool_calls。
+            // 如果历史里只有 reasoning_content，Message 构造器会先把它降级成 content。
+            throw new IllegalStateException("assistant message must have content or tool_calls");
+        }
 
         for (ToolCall call : message.toolCalls()) {
             if (call.id() == null || call.id().isBlank()) {

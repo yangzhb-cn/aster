@@ -45,6 +45,10 @@ public class TuiAgentEventHandler implements AgentEventHandler {
             );
             return;
         }
+        if (event instanceof AgentEvent.UsageReported usage) {
+            window.showUsage(usage.usage(), usage.maxContextTokens());
+            return;
+        }
         if (event instanceof AgentEvent.Done) {
             window.showDone();
         }

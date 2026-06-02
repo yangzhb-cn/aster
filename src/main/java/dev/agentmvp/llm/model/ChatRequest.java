@@ -21,7 +21,8 @@ public record ChatRequest(
         @JsonProperty("tool_choice") String toolChoice,
         Boolean stream,
         Map<String, Object> thinking,
-        @JsonProperty("reasoning_effort") String reasoningEffort
+        @JsonProperty("reasoning_effort") String reasoningEffort,
+        @JsonProperty("stream_options") Map<String, Object> streamOptions
 ) {
     /**
      * 构造普通 OpenAI-compatible 流式请求。
@@ -56,7 +57,8 @@ public record ChatRequest(
                 toolChoice,
                 true,
                 thinkingEnabled ? Map.of("type", "enabled") : null,
-                thinkingEnabled ? reasoningEffort : null
+                thinkingEnabled ? reasoningEffort : null,
+                Map.of("include_usage", true)
         );
     }
 }

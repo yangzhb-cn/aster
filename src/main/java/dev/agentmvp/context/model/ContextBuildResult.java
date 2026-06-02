@@ -15,6 +15,7 @@ public record ContextBuildResult(
         boolean compressed,
         int beforeTokens,
         int afterTokens,
+        int maxContextTokens,
         String summary
 ) {
 }

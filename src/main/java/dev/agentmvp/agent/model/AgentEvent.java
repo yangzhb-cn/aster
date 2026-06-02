@@ -1,12 +1,14 @@
 package dev.agentmvp.agent.model;
 
+import dev.agentmvp.llm.model.TokenUsage;
+
 /**
  * 流式 Agent 主循环发出的事件。
  *
  * <p>TUI 可以收到 token 事件就立即追加到输出区。
  * 以后如果加 Web SSE，也可以直接转发这些事件，不需要改 AgentLoop。</p>
  */
-public sealed interface AgentEvent permits AgentEvent.AssistantToken, AgentEvent.ReasoningToken, AgentEvent.ToolCallStart, AgentEvent.ToolCallDone, AgentEvent.Done {
+public sealed interface AgentEvent permits AgentEvent.AssistantToken, AgentEvent.ReasoningToken, AgentEvent.ToolCallStart, AgentEvent.ToolCallDone, AgentEvent.UsageReported, AgentEvent.Done {
     /**
      * assistant 正文的流式 token。
      */
@@ -38,6 +40,16 @@ public sealed interface AgentEvent permits AgentEvent.AssistantToken, AgentEvent
             boolean success,
             long elapsedMillis
     ) implements AgentEvent {
+    }
+
+    /**
+     * 一次 LLM 请求结束后返回的真实 token 用量。
+     *
+     * <p>这是模型供应商返回的 usage。它和 ContextBuilder 的 token 估算不同，
+     * 可以用于观察每轮输入、缓存命中、输出和总 token。
+     * maxContextTokens 来自 ContextOptions，用来在界面上计算当前上下文窗口占比。</p>
+     */
+    record UsageReported(TokenUsage usage, int maxContextTokens) implements AgentEvent {
     }
 
     /**

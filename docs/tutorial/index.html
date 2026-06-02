@@ -38,10 +38,10 @@
       <div class="panel">
         <h2>当前进展总览</h2>
         <div class="steps">
-          <div class="step"><b>1</b><p><strong>LLM 只走流式。</strong>项目通过 OpenAI-compatible SSE 接收模型增量，并支持 DeepSeek `reasoning_content`。</p></div>
+          <div class="step"><b>1</b><p><strong>LLM 只走流式。</strong>项目通过 OpenAI-compatible SSE 接收模型增量，支持 DeepSeek `reasoning_content` 和流式 usage。</p></div>
           <div class="step"><b>2</b><p><strong>工具支持并行。</strong>模型一次返回多个 tool_call 时，`ParallelToolExecutor` 会并发执行。</p></div>
           <div class="step"><b>3</b><p><strong>内置工具独立成类。</strong>`read`、`write`、`bash`、`edit` 都实现 `BuiltinTool`，最后统一注册进 `ToolRegistry`。</p></div>
-          <div class="step"><b>4</b><p><strong>TUI 是结构化展示层。</strong>`UiBlock` 区分用户、thinking、工具和正文，assistant 正文支持轻量 Markdown 渲染。</p></div>
+          <div class="step"><b>4</b><p><strong>TUI 是结构化展示层。</strong>`UiBlock` 区分用户、thinking、工具和正文，输入框下方展示 token usage 和上下文占比。</p></div>
         </div>
       </div>
     </section>
@@ -54,10 +54,10 @@
         <a class="card" href="context.html"><span class="num">02</span><h2>context</h2><p>按 user turn 压缩上下文，避免切断 `tool_call` 和 `tool_result`。</p></a>
         <a class="card" href="tool.html"><span class="num">03</span><h2>tool</h2><p>统一工具层：本地工具、MCP 工具和内置工具都变成同一种 Tool。</p></a>
         <a class="card" href="skill.html"><span class="num">04</span><h2>skill</h2><p>Skill 渐进式加载：索引常驻，正文按需，references/scripts 复用 read/bash。</p></a>
-        <a class="card" href="llm.html"><span class="num">05</span><h2>llm</h2><p>DeepSeek 是默认例子，支持 thinking、reasoning_effort 和 reasoning_content。</p></a>
+        <a class="card" href="llm.html"><span class="num">05</span><h2>llm</h2><p>DeepSeek 是默认例子，支持 thinking、reasoning_effort、reasoning_content 和 token usage。</p></a>
         <a class="card" href="mcp.html"><span class="num">06</span><h2>mcp</h2><p>JSON-RPC、tools/list、tools/call，以及通过 workspace/mcp.json 接入本地 stdio/HTTP MCP。</p></a>
         <a class="card" href="session.html"><span class="num">07</span><h2>session</h2><p>JSONL 事件日志保存完整历史，支持恢复、分支和审计。</p></a>
-        <a class="card" href="tui.html"><span class="num">08</span><h2>tui</h2><p>结构化 UiBlock、Markdown 渲染、emoji fallback 和工具输出折叠。</p></a>
+        <a class="card" href="tui.html"><span class="num">08</span><h2>tui</h2><p>结构化 UiBlock、Markdown 渲染、底部 usage 预算行、emoji fallback 和工具输出折叠。</p></a>
         <a class="card" href="chat.html"><span class="num">09</span><h2>chat</h2><p>OpenAI 兼容消息协议：system、user、assistant、tool 的边界和字段。</p></a>
       </div>
     </section>

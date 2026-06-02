@@ -16,6 +16,8 @@ public final class WorkspacePaths {
     public static final Path SKILLS = ROOT.resolve("skills");
     public static final Path SESSIONS = ROOT.resolve("sessions");
     public static final Path MEMORY = ROOT.resolve("memory");
+    public static final Path ARTIFACTS = ROOT.resolve("artifacts");
+    public static final Path TOOL_RESULTS = ARTIFACTS.resolve("tool-results");
 
     private WorkspacePaths() {
     }
@@ -28,5 +30,7 @@ public final class WorkspacePaths {
         Files.createDirectories(SKILLS);
         Files.createDirectories(SESSIONS);
         Files.createDirectories(MEMORY);
+        Files.createDirectories(ARTIFACTS);
+        Files.createDirectories(TOOL_RESULTS);
     }
 }

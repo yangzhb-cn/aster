@@ -2,7 +2,6 @@ package dev.agentmvp.tui;
 
 import com.googlecode.lanterna.screen.Screen;
 import com.googlecode.lanterna.terminal.DefaultTerminalFactory;
-import dev.agentmvp.runtime.AgentRuntime;
 import dev.agentmvp.runtime.AgentRuntimeFactory;
 
 /**
@@ -24,16 +23,14 @@ public final class TuiMain {
                 .setForceTextTerminal(true)
                 .setPreferTerminalEmulator(false);
         Screen screen = terminalFactory.createScreen();
-        AgentRuntime runtime = null;
         AgentTuiWindow window = null;
 
         try {
             screen.startScreen();
-            window = new AgentTuiWindow(screen);
+            window = new AgentTuiWindow(screen, new AgentRuntimeFactory());
 
             try {
-                runtime = new AgentRuntimeFactory().create(new TuiAgentEventHandler(window));
-                window.setRuntime(runtime);
+                window.startRuntime("default");
             } catch (Exception e) {
                 // 例如缺少 API key 时，也让 TUI 正常打开，用户能在界面里看到原因。
                 window.appendSystemLine(e.getMessage());
@@ -42,9 +39,6 @@ public final class TuiMain {
 
             window.run();
         } finally {
-            if (runtime != null) {
-                runtime.close();
-            }
             if (window != null) {
                 window.close();
             }

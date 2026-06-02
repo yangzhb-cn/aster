@@ -41,7 +41,14 @@ public class ContextBuilder {
             // 即使不压缩，也要校验协议。因为历史可能来自恢复的 session，
             // 里面可能已经存在孤立工具结果或残留 tool_calls。
             ToolProtocolValidator.validate(sessionMessages);
-            return new ContextBuildResult(List.copyOf(sessionMessages), false, beforeTokens, beforeTokens, null);
+            return new ContextBuildResult(
+                    List.copyOf(sessionMessages),
+                    false,
+                    beforeTokens,
+                    beforeTokens,
+                    options.maxContextTokens(),
+                    null
+            );
         }
 
         // 压缩前先按 user turn 切块。
@@ -100,6 +107,7 @@ public class ContextBuilder {
                 true,
                 beforeTokens,
                 tokenEstimator.estimate(finalMessages),
+                options.maxContextTokens(),
                 summary
         );
     }

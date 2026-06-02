@@ -19,6 +19,7 @@ public class AgentRuntime implements AutoCloseable {
     private final ParallelToolExecutor parallelToolExecutor;
     private final McpToolExecutor mcpToolExecutor;
     private final OpenAiCompatibleProvider provider;
+    private final String sessionName;
     private final int skillCount;
 
     public AgentRuntime(
@@ -26,12 +27,14 @@ public class AgentRuntime implements AutoCloseable {
             ParallelToolExecutor parallelToolExecutor,
             McpToolExecutor mcpToolExecutor,
             OpenAiCompatibleProvider provider,
+            String sessionName,
             int skillCount
     ) {
         this.agentLoop = Objects.requireNonNull(agentLoop);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
         this.mcpToolExecutor = Objects.requireNonNull(mcpToolExecutor);
         this.provider = Objects.requireNonNull(provider);
+        this.sessionName = Objects.requireNonNull(sessionName);
         this.skillCount = skillCount;
     }
 
@@ -54,6 +57,13 @@ public class AgentRuntime implements AutoCloseable {
      */
     public int skillCount() {
         return skillCount;
+    }
+
+    /**
+     * 当前绑定的 session 名称。
+     */
+    public String sessionName() {
+        return sessionName;
     }
 
     /**

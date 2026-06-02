@@ -22,6 +22,7 @@ import dev.agentmvp.prompt.PromptLoader;
 import dev.agentmvp.prompt.PromptPaths;
 import dev.agentmvp.session.BootstrappedSessionStore;
 import dev.agentmvp.session.JsonlSessionStore;
+import dev.agentmvp.session.SessionCatalog;
 import dev.agentmvp.session.SessionStore;
 import dev.agentmvp.skill.SkillIndexRenderer;
 import dev.agentmvp.skill.SkillRepository;
@@ -29,6 +30,7 @@ import dev.agentmvp.tool.LocalToolExecutor;
 import dev.agentmvp.tool.ParallelToolExecutor;
 import dev.agentmvp.tool.ToolRegistry;
 import dev.agentmvp.tool.builtin.BuiltinTools;
+import dev.agentmvp.tool.result.ToolResultOffloader;
 import okhttp3.OkHttpClient;
 
 import java.io.IOException;
@@ -57,7 +59,15 @@ public class AgentRuntimeFactory {
      * 使用默认配置创建 Agent 运行时。
      */
     public AgentRuntime create(AgentEventHandler eventHandler) throws IOException {
+        return create(eventHandler, SessionCatalog.DEFAULT_SESSION);
+    }
+
+    /**
+     * 使用指定 session 创建 Agent 运行时。
+     */
+    public AgentRuntime create(AgentEventHandler eventHandler, String sessionName) throws IOException {
         Objects.requireNonNull(eventHandler);
+        SessionCatalog.requireValidName(sessionName);
 
         OpenAiCompatibleProvider provider = OpenAiCompatibleProviderFactory.fromEnvWithDeepSeekDefaults();
         if (provider.apiKey() == null || provider.apiKey().isBlank()) {
@@ -98,7 +108,7 @@ public class AgentRuntimeFactory {
         }
         SessionStore sessionStore = new BootstrappedSessionStore(
                 bootstrapMessages,
-                JsonlSessionStore.openDefault(objectMapper, WorkspacePaths.SESSIONS)
+                JsonlSessionStore.openNamed(objectMapper, WorkspacePaths.SESSIONS, sessionName)
         );
 
         AgentLoop agentLoop = new AgentLoop(
@@ -112,11 +122,19 @@ public class AgentRuntimeFactory {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
+                ToolResultOffloader.defaults(objectMapper, WorkspacePaths.TOOL_RESULTS),
                 eventHandler,
                 MAX_TOOL_ROUNDS
         );
 
-        return new AgentRuntime(agentLoop, parallelToolExecutor, mcpToolExecutor, provider, skillRepository.listMetadata().size());
+        return new AgentRuntime(
+                agentLoop,
+                parallelToolExecutor,
+                mcpToolExecutor,
+                provider,
+                sessionName,
+                skillRepository.listMetadata().size()
+        );
     }
 
     /**

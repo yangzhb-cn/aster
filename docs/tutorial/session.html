@@ -89,6 +89,18 @@ public synchronized void append(Message message) throws IOException {
           </div>
         </section>
 
+        <section class="section" id="commands">
+          <h2>如何开启新会话</h2>
+          <div class="panel">
+            <div class="steps">
+              <div class="step"><b>1</b><p>输入 `/session list` 查看 `workspace/sessions` 下已有 JSONL 会话。</p></div>
+              <div class="step"><b>2</b><p>输入 `/session new` 创建自动命名的新会话，或 `/session new demo` 创建指定名称。</p></div>
+              <div class="step"><b>3</b><p>输入 `/session use demo` 切换回已有会话。</p></div>
+              <div class="step"><b>4</b><p>切换会话时 TUI 会关闭旧 runtime，重新绑定对应 JSONL 文件。</p></div>
+            </div>
+          </div>
+        </section>
+
         <section class="section" id="callout">
           <div class="callout">
             <div class="callout-icon">i</div>
@@ -122,6 +134,7 @@ public synchronized void append(Message message) throws IOException {
         <a href="#model">三层分工</a>
         <a href="#code">源码对照</a>
         <a href="#replay">分支回放</a>
+        <a href="#commands">会话命令</a>
         <a href="#callout">和短期记忆区别</a>
         <a href="#quiz">场景题</a>
       </aside>

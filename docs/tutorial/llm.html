@@ -23,7 +23,7 @@
         <section class="section" id="what">
           <p class="eyebrow">Package · dev.agentmvp.llm</p>
           <h1>llm 包：只保留流式模型调用。</h1>
-          <p class="lead">当前项目没有非流式路径。`OkHttpStreamingChatClient` 负责把 `ChatRequest` 变成 HTTP 请求，再逐行解析 <span class="term" data-tip="SSE 是 Server-Sent Events，服务端可以一小段一小段把数据推给客户端，常用于流式模型输出。">SSE</span>。DeepSeek V4 默认打开 thinking mode。</p>
+          <p class="lead">当前项目没有非流式路径。`OkHttpStreamingChatClient` 负责把 `ChatRequest` 变成 HTTP 请求，再逐行解析 <span class="term" data-tip="SSE 是 Server-Sent Events，服务端可以一小段一小段把数据推给客户端，常用于流式模型输出。">SSE</span>。DeepSeek V4 默认打开 thinking mode，并请求服务端在流式末尾返回真实 token usage。</p>
         </section>
 
         <section class="section" id="provider">
@@ -62,7 +62,8 @@ public static OpenAiCompatibleProvider fromEnvWithDefaults(OpenAiCompatibleProvi
         toolChoice,
         true,
         thinkingEnabled ? Map.of("type", "enabled") : null,
-        thinkingEnabled ? reasoningEffort : null
+        thinkingEnabled ? reasoningEffort : null,
+        Map.of("include_usage", true)
 );</code></pre>
             </div>
             <div class="explain-pane">
@@ -70,6 +71,7 @@ public static OpenAiCompatibleProvider fromEnvWithDefaults(OpenAiCompatibleProvi
               <p class="note-line">`stream=true` 仍然表示流式输出。</p>
               <p class="note-line">`thinking.type=enabled` 打开 DeepSeek V4 thinking mode。</p>
               <p class="note-line">`reasoning_effort=high` 表示默认使用较强推理强度。</p>
+              <p class="note-line">`stream_options.include_usage=true` 要求服务端在流式结束前补一包 usage。</p>
               <p class="note-line">这些字段只在 provider 支持时发送，不影响其他 OpenAI-compatible 服务。</p>
             </div>
           </div>
@@ -142,6 +144,33 @@ if (delta.reasoningContent() != null) {
           </div>
         </section>
 
+        <section class="section" id="usage">
+          <h2>源码对照：每轮 token 用量来自 usage chunk</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">AgentLoop.java</span>
+              <pre><code>private void emitUsageEvent(ChatStreamChunk chunk, int maxContextTokens) {
+    if (chunk.usage() == null) {
+        return;
+    }
+
+    eventHandler.onEvent(new AgentEvent.UsageReported(
+            TokenUsage.from(chunk.usage()),
+            maxContextTokens
+    ));
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">usage 不是模型正文，所以不能拼到 assistant content 里。</p>
+              <p class="note-line">`prompt_tokens` 是输入 token，`completion_tokens` 是输出 token。</p>
+              <p class="note-line">DeepSeek 还会给 `prompt_cache_hit_tokens` 和 `prompt_cache_miss_tokens`，input 会优先按 cache + miss 计算。</p>
+              <p class="note-line">AgentLoop 把它转成 `UsageReported` 事件，并附带最大上下文窗口。</p>
+              <p class="note-line">TUI 不把 usage 插入历史区，而是更新输入框下面的预算行。</p>
+            </div>
+          </div>
+        </section>
+
         <section class="section" id="quiz">
           <div class="quiz" data-answer="a" data-right="对。新的兼容供应商应该实现 provider definition，并复用 OpenAI-compatible 客户端。" data-wrong="不对。复制客户端会让 SSE、工具 schema 和错误处理重复。">
             <h2>场景题</h2>
@@ -167,6 +196,7 @@ if (delta.reasoningContent() != null) {
         <a href="#thinking">Thinking 请求</a>
         <a href="#sse">SSE 解析</a>
         <a href="#reasoning">Reasoning 事件</a>
+        <a href="#usage">Token 用量</a>
         <a href="#quiz">场景题</a>
       </aside>
     </div>

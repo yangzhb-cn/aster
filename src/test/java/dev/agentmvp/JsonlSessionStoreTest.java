@@ -152,4 +152,32 @@ class JsonlSessionStoreTest {
         assertEquals(List.of(Message.user("读取文件")), result.messages());
         assertTrue(result.recoveryReason().contains("unanswered tool_call"));
     }
+
+    /**
+     * 验证历史文件里旧的 reasoning-only assistant 也能恢复成合法消息。
+     */
+    @Test
+    void recoversReasoningOnlyAssistantAsContent() throws Exception {
+        Path file = tempDir.resolve("sessions/default.jsonl");
+        JsonlSessionStore store = new JsonlSessionStore(
+                objectMapper,
+                file,
+                "default",
+                SessionReplayer.MAIN_BRANCH
+        );
+        store.append(Message.user("你好"));
+        Files.writeString(file, """
+                {"seq":99,"eventId":"legacy","sessionId":"default","branchId":"main","type":"message_appended","createdAt":"2026-06-02T00:00:00Z","message":{"role":"assistant","reasoning_content":"旧 thinking 内容"}}
+                """, java.nio.file.StandardOpenOption.APPEND);
+
+        JsonlSessionStore reopened = new JsonlSessionStore(
+                objectMapper,
+                file,
+                "default",
+                SessionReplayer.MAIN_BRANCH
+        );
+
+        assertEquals("旧 thinking 内容", reopened.loadMessages().get(1).content());
+        assertEquals(null, reopened.loadMessages().get(1).reasoningContent());
+    }
 }

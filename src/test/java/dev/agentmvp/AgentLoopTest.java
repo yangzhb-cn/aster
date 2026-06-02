@@ -1,6 +1,7 @@
 package dev.agentmvp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import dev.agentmvp.agent.AgentEventHandler;
 import dev.agentmvp.agent.AgentLoop;
 import dev.agentmvp.agent.model.AgentEvent;
@@ -18,14 +19,19 @@ import dev.agentmvp.tool.ParallelToolExecutor;
 import dev.agentmvp.tool.ToolRegistry;
 import dev.agentmvp.tool.model.Tool;
 import dev.agentmvp.tool.model.ToolResult;
+import dev.agentmvp.tool.result.ToolResultOffloader;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.Executors;
+import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -37,6 +43,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * 和工具结果回灌能串起来，不依赖真实模型 API。</p>
  */
 class AgentLoopTest {
+    @TempDir
+    Path tempDir;
+
     /**
      * 验证模型先流式返回 tool_call，工具执行后再继续请求模型拿最终答案。
      */
@@ -114,6 +123,81 @@ class AgentLoopTest {
     }
 
     /**
+     * 验证大工具结果会写入 JSONL，session 里只保留路径和预览。
+     */
+    @Test
+    void offloadsLargeToolResultsIntoJsonlBeforeWritingToolMessage() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        String largeText = "large-tool-output-" + "x".repeat(200);
+
+        LocalToolExecutor localExecutor = new LocalToolExecutor(objectMapper);
+        ToolRegistry toolRegistry = new ToolRegistry(localExecutor, new McpToolExecutor());
+        toolRegistry.registerLocal(
+                Tool.local(
+                        "large_echo",
+                        "Large echo",
+                        "Return a large result.",
+                        Map.of("type", "object", "properties", Map.of())
+                ),
+                (call, arguments) -> ToolResult.text(call.id(), largeText)
+        );
+
+        Queue<List<ChatStreamChunk>> scriptedStreams = new ArrayDeque<>(List.of(
+                List.of(toolCallChunk(0, "call_large", "large_echo", "{}")),
+                List.of(textChunk("done"))
+        ));
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            for (ChatStreamChunk chunk : scriptedStreams.remove()) {
+                handler.onChunk(chunk);
+            }
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                "fake-model",
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                new ToolResultOffloader(objectMapper, tempDir, 30, 20),
+                AgentEventHandler.noop(),
+                4
+        );
+
+        assertEquals("done", loop.run("run large tool"));
+
+        String toolContent = sessionStore.loadMessages().stream()
+                .filter(message -> "tool".equals(message.role()))
+                .findFirst()
+                .orElseThrow()
+                .content();
+
+        assertTrue(toolContent.contains("完整结果已卸载到 JSONL 文件"));
+        assertTrue(toolContent.contains("jsonlPath="));
+        assertTrue(toolContent.contains("inlinePreview:"));
+
+        Path storedPath;
+        try (Stream<Path> files = Files.list(tempDir)) {
+            storedPath = files
+                    .filter(path -> path.toString().endsWith(".jsonl"))
+                    .findFirst()
+                    .orElseThrow();
+        }
+        JsonNode stored = objectMapper.readTree(Files.readString(storedPath));
+
+        assertEquals("call_large", stored.path("toolCallId").asText());
+        assertEquals("large_echo", stored.path("toolName").asText());
+        assertEquals(largeText, stored.path("text").asText());
+    }
+
+    /**
      * 验证 DeepSeek reasoning_content 会进入事件流，并保存到 assistant message。
      */
     @Test
@@ -156,6 +240,43 @@ class AgentLoopTest {
     }
 
     /**
+     * 验证模型只返回 reasoning_content 时，也不会写出非法 assistant 历史。
+     */
+    @Test
+    void convertsReasoningOnlyAssistantIntoSendableContent() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        ToolRegistry toolRegistry = new ToolRegistry(
+                new LocalToolExecutor(objectMapper),
+                new McpToolExecutor()
+        );
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            handler.onChunk(reasoningChunk("只有思考，没有可见正文。"));
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                "fake-model",
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                AgentEventHandler.noop(),
+                4
+        );
+
+        assertEquals("只有思考，没有可见正文。", loop.run("hello"));
+        assertEquals("只有思考，没有可见正文。", sessionStore.loadMessages().get(1).content());
+        assertEquals(null, sessionStore.loadMessages().get(1).reasoningContent());
+    }
+
+    /**
      * 验证没有注册工具时，请求体不会带 tool_choice。
      */
     @Test
@@ -194,6 +315,57 @@ class AgentLoopTest {
     }
 
     /**
+     * 验证 usage chunk 会转成 UsageReported 事件，并带上最大上下文窗口。
+     */
+    @Test
+    void emitsUsageReportedEventFromStreamUsageChunk() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        ToolRegistry toolRegistry = new ToolRegistry(
+                new LocalToolExecutor(objectMapper),
+                new McpToolExecutor()
+        );
+        List<AgentEvent> events = new ArrayList<>();
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            handler.onChunk(textChunk("answer"));
+            handler.onChunk(usageChunk(120, 30, 70, 20, 150));
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                "fake-model",
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                events::add,
+                4
+        );
+
+        assertEquals("answer", loop.run("hello"));
+
+        AgentEvent.UsageReported usageEvent = events.stream()
+                .filter(event -> event instanceof AgentEvent.UsageReported)
+                .map(event -> (AgentEvent.UsageReported) event)
+                .findFirst()
+                .orElseThrow();
+
+        // 有 cache/miss 字段时，input 应该按 cache + miss 计算。
+        assertEquals(100, usageEvent.usage().inputTokens());
+        assertEquals(30, usageEvent.usage().inputCacheTokens());
+        assertEquals(70, usageEvent.usage().inputCacheMissTokens());
+        assertEquals(20, usageEvent.usage().outputTokens());
+        assertEquals(120, usageEvent.usage().totalTokens());
+        assertEquals(128_000, usageEvent.maxContextTokens());
+    }
+
+    /**
      * 构造一片文本 SSE 片段。
      */
     private static ChatStreamChunk textChunk(String text) {
@@ -202,7 +374,7 @@ class AgentLoopTest {
                         new ChatStreamChunk.ChatDelta("assistant", text, null, null),
                         null
                 )
-        ));
+        ), null);
     }
 
     /**
@@ -214,7 +386,7 @@ class AgentLoopTest {
                         new ChatStreamChunk.ChatDelta("assistant", null, text, null),
                         null
                 )
-        ));
+        ), null);
     }
 
     /**
@@ -236,6 +408,28 @@ class AgentLoopTest {
                         ),
                         null
                 )
-        ));
+        ), null);
+    }
+
+    /**
+     * 构造一片只包含 usage 的 SSE 片段。
+     */
+    private static ChatStreamChunk usageChunk(
+            int promptTokens,
+            int promptCacheHitTokens,
+            int promptCacheMissTokens,
+            int completionTokens,
+            int totalTokens
+    ) {
+        return new ChatStreamChunk(
+                List.of(),
+                new ChatStreamChunk.Usage(
+                        promptTokens,
+                        completionTokens,
+                        totalTokens,
+                        promptCacheHitTokens,
+                        promptCacheMissTokens
+                )
+        );
     }
 }

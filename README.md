@@ -152,11 +152,15 @@
     │       │       ├── ReadToolParams.java
     │       │       ├── ToolParamReader.java
     │       │       └── WriteToolParams.java
-    │       └── model
+    │       ├── model
     │           ├── Tool.java
     │           ├── ToolContent.java
     │           ├── ToolResult.java
     │           └── ToolSource.java
+    │       └── result
+    │           ├── ToolResultOffloader.java
+    │           └── model
+    │               └── StoredToolResult.java
     ├── main/resources
     │   └── prompts
     │       ├── context-summary.md
@@ -176,6 +180,8 @@
         └── SkillRepositoryTest.java
 ├── workspace
 │   ├── README.md
+│   ├── artifacts
+│   │   └── tool-results
 │   ├── mcp.json.example
 │   ├── skills
 │   ├── sessions
@@ -221,10 +227,12 @@ ToolRegistry
 - 调用 `StreamingChatClient`，用 SSE 接收 `delta`
 - 把 `delta.content` 作为 `AssistantToken` 发给 TUI
 - 把 DeepSeek `delta.reasoning_content` 作为 `ReasoningToken` 发给 TUI
+- 把流式响应末尾的 `usage` 转成 `UsageReported`，用于展示这一轮真实 token 用量
 - 用 `AssistantMessageBuilder` 把流式 delta 组装成完整 assistant message，并保存 `reasoning_content`
 - 如果 assistant 没有 `tool_calls`，结束本轮
 - 如果 assistant 返回多个 `tool_calls`，用 `ParallelToolExecutor` 并行执行
-- 把每个工具结果写成对应 `tool_call_id` 的 `role=tool` 消息
+- 工具结果写入 `role=tool` 前先经过 `ToolResultOffloader`
+- 小工具结果原样写回；大工具结果写入 `workspace/artifacts/tool-results/*.jsonl`，上下文只保留预览、绝对路径和 recordId
 - 继续下一轮 LLM 请求，直到得到最终回答
 
 代码入口：
@@ -242,13 +250,15 @@ TUI 入口负责：
 - 创建 Lanterna `Screen`
 - 创建手绘的 `AgentTuiWindow`
 - 渲染最小终端界面：标题、结构化消息块、状态栏、输入线
+- 输入框下方展示最近一轮 usage：输入、缓存命中、未命中、输出、总 token、当前上下文窗口占比
 - 通过 `AgentRuntimeFactory` 创建 Agent 运行时
 - 把 `AgentEvent` 渲染成 `UiBlock`
 - assistant 正文支持轻量 Markdown 渲染：标题、引用、分隔线、代码块、表格、编号列表、`-` 列表转 bullet、行内 code、粗体标记清理
-- supplementary-plane emoji 会在显示层转成终端兼容 fallback，避免 Lanterna 把它显示成 `??`
+- emoji 会在显示层过滤，避免 Lanterna 把它显示成问号或造成光标错位
 - 工具输出过长时默认折叠，可以用 `ctrl+o` 展开/折叠
 - 用户按 Enter 后，先回显用户输入，再在后台线程调用 `AgentRuntime.run()`
-- 当前只支持一个斜杠命令：`/exit`
+- 支持 `/exit` 和 `/session ...` 斜杠命令
+- 输入 `/` 时显示命令菜单，`↑/↓` 选择，`Tab` 或 `Enter` 选中
 - 历史消息支持应用内滚动：`↑/↓` 滚一行，`PageUp/PageDown` 滚一页，`End` 回到底部
 
 相关文件：
@@ -346,6 +356,7 @@ ToolResult
 ToolContent
 ToolExecutor
 ToolRegistry
+ToolResultOffloader
 ```
 
 `ToolRegistry` 只关心：
@@ -358,6 +369,19 @@ LLM 调用了哪个工具
 ```
 
 它不关心工具来自本地代码还是 MCP Server。
+
+工具结果回灌前会经过统一卸载器：
+
+```text
+ToolResult.renderText()
+    ↓
+ToolResultOffloader
+    ├── 小结果：原样写入 role=tool
+    └── 大结果：写入 workspace/artifacts/tool-results/*.jsonl
+              role=tool 只保留 jsonlPath、recordId 和预览
+```
+
+这样不会破坏 `assistant.tool_calls -> role=tool` 的协议配对，同时可以避免大工具结果长期占满上下文。
 
 ### 5. 内置工具
 
@@ -627,6 +651,9 @@ src/main/java/dev/agentmvp/llm/OpenAiCompatibleProviderDefinition.java
 src/main/java/dev/agentmvp/llm/OpenAiCompatibleProviderFactory.java
 src/main/java/dev/agentmvp/llm/OpenAiCompatibleChatClient.java
 src/main/java/dev/agentmvp/llm/DeepSeekProvider.java
+src/main/java/dev/agentmvp/llm/model/ChatRequest.java
+src/main/java/dev/agentmvp/llm/model/ChatStreamChunk.java
+src/main/java/dev/agentmvp/llm/model/TokenUsage.java
 ```
 
 默认 DeepSeek 配置：
@@ -638,6 +665,7 @@ model: deepseek-v4-flash
 api key env: DEEPSEEK_API_KEY
 thinking: enabled
 reasoning_effort: high
+stream_options.include_usage: true
 ```
 
 也可以用通用 OpenAI-compatible 环境变量覆盖：
@@ -654,6 +682,7 @@ OPENAI_COMPATIBLE_MODEL
 ```text
 data: {"choices":[{"delta":{"content":"你"}}]}
 data: {"choices":[{"delta":{"content":"好"}}]}
+data: {"choices":[],"usage":{"prompt_tokens":100,"prompt_cache_hit_tokens":80,"prompt_cache_miss_tokens":20,"completion_tokens":30,"total_tokens":130}}
 data: [DONE]
 ```
 
@@ -667,18 +696,38 @@ data: {"choices":[{"delta":{"reasoning_content":"先理解用户意图"}}]}
 
 - `delta.content` 转成 `AgentEvent.AssistantToken`
 - `delta.reasoning_content` 转成 `AgentEvent.ReasoningToken`
+- 响应末尾的 `usage` 转成 `AgentEvent.UsageReported`
 - `delta.tool_calls` 继续由 `AssistantMessageBuilder` 组装完整 `ToolCall`
 - assistant message 会保存 `reasoning_content`
 - 如果 assistant 同时有 `reasoning_content` 和 `tool_calls`，后续请求会把这条 assistant message 原样带回 DeepSeek，避免 thinking + tool call 多轮协议断掉
+
+这里的 token 用量是供应商返回的真实账单侧数据，不是 `ContextBuilder` 的本地估算：
+
+```text
+input  = prompt_cache_hit_tokens + prompt_cache_miss_tokens
+cache  = prompt_cache_hit_tokens
+miss   = prompt_cache_miss_tokens
+output = completion_tokens
+total  = input + output
+```
+
+其中 cache / miss 是 DeepSeek 这类支持 prompt cache 统计的供应商字段；其他 OpenAI-compatible 服务不返回时，input 会回退到 `prompt_tokens`，cache / miss 显示为 0。
+
+TUI 底部预算行会额外显示当前上下文占比：
+
+```text
+tokens input=4520 cache=384 miss=4136 output=38 total=4558 | context=4520/128000 (3.5%)
+```
 
 工具事件：
 
 ```text
 ToolCallStart(toolCallId, toolName, argumentsJson)
 ToolCallDone(toolCallId, toolName, text, success, elapsedMillis)
+UsageReported(TokenUsage, maxContextTokens)
 ```
 
-TUI 会把它们渲染成 `ToolBlock`，而不是普通字符串。
+TUI 会把工具事件渲染成 `ToolBlock`，usage 事件不会插入历史区，而是更新输入框下方的预算行。
 
 测试中使用 fake streaming LLM，不依赖真实 API key。
 
@@ -707,7 +756,15 @@ TUI 操作：
 
 ```text
 Enter             - 发送输入
+/                 - 显示斜杠命令菜单
+↑/↓               - 菜单打开时选择命令；否则滚动历史
+Tab / Enter       - 菜单打开时选中命令
 /exit             - 退出 TUI
+/session list     - 列出 workspace/sessions 下的会话
+/session new      - 创建并切换到自动命名的新会话
+/session new name - 创建并切换到指定名称的新会话
+/session use name - 切换到已有会话
+/session current  - 显示当前会话
 ctrl+l            - 清空输出区
 ctrl+o            - 展开/折叠工具输出
 escape/ctrl+c/d   - 退出 TUI
@@ -727,9 +784,9 @@ mvn test
 当前测试覆盖：
 
 - `ContextBuilderTest`：旧 turn 压缩后不会残留半截 `tool_call` 协议。
-- `AgentLoopTest`：SSE delta 能组装成 assistant；多个工具调用后能写回 `tool` 消息；`reasoning_content` 会独立进入事件流并保存到 assistant message。
+- `AgentLoopTest`：SSE delta 能组装成 assistant；多个工具调用后能写回 `tool` 消息；大工具结果会卸载成 JSONL；`reasoning_content` 会独立进入事件流并保存到 assistant message；流式 `usage` 会转成带最大上下文窗口的 `UsageReported` 事件。
 - `JsonlSessionStoreTest`：验证 JSONL 事件日志可恢复、可分支、可裁剪半截工具协议，并且 bootstrap 消息不落盘。
-- `DeepSeekProviderTest`：DeepSeek 使用 OpenAI-compatible `/chat/completions` + `stream=true` 请求形状，并默认带 `thinking.type=enabled`、`reasoning_effort=high`。
+- `DeepSeekProviderTest`：DeepSeek 使用 OpenAI-compatible `/chat/completions` + `stream=true` 请求形状，并默认带 `thinking.type=enabled`、`reasoning_effort=high`、`stream_options.include_usage=true`。
 - `McpClientTest`：通过 Mock MCP Server 跑通 `initialize`、`tools/list`、`tools/call`。
 - `McpConfigLoaderTest`：验证没有 MCP 配置时为空配置，并能解析 stdio/HTTP 两种 MCP 配置。
 - `LocalMcpServerTest`：不用任何 MCP SDK，启动本地 HTTP JSON-RPC Server，再用 `McpClient` 调通本地工具。

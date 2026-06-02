@@ -191,7 +191,7 @@ public class MarkdownRenderer {
      * 清理行内 Markdown 标记。
      *
      * <p>字符终端很难做同一行内的局部富文本。这里先把常见标记去掉：
-     * `code` 显示为 code，**bold** 显示为 bold。emoji 和普通 Unicode 字符会原样保留。</p>
+     * `code` 显示为 code，**bold** 显示为 bold。emoji 会在 TerminalTextSanitizer 中过滤。</p>
      */
     private String cleanInlineMarkdown(String text) {
         return nullToEmpty(text)

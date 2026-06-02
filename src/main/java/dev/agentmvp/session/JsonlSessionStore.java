@@ -51,10 +51,17 @@ public class JsonlSessionStore implements SessionStore {
      * 打开默认 main 分支。
      */
     public static JsonlSessionStore openDefault(ObjectMapper objectMapper, Path sessionsDirectory) throws IOException {
+        return openNamed(objectMapper, sessionsDirectory, SessionCatalog.DEFAULT_SESSION);
+    }
+
+    /**
+     * 按名称打开 main 分支；不存在时会创建新的 JSONL 文件。
+     */
+    public static JsonlSessionStore openNamed(ObjectMapper objectMapper, Path sessionsDirectory, String sessionName) throws IOException {
         return new JsonlSessionStore(
                 objectMapper,
-                sessionsDirectory.resolve("default.jsonl"),
-                "default",
+                SessionCatalog.fileFor(sessionsDirectory, sessionName),
+                sessionName,
                 SessionReplayer.MAIN_BRANCH
         );
     }

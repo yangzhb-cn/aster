@@ -23,7 +23,7 @@
         <section class="section" id="what">
           <p class="eyebrow">Package · dev.agentmvp.tui</p>
           <h1>tui 包：把 Agent 事件变成终端里的结构化消息。</h1>
-          <p class="lead">TUI 不直接理解模型协议，也不直接执行工具。它只接收 `AgentEvent`，再转换成 `UiBlock`：用户块、thinking 块、工具块、assistant 正文块。</p>
+          <p class="lead">TUI 不直接理解模型协议，也不直接执行工具。它只接收 `AgentEvent`，再转换成可展示状态：用户块、thinking 块、工具块、assistant 正文块，以及输入框下方的 token 预算行。</p>
         </section>
 
         <section class="section" id="blocks">
@@ -37,7 +37,8 @@
             <div class="explain-pane">
               <span class="label">中文解释</span>
               <p class="note-line">旧做法是 `List&lt;String&gt; history`，只能靠前缀判断颜色。</p>
-              <p class="note-line">现在每种展示内容都有类型，TUI 可以分别画 thinking、工具和正文。</p>
+              <p class="note-line">现在每种历史消息都有类型，TUI 可以分别画 thinking、工具和正文。</p>
+              <p class="note-line">usage 不属于历史消息，所以它不进 UiBlock，而是更新底部预算行。</p>
               <p class="note-line">这也是后续做折叠、Markdown、状态样式的基础。</p>
             </div>
           </div>
@@ -55,13 +56,43 @@
 if (event instanceof AgentEvent.ReasoningToken token) {
     window.appendReasoningToken(token.text());
     return;
+}
+if (event instanceof AgentEvent.UsageReported usage) {
+    window.showUsage(usage.usage(), usage.maxContextTokens());
+    return;
 }</code></pre>
             </div>
             <div class="explain-pane">
               <span class="label">中文解释</span>
               <p class="note-line">正文和 DeepSeek thinking 分成两个事件。</p>
               <p class="note-line">TUI 因此可以把 reasoning_content 显示成灰色 thinking 块。</p>
+              <p class="note-line">usage 也单独成事件，避免混进 assistant 正文或历史消息。</p>
               <p class="note-line">这比把所有 token 拼进一段 assistant 文本更清楚。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="usage">
+          <h2>源码对照：输入框下方的 token 预算行</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">AgentTuiWindow.java</span>
+              <pre><code>public void showUsage(TokenUsage usage, int maxContextTokens) {
+    enqueue(() -> {
+        lastUsage = usage;
+        lastMaxContextTokens = maxContextTokens;
+        status = "usage input=" + usage.inputTokens() + " output=" + usage.outputTokens();
+        dirty = true;
+    });
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">这里展示的是这一轮 LLM 请求的真实用量，不是本地估算。</p>
+              <p class="note-line">input 优先按 cache + miss 计算，output 对应 completion tokens。</p>
+              <p class="note-line">cache / miss 对应输入缓存命中和未命中，供应商不返回时就是 0。</p>
+              <p class="note-line">context 显示 input / maxContextTokens，用来观察当前上下文窗口占比。</p>
+              <p class="note-line">它放在输入框下面，避免把统计信息混进对话历史。</p>
             </div>
           </div>
         </section>
@@ -107,23 +138,46 @@ if (event instanceof AgentEvent.ReasoningToken token) {
           </div>
         </section>
 
+        <section class="section" id="commands">
+          <h2>源码对照：可选择的斜杠菜单</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">AgentTuiWindow.java</span>
+              <pre><code>if (handleSlashCommandMenuKey(key)) {
+    return;
+}
+
+if (userInput.equals("/session") || userInput.startsWith("/session ")) {
+    handleSessionCommand(userInput);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">输入 `/` 后会展示当前支持的命令。</p>
+              <p class="note-line">`↑/↓` 选择命令，`Tab` 或 `Enter` 选中。</p>
+              <p class="note-line">不需要参数的命令会直接执行；需要参数的命令只补全前缀。</p>
+              <p class="note-line">`/session list` 只读本地 `workspace/sessions/*.jsonl`。</p>
+              <p class="note-line">`/session new [name]` 创建并切换到新会话。</p>
+              <p class="note-line">`/session use name` 切换已有会话，不经过 LLM。</p>
+            </div>
+          </div>
+        </section>
+
         <section class="section" id="emoji">
-          <h2>源码对照：emoji fallback</h2>
+          <h2>源码对照：emoji 过滤</h2>
           <div class="translation">
             <div class="code-pane">
               <span class="label">TerminalTextSanitizer.java</span>
-              <pre><code>if (codePoint &lt;= Character.MAX_VALUE) {
-    result.appendCodePoint(codePoint);
+              <pre><code>if (isEmojiLike(codePoint)) {
     continue;
 }
-
-result.append(fallbackForSupplementary(codePoint));</code></pre>
+result.appendCodePoint(codePoint);</code></pre>
             </div>
             <div class="explain-pane">
               <span class="label">中文解释</span>
               <p class="note-line">部分 emoji 是 supplementary-plane 字符，Java 里要两个 char 表示。</p>
               <p class="note-line">Lanterna 某些绘制路径会把它拆坏，终端里显示成两个问号。</p>
-              <p class="note-line">这里仅在显示层做 fallback，内部消息和发给 LLM 的内容不变。</p>
+              <p class="note-line">这里仅在显示层过滤 emoji，内部消息和发给 LLM 的内容不变。</p>
             </div>
           </div>
         </section>
@@ -150,9 +204,11 @@ result.append(fallbackForSupplementary(codePoint));</code></pre>
         <a href="#what">TUI 职责</a>
         <a href="#blocks">UiBlock</a>
         <a href="#events">事件转换</a>
+        <a href="#usage">Token 用量</a>
         <a href="#markdown">Markdown</a>
         <a href="#tool-fold">工具折叠</a>
-        <a href="#emoji">Emoji fallback</a>
+        <a href="#commands">Session 命令</a>
+        <a href="#emoji">Emoji 过滤</a>
         <a href="#quiz">场景题</a>
       </aside>
     </div>

@@ -75,12 +75,13 @@ ChatRequest request = ChatRequest.streaming(
 for (int i = 0; i &lt; results.size(); i++) {
     ToolCall call = toolCalls.get(i);
     ToolResult result = results.get(i);
+    String compactText = toolResultOffloader.compact(result);
 
-    sessionStore.append(Message.tool(result.toolCallId(), result.renderText()));
+    sessionStore.append(Message.tool(result.toolCallId(), compactText));
     eventHandler.onEvent(new AgentEvent.ToolCallDone(
             result.toolCallId(),
             call.function().name(),
-            result.renderText(),
+            compactText,
             !result.error(),
             result.elapsedMillis()
     ));
@@ -90,6 +91,7 @@ for (int i = 0; i &lt; results.size(); i++) {
               <span class="label">中文解释</span>
               <p class="note-line">多个工具调用先交给并行执行器，减少等待时间。</p>
               <p class="note-line">每个结果都必须写成 `role=tool`，并带原始 `tool_call_id`。</p>
+              <p class="note-line">大结果会先写入 JSONL 文件，tool 消息只保留路径、recordId 和预览。</p>
               <p class="note-line">这一步是协议配对：assistant 说“我要工具”，tool 消息负责回答“工具结果在这里”。</p>
               <p class="note-line">同时发出 `ToolCallDone` 事件，让 TUI 能显示工具块、成功失败和耗时。</p>
             </div>

@@ -9,10 +9,12 @@ import dev.agentmvp.context.model.ContextBuildResult;
 import dev.agentmvp.llm.StreamingChatClient;
 import dev.agentmvp.llm.model.ChatRequest;
 import dev.agentmvp.llm.model.ChatStreamChunk;
+import dev.agentmvp.llm.model.TokenUsage;
 import dev.agentmvp.session.SessionStore;
 import dev.agentmvp.tool.ParallelToolExecutor;
 import dev.agentmvp.tool.ToolRegistry;
 import dev.agentmvp.tool.model.ToolResult;
+import dev.agentmvp.tool.result.ToolResultOffloader;
 
 import java.io.IOException;
 import java.util.List;
@@ -33,6 +35,7 @@ public class AgentLoop {
     private final StreamingChatClient streamingChatClient;
     private final ToolRegistry toolRegistry;
     private final ParallelToolExecutor parallelToolExecutor;
+    private final ToolResultOffloader toolResultOffloader;
     private final AgentEventHandler eventHandler;
     private final int maxToolRounds;
     private final boolean thinkingEnabled;
@@ -55,6 +58,33 @@ public class AgentLoop {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
+                ToolResultOffloader.inlineOnly(),
+                eventHandler,
+                maxToolRounds,
+                false,
+                null
+        );
+    }
+
+    public AgentLoop(
+            String model,
+            SessionStore sessionStore,
+            ContextBuilder contextBuilder,
+            StreamingChatClient streamingChatClient,
+            ToolRegistry toolRegistry,
+            ParallelToolExecutor parallelToolExecutor,
+            ToolResultOffloader toolResultOffloader,
+            AgentEventHandler eventHandler,
+            int maxToolRounds
+    ) {
+        this(
+                model,
+                sessionStore,
+                contextBuilder,
+                streamingChatClient,
+                toolRegistry,
+                parallelToolExecutor,
+                toolResultOffloader,
                 eventHandler,
                 maxToolRounds,
                 false,
@@ -79,6 +109,33 @@ public class AgentLoop {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
+                ToolResultOffloader.inlineOnly(),
+                eventHandler,
+                maxToolRounds,
+                provider.thinkingEnabled(),
+                provider.reasoningEffort()
+        );
+    }
+
+    public AgentLoop(
+            OpenAiCompatibleProvider provider,
+            SessionStore sessionStore,
+            ContextBuilder contextBuilder,
+            StreamingChatClient streamingChatClient,
+            ToolRegistry toolRegistry,
+            ParallelToolExecutor parallelToolExecutor,
+            ToolResultOffloader toolResultOffloader,
+            AgentEventHandler eventHandler,
+            int maxToolRounds
+    ) {
+        this(
+                provider.defaultModel(),
+                sessionStore,
+                contextBuilder,
+                streamingChatClient,
+                toolRegistry,
+                parallelToolExecutor,
+                toolResultOffloader,
                 eventHandler,
                 maxToolRounds,
                 provider.thinkingEnabled(),
@@ -93,6 +150,7 @@ public class AgentLoop {
             StreamingChatClient streamingChatClient,
             ToolRegistry toolRegistry,
             ParallelToolExecutor parallelToolExecutor,
+            ToolResultOffloader toolResultOffloader,
             AgentEventHandler eventHandler,
             int maxToolRounds,
             boolean thinkingEnabled,
@@ -104,6 +162,7 @@ public class AgentLoop {
         this.streamingChatClient = Objects.requireNonNull(streamingChatClient);
         this.toolRegistry = Objects.requireNonNull(toolRegistry);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
+        this.toolResultOffloader = Objects.requireNonNull(toolResultOffloader);
         this.eventHandler = Objects.requireNonNull(eventHandler);
         this.maxToolRounds = maxToolRounds;
         this.thinkingEnabled = thinkingEnabled;
@@ -155,7 +214,7 @@ public class AgentLoop {
                     reasoningEffort
             );
 
-            Message assistant = streamAssistantMessage(request);
+            Message assistant = streamAssistantMessage(request, context.maxContextTokens());
             // assistant 消息必须先原样写入历史。
             // 如果它包含 tool_calls，后面的 tool 消息要通过 tool_call_id 与它配对。
             sessionStore.append(assistant);
@@ -177,12 +236,13 @@ public class AgentLoop {
     /**
      * 流式读取一轮 assistant 输出，并拼成完整 assistant 消息。
      */
-    private Message streamAssistantMessage(ChatRequest request) throws IOException {
+    private Message streamAssistantMessage(ChatRequest request, int maxContextTokens) throws IOException {
         AssistantMessageBuilder assistantBuilder = new AssistantMessageBuilder();
 
         streamingChatClient.stream(request, chunk -> {
             assistantBuilder.append(chunk);
             emitTokenEvents(chunk);
+            emitUsageEvent(chunk, maxContextTokens);
         });
 
         return assistantBuilder.build();
@@ -205,13 +265,15 @@ public class AgentLoop {
         for (int i = 0; i < results.size(); i++) {
             ToolCall call = toolCalls.get(i);
             ToolResult result = results.get(i);
+            String compactText = toolResultOffloader.compact(result);
 
             // 工具结果必须以 role=tool 写入，并保留原始 tool_call_id。
-            sessionStore.append(Message.tool(result.toolCallId(), result.renderText()));
+            // 大结果会先被 ToolResultOffloader 写入 JSONL，再把路径和预览写入上下文。
+            sessionStore.append(Message.tool(result.toolCallId(), compactText));
             eventHandler.onEvent(new AgentEvent.ToolCallDone(
                     result.toolCallId(),
                     call.function().name(),
-                    result.renderText(),
+                    compactText,
                     !result.error(),
                     result.elapsedMillis()
             ));
@@ -235,5 +297,15 @@ public class AgentLoop {
                 eventHandler.onEvent(new AgentEvent.ReasoningToken(delta.reasoningContent()));
             }
         }
+    }
+
+    /**
+     * 把流式响应最后的 usage chunk 转成 Agent 事件。
+     */
+    private void emitUsageEvent(ChatStreamChunk chunk, int maxContextTokens) {
+        if (chunk.usage() == null) {
+            return;
+        }
+        eventHandler.onEvent(new AgentEvent.UsageReported(TokenUsage.from(chunk.usage()), maxContextTokens));
     }
 }

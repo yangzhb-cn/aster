@@ -73,6 +73,7 @@ class DeepSeekProviderTest {
             assertEquals("Bearer test-key", recorded.getHeader("Authorization"));
             assertEquals("deepseek-v4-flash", body.path("model").asText());
             assertEquals(true, body.path("stream").asBoolean());
+            assertEquals(true, body.path("stream_options").path("include_usage").asBoolean());
             assertEquals("enabled", body.path("thinking").path("type").asText());
             assertEquals("high", body.path("reasoning_effort").asText());
             assertEquals("user", body.path("messages").get(0).path("role").asText());

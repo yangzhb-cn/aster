@@ -40,6 +40,8 @@ class MarkdownRendererTest {
         assertTrue(lines.stream().anyMatch(line -> line.type() == MarkdownLineType.LIST && line.text().contains("pom.xml")));
         assertTrue(lines.stream().anyMatch(line -> line.type() == MarkdownLineType.LIST && line.text().startsWith("• 新增功能")));
         assertTrue(lines.stream().noneMatch(line -> line.text().contains("??")));
+        assertTrue(lines.stream().noneMatch(line -> line.text().contains("😊")));
+        assertTrue(lines.stream().noneMatch(line -> line.text().contains("☺")));
         assertTrue(lines.stream().anyMatch(line -> line.type() == MarkdownLineType.RULE));
     }
 }

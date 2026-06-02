@@ -90,7 +90,15 @@
     │   │       ├── McpTransport.java
     │   │       └── StdioMcpTransport.java
     │   ├── session
+    │   │   ├── BootstrappedSessionStore.java
     │   │   ├── InMemorySessionStore.java
+    │   │   ├── JsonlSessionStore.java
+    │   │   ├── SessionReplayer.java
+    │   │   ├── model
+    │   │   │   ├── SessionBranch.java
+    │   │   │   ├── SessionEvent.java
+    │   │   │   ├── SessionEventType.java
+    │   │   │   └── SessionReplayResult.java
     │   │   └── SessionStore.java
     │   ├── skill
     │   │   ├── SkillIndexRenderer.java
@@ -103,7 +111,8 @@
     │   │   └── PromptPaths.java
     │   ├── runtime
     │   │   ├── AgentRuntime.java
-    │   │   └── AgentRuntimeFactory.java
+    │   │   ├── AgentRuntimeFactory.java
+    │   │   └── WorkspacePaths.java
     │   ├── tui
     │   │   ├── AgentTuiWindow.java
     │   │   ├── TuiAgentEventHandler.java
@@ -157,6 +166,7 @@
         ├── BuiltinToolsTest.java
         ├── ContextBuilderTest.java
         ├── DeepSeekProviderTest.java
+        ├── JsonlSessionStoreTest.java
         ├── LocalMcpServerTest.java
         ├── McpConfigLoaderTest.java
         ├── McpClientTest.java
@@ -164,6 +174,12 @@
         ├── PromptLoaderTest.java
         ├── TranscriptSummarizerTest.java
         └── SkillRepositoryTest.java
+├── workspace
+│   ├── README.md
+│   ├── mcp.json.example
+│   ├── skills
+│   ├── sessions
+│   └── memory
 ```
 
 ## 架构
@@ -251,15 +267,34 @@ src/main/java/dev/agentmvp/runtime/AgentRuntime.java
 
 ### 2. SessionStore
 
-`SessionStore` 保存完整原始历史，不做有损压缩。
-
-当前 MVP 只有内存实现：
+`SessionStore` 保存完整原始历史，不做有损压缩。当前运行时默认使用 JSONL 事件日志：
 
 ```text
+workspace/sessions/default.jsonl
+```
+
+每一行都是一个 append-only 事件，而不是直接保存最终 messages：
+
+```jsonl
+{"seq":1,"type":"session_created",...}
+{"seq":2,"type":"branch_created","branchId":"main",...}
+{"seq":3,"type":"run_started","branchId":"main",...}
+{"seq":4,"type":"message_appended","branchId":"main","message":{"role":"user","content":"你好"},...}
+```
+
+相关文件：
+
+```text
+src/main/java/dev/agentmvp/session/JsonlSessionStore.java
+src/main/java/dev/agentmvp/session/SessionReplayer.java
+src/main/java/dev/agentmvp/session/BootstrappedSessionStore.java
 src/main/java/dev/agentmvp/session/InMemorySessionStore.java
 ```
 
 这层的职责是保存事实来源。真正发给 LLM 的上下文由 `ContextBuilder` 重新构造。
+
+`BootstrappedSessionStore` 会把当前 system prompt 和 Skill 索引拼到消息最前面，
+但不会把它们写入 JSONL。这样 prompt 或 Skill 改动后，恢复 session 时仍使用当前运行环境。
 
 ### 3. ContextBuilder + 压缩
 
@@ -398,13 +433,13 @@ description: 网页访问经验。用于判断什么时候用 web_fetch，什么
 这里写完整 Skill 说明。
 ```
 
-所以新增 Skill 不需要改 Java 代码：只要在项目根目录新建 `skills/某个目录/SKILL.md`，
+所以新增 Skill 不需要改 Java 代码：只要在 `workspace/skills/某个目录/SKILL.md`，
 并在 frontmatter 写好 `name` 和 `description`，下次启动时就会被扫描进 Skill 索引。
 
 启动时只扫描轻量索引：
 
 ```text
-SkillRepository.scan("skills")
+SkillRepository.scan("workspace/skills")
     ↓
 读取每个 SKILL.md 的 name / description
     ↓
@@ -495,8 +530,8 @@ src/main/java/dev/agentmvp/mcp/transport/StdioMcpTransport.java
 src/main/java/dev/agentmvp/mcp/transport/HttpMcpTransport.java
 ```
 
-外部 MCP 通过项目根目录的 `mcp.json` 加载。
-仓库只提交 `mcp.json.example`，真实 `mcp.json` 会被 `.gitignore` 忽略，避免把本地路径或密钥提交出去。
+外部 MCP 通过 `workspace/mcp.json` 加载。
+仓库只提交 `workspace/mcp.json.example`，真实 `workspace/mcp.json` 会被 `.gitignore` 忽略，避免把本地路径或密钥提交出去。
 
 本地 stdio MCP 示例：
 
@@ -693,9 +728,10 @@ mvn test
 
 - `ContextBuilderTest`：旧 turn 压缩后不会残留半截 `tool_call` 协议。
 - `AgentLoopTest`：SSE delta 能组装成 assistant；多个工具调用后能写回 `tool` 消息；`reasoning_content` 会独立进入事件流并保存到 assistant message。
+- `JsonlSessionStoreTest`：验证 JSONL 事件日志可恢复、可分支、可裁剪半截工具协议，并且 bootstrap 消息不落盘。
 - `DeepSeekProviderTest`：DeepSeek 使用 OpenAI-compatible `/chat/completions` + `stream=true` 请求形状，并默认带 `thinking.type=enabled`、`reasoning_effort=high`。
 - `McpClientTest`：通过 Mock MCP Server 跑通 `initialize`、`tools/list`、`tools/call`。
-- `McpConfigLoaderTest`：验证没有 `mcp.json` 时为空配置，并能解析 stdio/HTTP 两种 MCP 配置。
+- `McpConfigLoaderTest`：验证没有 MCP 配置时为空配置，并能解析 stdio/HTTP 两种 MCP 配置。
 - `LocalMcpServerTest`：不用任何 MCP SDK，启动本地 HTTP JSON-RPC Server，再用 `McpClient` 调通本地工具。
 - `BuiltinToolsTest`：四个内置工具统一注册到 `ToolRegistry`，并验证 read/write/edit/bash 的核心行为。
 - `SkillRepositoryTest`：扫描 Skill 索引，渲染 system prompt，并按 name 加载完整 SKILL.md。
@@ -705,22 +741,23 @@ mvn test
 
 ## 当前边界
 
-这是最小 MVP，只实现四块：
+这是最小 MVP，当前实现这些核心能力：
 
 - Agent loop
 - 上下文压缩
 - MCP 工具适配
+- JSONL session 持久化
 - Skill 适配层
 - Lanterna TUI 入口
 
 没有实现：
 
-- 长期记忆
 - 完整 Skill 系统
 - 浏览器工具
 - web_fetch 安全规则
-- 持久化 session
 - 真实 tokenizer
 - MCP 鉴权、通知处理和完整生命周期管理
+- TUI 分支切换命令
+- 长期记忆
 
 这些都可以在当前结构上继续扩展，但不属于这个 MVP。

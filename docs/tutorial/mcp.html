@@ -27,11 +27,11 @@
         </section>
 
         <section class="section" id="config">
-          <h2>源码对照：通过 mcp.json 接入外部 MCP</h2>
+          <h2>源码对照：通过 workspace/mcp.json 接入外部 MCP</h2>
           <div class="translation">
             <div class="code-pane">
               <span class="label">AgentRuntimeFactory.java</span>
-              <pre><code>McpConfig mcpConfig = new McpConfigLoader(objectMapper).loadIfExists(Path.of("mcp.json"));
+              <pre><code>McpConfig mcpConfig = new McpConfigLoader(objectMapper).loadIfExists(WorkspacePaths.MCP_CONFIG);
 McpClientFactory clientFactory = new McpClientFactory(httpClient, objectMapper);
 McpToolLoader toolLoader = new McpToolLoader(toolRegistry, mcpToolExecutor);
 
@@ -42,8 +42,8 @@ for (McpServerConfig serverConfig : mcpConfig.servers()) {
             </div>
             <div class="explain-pane">
               <span class="label">中文解释</span>
-              <p class="note-line">没有 `mcp.json` 时返回空配置，Agent 仍然只用内置工具启动。</p>
-              <p class="note-line">有 `mcp.json` 时，配置里的每个 server 都会变成一个 `McpClient`。</p>
+              <p class="note-line">没有 `workspace/mcp.json` 时返回空配置，Agent 仍然只用内置工具启动。</p>
+              <p class="note-line">有 `workspace/mcp.json` 时，配置里的每个 server 都会变成一个 `McpClient`。</p>
               <p class="note-line">本地 MCP 用 stdio 启动子进程；HTTP MCP 走 POST JSON-RPC。</p>
             </div>
           </div>
@@ -53,7 +53,7 @@ for (McpServerConfig serverConfig : mcpConfig.servers()) {
           <h2>配置形状：先不安装具体 MCP，也能保留接入能力</h2>
           <div class="translation">
             <div class="code-pane">
-              <span class="label">mcp.json.example</span>
+              <span class="label">workspace/mcp.json.example</span>
               <pre><code>{
   "mcpServers": {
   }
@@ -62,7 +62,7 @@ for (McpServerConfig serverConfig : mcpConfig.servers()) {
             <div class="explain-pane">
               <span class="label">中文解释</span>
               <p class="note-line">仓库提交空模板，表示当前不绑定任何具体 MCP。</p>
-              <p class="note-line">真实 `mcp.json` 是本地配置，已加入 `.gitignore`。</p>
+              <p class="note-line">真实 `workspace/mcp.json` 是本地配置，已加入 `.gitignore`。</p>
               <p class="note-line">以后要接 MCP，只改 JSON，不改 AgentLoop。</p>
             </div>
           </div>

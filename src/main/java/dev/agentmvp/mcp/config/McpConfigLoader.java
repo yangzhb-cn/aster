@@ -11,7 +11,7 @@ import java.util.Objects;
 /**
  * 读取本地 MCP 配置文件。
  *
- * <p>教学版默认读取项目根目录的 mcp.json。
+ * <p>教学版默认读取 workspace/mcp.json。
  * 没有这个文件时返回空配置，表示当前 Agent 只使用内置工具。</p>
  */
 public class McpConfigLoader {

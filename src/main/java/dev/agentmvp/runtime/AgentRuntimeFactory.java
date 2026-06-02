@@ -20,7 +20,9 @@ import dev.agentmvp.mcp.config.model.McpServerConfig;
 import dev.agentmvp.mcp.McpToolExecutor;
 import dev.agentmvp.prompt.PromptLoader;
 import dev.agentmvp.prompt.PromptPaths;
-import dev.agentmvp.session.InMemorySessionStore;
+import dev.agentmvp.session.BootstrappedSessionStore;
+import dev.agentmvp.session.JsonlSessionStore;
+import dev.agentmvp.session.SessionStore;
 import dev.agentmvp.skill.SkillIndexRenderer;
 import dev.agentmvp.skill.SkillRepository;
 import dev.agentmvp.tool.LocalToolExecutor;
@@ -32,6 +34,8 @@ import okhttp3.OkHttpClient;
 import java.io.IOException;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -42,6 +46,14 @@ import java.util.Objects;
  */
 public class AgentRuntimeFactory {
     /**
+     * 单次用户请求内允许的最大工具循环轮数。
+     *
+     * <p>这里不是聊天 session 的总轮数，而是一次 run() 里
+     * “LLM -> tool_calls -> tool results -> LLM”的最大循环次数。</p>
+     */
+    private static final int MAX_TOOL_ROUNDS = 50;
+
+    /**
      * 使用默认配置创建 Agent 运行时。
      */
     public AgentRuntime create(AgentEventHandler eventHandler) throws IOException {
@@ -51,6 +63,7 @@ public class AgentRuntimeFactory {
         if (provider.apiKey() == null || provider.apiKey().isBlank()) {
             throw new IllegalStateException("Missing API key. Set DEEPSEEK_API_KEY or OPENAI_COMPATIBLE_API_KEY.");
         }
+        WorkspacePaths.ensureDirectories();
 
         ObjectMapper objectMapper = new ObjectMapper();
         PromptLoader promptLoader = new PromptLoader();
@@ -68,21 +81,25 @@ public class AgentRuntimeFactory {
         McpToolExecutor mcpToolExecutor = new McpToolExecutor();
         ToolRegistry toolRegistry = new ToolRegistry(localToolExecutor, mcpToolExecutor);
 
-        SkillRepository skillRepository = SkillRepository.scan(Path.of("skills"));
+        SkillRepository skillRepository = SkillRepository.scan(WorkspacePaths.SKILLS);
         // 所有本地内置工具最终都通过 ToolRegistry.registerLocal 注册。
         BuiltinTools.registerAll(toolRegistry, Path.of("."), skillRepository);
         loadConfiguredMcpServers(objectMapper, httpClient, toolRegistry, mcpToolExecutor);
         ParallelToolExecutor parallelToolExecutor = ParallelToolExecutor.fixedPool(toolRegistry, 4);
 
-        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        List<Message> bootstrapMessages = new ArrayList<>();
         // 基础 system prompt 来自 jar 内置 resources/prompts/system.md。
-        sessionStore.append(Message.system(systemPrompt));
+        bootstrapMessages.add(Message.system(systemPrompt));
 
         String skillIndex = new SkillIndexRenderer().render(skillRepository.listMetadata());
         if (!skillIndex.isBlank()) {
             // Skill 索引只包含 name/description；完整 SKILL.md 由 load_skill 按需加载。
-            sessionStore.append(Message.system(skillIndex));
+            bootstrapMessages.add(Message.system(skillIndex));
         }
+        SessionStore sessionStore = new BootstrappedSessionStore(
+                bootstrapMessages,
+                JsonlSessionStore.openDefault(objectMapper, WorkspacePaths.SESSIONS)
+        );
 
         AgentLoop agentLoop = new AgentLoop(
                 provider,
@@ -96,16 +113,16 @@ public class AgentRuntimeFactory {
                 toolRegistry,
                 parallelToolExecutor,
                 eventHandler,
-                8
+                MAX_TOOL_ROUNDS
         );
 
         return new AgentRuntime(agentLoop, parallelToolExecutor, mcpToolExecutor, provider, skillRepository.listMetadata().size());
     }
 
     /**
-     * 从 mcp.json 加载外部 MCP Server。
+     * 从 workspace/mcp.json 加载外部 MCP Server。
      *
-     * <p>没有 mcp.json 时什么都不做；有 mcp.json 时，每个 server 都会经历：
+     * <p>没有 workspace/mcp.json 时什么都不做；有配置时，每个 server 都会经历：
      * 创建客户端 -> initialize -> tools/list -> 注册成普通 Tool。</p>
      */
     private void loadConfiguredMcpServers(
@@ -114,7 +131,7 @@ public class AgentRuntimeFactory {
             ToolRegistry toolRegistry,
             McpToolExecutor mcpToolExecutor
     ) throws IOException {
-        McpConfig mcpConfig = new McpConfigLoader(objectMapper).loadIfExists(Path.of("mcp.json"));
+        McpConfig mcpConfig = new McpConfigLoader(objectMapper).loadIfExists(WorkspacePaths.MCP_CONFIG);
         McpClientFactory clientFactory = new McpClientFactory(httpClient, objectMapper);
         McpToolLoader toolLoader = new McpToolLoader(toolRegistry, mcpToolExecutor);
 

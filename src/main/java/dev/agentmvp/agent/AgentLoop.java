@@ -114,10 +114,22 @@ public class AgentLoop {
      * 执行一次用户请求，直到模型返回最终答案。
      */
     public String run(String userInput) throws IOException {
-        // SessionStore 保存的是完整原始会话。这里不要先压缩再保存，
-        // 否则 debug、恢复会话、后续重新压缩都会丢失真实历史。
-        sessionStore.append(Message.user(userInput));
-        return continueUntilFinal();
+        sessionStore.recordRunStarted(userInput);
+        try {
+            // SessionStore 保存的是完整原始会话。这里不要先压缩再保存，
+            // 否则 debug、恢复会话、后续重新压缩都会丢失真实历史。
+            sessionStore.append(Message.user(userInput));
+            String answer = continueUntilFinal();
+            sessionStore.recordRunFinished(answer);
+            return answer;
+        } catch (IOException | RuntimeException e) {
+            try {
+                sessionStore.recordRunInterrupted(e.getMessage());
+            } catch (IOException ignored) {
+                // 记录中断失败不能覆盖真正导致 run 失败的异常。
+            }
+            throw e;
+        }
     }
 
     /**
@@ -179,7 +191,7 @@ public class AgentLoop {
     /**
      * 并行执行所有工具调用，并为每个调用写入一条 tool 结果消息。
      */
-    private void executeToolCalls(List<ToolCall> toolCalls) {
+    private void executeToolCalls(List<ToolCall> toolCalls) throws IOException {
         for (ToolCall call : toolCalls) {
             eventHandler.onEvent(new AgentEvent.ToolCallStart(
                     call.id(),

@@ -30,7 +30,7 @@
           <div class="panel">
             <h2>当前实现范围</h2>
             <div class="steps">
-              <div class="step"><b>1</b><p>按项目根目录 `skills/*/SKILL.md` 扫描本地目录，放进去就能被索引。</p></div>
+              <div class="step"><b>1</b><p>按 `workspace/skills/*/SKILL.md` 扫描本地目录，放进去就能被索引。</p></div>
               <div class="step"><b>2</b><p>只解析 frontmatter 里的 `name` 和 `description`。</p></div>
               <div class="step"><b>3</b><p>把索引注入 system prompt，让 LLM 自己判断是否需要加载。</p></div>
               <div class="step"><b>4</b><p>通过 `load_skill(name)` 渐进式读取完整 `SKILL.md`。</p></div>

@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a class="active" href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a class="active" href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -56,7 +56,7 @@
   NoopTaskHandler.java              # 教学版占位任务
 memory/
   MemoryExtractionTaskHandler.java  # 长期记忆抽取任务
-  MemoryExtractionSchedulingHandler.java # RunFinished Hook
+  MemoryExtractionHook.java         # afterRun Hook，提交 memory_extract 后台任务
   model/                            # Task、Trigger、Action、Run</code></pre>
               <p>模型类放在 `model` 子包，主包只保留执行框架。</p>
             </div>
@@ -143,7 +143,7 @@ eventBus.publish(new BackgroundTaskEvent.TaskCompleted(run));</code></pre>
               <span class="label">中文解释</span>
               <p class="note-line">Executor 不写具体业务逻辑，只按 action 找对应 handler。</p>
               <p class="note-line">每次运行都会写 `workspace/tasks/runs.jsonl`，方便审计和回溯。</p>
-              <p class="note-line">完成或失败都会发布事件，外部可以接 TUI、Web、Hook。</p>
+              <p class="note-line">完成或失败都会发布事件，外部可以接 TUI、Web、日志。</p>
             </div>
           </div>
         </section>

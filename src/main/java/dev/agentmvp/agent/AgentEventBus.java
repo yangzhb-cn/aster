@@ -14,7 +14,7 @@ import java.util.UUID;
  *
  * <p>AgentLoop 只调用 publish(AgentEvent)。EventBus 负责补齐统一 metadata，
  * 再同步分发给多个消费者。教学版先保持同步分发，保证事件顺序清晰；
- * 后续如果 Hook 很慢，再给特定 handler 外面包异步队列。</p>
+ * 后续如果 Web 或日志出口很慢，再给特定 handler 外面包异步队列。</p>
  */
 public class AgentEventBus {
     private final String sessionName;
@@ -50,6 +50,20 @@ public class AgentEventBus {
     public synchronized void beginRun() {
         runId = UUID.randomUUID().toString();
         sequence = 0;
+    }
+
+    /**
+     * 当前 runId，供 Hook 创建后台任务或审计记录时使用。
+     */
+    public synchronized String currentRunId() {
+        return runId;
+    }
+
+    /**
+     * 当前 session 名称。
+     */
+    public String sessionName() {
+        return sessionName;
     }
 
     /**

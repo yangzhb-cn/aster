@@ -11,6 +11,8 @@
 - MCP 工具适配
 - JSONL session 持久化
 - Skill 渐进式加载
+- Hook 流程扩展
+- 后台任务与长期记忆抽取
 - TUI 事件展示
 
 ## 技术栈
@@ -49,6 +51,11 @@ AgentRuntime
     │   │       └── McpToolExecutor
     │   │               ↓
     │   │            McpClient
+    │   ├── HookRegistry
+    │   │       ├── BEFORE_LLM_REQUEST          注入长期记忆 / 后续可过滤工具
+    │   │       ├── BEFORE_TOOL_CALL            工具权限 / 后续 HITL 审批
+    │   │       ├── BEFORE_TOOL_RESULT_APPEND   大工具结果卸载到 JSONL
+    │   │       └── AFTER_RUN                   提交长期记忆抽取后台任务
     │   └── AgentEventBus
     │           ↓
     │       AgentEventEnvelope
@@ -56,7 +63,7 @@ AgentRuntime
     │       AgentEventHandler
     │           ├── TuiAgentEventHandler
     │           ├── Web SSE handler    后续可接
-    │           └── Hook handler       后续可接
+    │           └── Log handler        后续可接
     └── BackgroundTaskManager
             ├── BackgroundTaskStore
             │       ├── workspace/tasks/tasks.jsonl
@@ -85,7 +92,7 @@ AgentEvent
     ↓ AgentEventBus 包装 metadata
 AgentEventEnvelope
     ↓
-TUI / Web / Hook / Log
+TUI / Web / Log
 ```
 
 Anthropic、Google 这类非 OpenAI-compatible 供应商后续可以新增各自 Parser，但输出仍然是同一套 `ProviderStreamEvent`。
@@ -114,12 +121,15 @@ sequence
 timestamp
 ```
 
-这样 TUI、Web、Hook、日志都可以消费同一套事件流。
+这样 TUI、Web、日志都可以消费同一套事件流。
+
+Hook 不走事件消费链。Hook 是流程插槽，注册在 `HookRegistry`，用于改写、阻断或追加主流程动作。
 
 ## 模块职责
 
 ```text
 agent/      AgentLoop、AgentEvent、AgentEventBus
+hook/       HookPoint、HookRegistry、HookHandler、AgentHookPoints
 llm/        OpenAI-compatible 流式客户端和 ProviderStreamEvent
 context/    上下文构造、turn 切分、摘要压缩、工具协议校验
 tool/       统一工具层、内置工具、并行工具执行、工具结果卸载

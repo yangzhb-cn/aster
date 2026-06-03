@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>hook 包 · 流程拦截层</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/tutorial.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <nav class="nav-links">
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a class="active" href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="layout">
+      <article>
+        <section class="section" id="what">
+          <p class="eyebrow">Package · dev.agentmvp.hook</p>
+          <h1>hook 包：把“流程拦截”从事件广播里拆出来。</h1>
+          <p class="lead">事件是事后通知，Hook 是流程节点。长期记忆注入、对话引导适合 `beforeLlmRequest`；工具权限、高危工具审查、HITL 适合 `beforeToolCall`；长期记忆抽取适合 `afterRun`。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂 hook 包</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>AgentLoop
+  -> HookRegistry.apply(BEFORE_LLM_REQUEST)
+       -> LongTermMemoryInjectHook
+       -> GuidanceHook(后续)
+  -> LLM
+  -> HookRegistry.decide(BEFORE_TOOL_CALL)
+       -> ToolPermissionHook(后续)
+       -> HumanApprovalHook(后续)
+  -> ToolExecutor
+  -> HookRegistry.apply(BEFORE_TOOL_RESULT_APPEND)
+       -> ToolResultOffloadHook
+  -> HookRegistry.fireQuietly(AFTER_RUN)
+       -> MemoryExtractionHook</code></pre>
+              <p>HookRegistry 是可改写、可阻断、可注册扩展的流程拦截层。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>hook/
+  HookPoint.java                    # 生命周期插槽
+  HookHandler.java                  # 单个 Hook 处理器
+  HookRegistry.java                 # 注册并触发 Hook
+  AgentHookPoints.java              # 当前开放的 Hook 点
+  BeforeLlmRequestContext.java      # LLM 前可改写 messages/tools
+  BeforeToolCallContext.java        # 工具前可审查 toolCall
+  BeforeToolResultAppendContext.java # tool 消息写入前可改写结果
+  AfterRunContext.java              # run 完成后触发后台动作
+  ToolHookDecision.java             # allow / deny / pause
+  ToolHookDecisionType.java         # 决策枚举</code></pre>
+              <p>hook 包只定义流程协议，具体业务 Hook 放回 memory 或后续 permission 包。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>AgentLoop -> ContextBuilder: build()
+AgentLoop -> HookRegistry: BEFORE_LLM_REQUEST
+HookRegistry -> MemoryHook: 注入长期记忆
+AgentLoop -> LLM: stream()
+LLM -> AgentLoop: tool_calls
+AgentLoop -> HookRegistry: BEFORE_TOOL_CALL
+HookRegistry -> AgentLoop: allow / deny
+AgentLoop -> HookRegistry: BEFORE_TOOL_RESULT_APPEND
+HookRegistry -> OffloadHook: 大结果卸载
+AgentLoop -> HookRegistry: AFTER_RUN</code></pre>
+              <p>Hook 发生在动作之前或 run 完成之后，不替代事件总线。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>请求前
+  -> Hook 可追加 system/user message
+
+工具前
+  -> Hook 可允许或拒绝
+  -> 拒绝时写回 role=tool 错误消息
+
+结束后
+  -> Hook 提交后台任务
+  -> 不阻塞主回答返回</code></pre>
+              <p>后续 HITL 只需要把 pause 决策接到 TUI 审批流程。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="code">
+          <h2>源码对照：HookPoint + HookHandler</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">HookPoint.java / HookHandler.java</span>
+              <pre><code>public record HookPoint&lt;C, R&gt;(String name) {
+}
+
+@FunctionalInterface
+public interface HookHandler&lt;C, R&gt; {
+    R handle(C context) throws IOException;
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">`HookPoint` 是主流程的稳定插槽，比如 `before_llm_request`。</p>
+              <p class="note-line">`HookHandler` 是挂到插槽上的具体逻辑。</p>
+              <p class="note-line">新增 Hook 点时，只新增 HookPoint 和对应 Context，不再改大接口。</p>
+              <p class="note-line">新增业务逻辑时，只注册新的 HookHandler。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="memory">
+          <h2>源码对照：长期记忆已经迁到 Hook</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">AgentRuntimeFactory.java</span>
+              <pre><code>HookRegistry hookRegistry = new HookRegistry();
+hookRegistry.register(
+        AgentHookPoints.BEFORE_LLM_REQUEST,
+        new LongTermMemoryInjectHook(memoryStore, memoryPromptRenderer)
+);
+hookRegistry.register(
+        AgentHookPoints.BEFORE_TOOL_RESULT_APPEND,
+        new ToolResultOffloadHook(ToolResultOffloader.defaults(objectMapper, WorkspacePaths.TOOL_RESULTS))
+);
+hookRegistry.register(
+        AgentHookPoints.AFTER_RUN,
+        new MemoryExtractionHook(backgroundTaskManager)
+);</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">长期记忆注入不再写在 AgentLoop 里。</p>
+              <p class="note-line">每轮结束后的记忆抽取也不再伪装成普通事件监听器。</p>
+              <p class="note-line">工具结果卸载也不再硬塞在 AgentLoop，统一挂到工具结果写入前 Hook。</p>
+              <p class="note-line">它们都是 HookRegistry 中注册的 Hook。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="quiz">
+          <div class="quiz" data-answer="b" data-right="对。工具是否允许执行必须发生在工具执行前，所以应该是 beforeToolCall Hook。" data-wrong="不对。事件监听是事后通知，不能阻止已经发生的工具执行。">
+            <h2>场景题</h2>
+            <p>高危险 bash 命令需要人工审批，应该挂在哪个阶段？</p>
+            <button class="quiz-option" data-value="a">AgentEventHandler 监听 ToolCallDone。</button>
+            <button class="quiz-option" data-value="b">beforeToolCall Hook。</button>
+            <button class="quiz-option" data-value="c">ContextBuilder 压缩时。</button>
+            <div class="quiz-actions"><button data-check-quiz>检查答案</button></div>
+            <div class="quiz-feedback"></div>
+          </div>
+        </section>
+
+        <nav class="footer-nav">
+          <a class="button secondary" href="agent.html">上一包：agent</a>
+          <a class="button" href="context.html">下一包：context</a>
+        </nav>
+      </article>
+      <aside class="toc">
+        <strong>本页导航</strong>
+        <a href="#what">Hook 职责</a>
+        <a href="#diagrams">四张图</a>
+        <a href="#code">Hook 接口</a>
+        <a href="#memory">长期记忆</a>
+        <a href="#quiz">场景题</a>
+      </aside>
+    </div>
+  </main>
+  <script src="assets/tutorial.js"></script>
+</body>
+</html>

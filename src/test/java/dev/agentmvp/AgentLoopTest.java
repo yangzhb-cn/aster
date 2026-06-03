@@ -10,12 +10,18 @@ import dev.agentmvp.context.ContextBuilder;
 import dev.agentmvp.context.SimpleTokenEstimator;
 import dev.agentmvp.context.TranscriptSummarizer;
 import dev.agentmvp.context.model.ContextOptions;
+import dev.agentmvp.hook.AgentHookPoints;
+import dev.agentmvp.hook.BeforeToolCallContext;
+import dev.agentmvp.hook.HookHandler;
+import dev.agentmvp.hook.HookRegistry;
+import dev.agentmvp.hook.ToolHookDecision;
 import dev.agentmvp.llm.StreamingChatClient;
 import dev.agentmvp.llm.model.Message;
 import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
 import dev.agentmvp.llm.model.ProviderStreamEvent;
 import dev.agentmvp.llm.model.TokenUsage;
 import dev.agentmvp.llm.model.ToolCallDelta;
+import dev.agentmvp.memory.LongTermMemoryInjectHook;
 import dev.agentmvp.memory.MarkdownMemoryStore;
 import dev.agentmvp.memory.MemoryPromptRenderer;
 import dev.agentmvp.memory.model.MemoryCandidate;
@@ -39,6 +45,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -128,6 +135,74 @@ class AgentLoopTest {
                 .filter(event -> event instanceof AgentEvent.AssistantToken)
                 .map(event -> ((AgentEvent.AssistantToken) event).text())
                 .toList());
+    }
+
+    /**
+     * 验证 beforeToolCall Hook 可以拒绝工具执行，同时仍写回配对的 tool 错误消息。
+     */
+    @Test
+    void beforeToolCallHookCanDenyToolExecutionWithoutBreakingProtocol() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        AtomicInteger executed = new AtomicInteger();
+
+        LocalToolExecutor localExecutor = new LocalToolExecutor(objectMapper);
+        ToolRegistry toolRegistry = new ToolRegistry(localExecutor, new McpToolExecutor());
+        toolRegistry.registerLocal(
+                Tool.local(
+                        "dangerous_bash",
+                        "Dangerous bash",
+                        "Dangerous command.",
+                        Map.of("type", "object", "properties", Map.of())
+                ),
+                (call, arguments) -> {
+                    executed.incrementAndGet();
+                    return ToolResult.text(call.id(), "should not run");
+                }
+        );
+
+        Queue<List<ProviderStreamEvent>> scriptedStreams = new ArrayDeque<>(List.of(
+                List.of(toolCallEvent(0, "call_danger", "dangerous_bash", "{}")),
+                List.of(textEvent("done"))
+        ));
+        HookHandler<BeforeToolCallContext, ToolHookDecision> denyDangerousTool =
+                context -> ToolHookDecision.deny("高危险工具需要审批");
+        HookRegistry hookRegistry = HookRegistry.empty();
+        hookRegistry.register(AgentHookPoints.BEFORE_TOOL_CALL, denyDangerousTool);
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            for (ProviderStreamEvent event : scriptedStreams.remove()) {
+                handler.onEvent(event);
+            }
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                new OpenAiCompatibleProvider("fake", "http://localhost", "test-key", "fake-model"),
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                hookRegistry,
+                AgentEventBus.noop("test"),
+                4
+        );
+
+        assertEquals("done", loop.run("run dangerous tool"));
+        assertEquals(0, executed.get());
+
+        Message toolMessage = sessionStore.loadMessages().stream()
+                .filter(message -> "tool".equals(message.role()))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("call_danger", toolMessage.toolCallId());
+        assertTrue(toolMessage.content().contains("工具调用被 Hook 拒绝执行"));
+        assertTrue(toolMessage.content().contains("高危险工具需要审批"));
     }
 
     /**
@@ -455,6 +530,63 @@ class AgentLoopTest {
     }
 
     /**
+     * 验证 before_llm_request Hook 可以改写暴露给模型的工具列表。
+     */
+    @Test
+    void beforeLlmRequestHookCanRewriteVisibleTools() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        LocalToolExecutor localExecutor = new LocalToolExecutor(objectMapper);
+        ToolRegistry toolRegistry = new ToolRegistry(localExecutor, new McpToolExecutor());
+        toolRegistry.registerLocal(
+                Tool.local(
+                        "hidden_tool",
+                        "Hidden tool",
+                        "This tool should be hidden by hook.",
+                        Map.of("type", "object", "properties", Map.of())
+                ),
+                (call, arguments) -> ToolResult.text(call.id(), "hidden")
+        );
+        HookRegistry hookRegistry = HookRegistry.empty();
+        hookRegistry.register(
+                AgentHookPoints.BEFORE_LLM_REQUEST,
+                context -> context.withTools(List.of())
+        );
+        List<AgentEvent> events = new ArrayList<>();
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            assertTrue(request.tools() == null || request.tools().isEmpty());
+            assertEquals(null, request.toolChoice());
+            handler.onEvent(textEvent("answer"));
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                new OpenAiCompatibleProvider("fake", "http://localhost", "test-key", "fake-model"),
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                hookRegistry,
+                eventBus(events),
+                4
+        );
+
+        assertEquals("answer", loop.run("hello"));
+        AgentEvent.LlmRequestStarted requestStarted = events.stream()
+                .filter(event -> event instanceof AgentEvent.LlmRequestStarted)
+                .map(event -> (AgentEvent.LlmRequestStarted) event)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(0, requestStarted.toolCount());
+    }
+
+    /**
      * 验证 usage chunk 会转成 UsageReported 事件，并带上最大上下文窗口。
      */
     @Test
@@ -530,6 +662,11 @@ class AgentLoopTest {
             handler.onEvent(textEvent("answer"));
             handler.onDone();
         };
+        HookRegistry hookRegistry = HookRegistry.empty();
+        hookRegistry.register(
+                AgentHookPoints.BEFORE_LLM_REQUEST,
+                new LongTermMemoryInjectHook(memoryStore, memoryPromptRenderer)
+        );
 
         AgentLoop loop = new AgentLoop(
                 new OpenAiCompatibleProvider("fake", "http://localhost", "test-key", "fake-model"),
@@ -542,9 +679,7 @@ class AgentLoopTest {
                 fakeStreamingLlm,
                 toolRegistry,
                 new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
-                ToolResultOffloader.inlineOnly(),
-                memoryStore,
-                memoryPromptRenderer,
+                hookRegistry,
                 AgentEventBus.noop("test"),
                 4
         );

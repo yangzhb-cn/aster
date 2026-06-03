@@ -6,18 +6,28 @@ import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
 import dev.agentmvp.llm.model.ToolCall;
 import dev.agentmvp.context.ContextBuilder;
 import dev.agentmvp.context.model.ContextBuildResult;
+import dev.agentmvp.hook.AgentHookPoints;
+import dev.agentmvp.hook.AfterRunContext;
+import dev.agentmvp.hook.BeforeLlmRequestContext;
+import dev.agentmvp.hook.BeforeToolCallContext;
+import dev.agentmvp.hook.BeforeToolResultAppendContext;
+import dev.agentmvp.hook.HookRegistry;
+import dev.agentmvp.hook.ToolHookDecision;
+import dev.agentmvp.hook.ToolHookDecisionType;
 import dev.agentmvp.llm.StreamingChatClient;
 import dev.agentmvp.llm.model.ChatRequest;
 import dev.agentmvp.llm.model.ProviderStreamEvent;
-import dev.agentmvp.memory.MarkdownMemoryStore;
-import dev.agentmvp.memory.MemoryPromptRenderer;
 import dev.agentmvp.session.SessionStore;
 import dev.agentmvp.tool.ParallelToolExecutor;
 import dev.agentmvp.tool.ToolRegistry;
 import dev.agentmvp.tool.model.ToolResult;
+import dev.agentmvp.tool.result.ToolResultOffloadHook;
 import dev.agentmvp.tool.result.ToolResultOffloader;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -36,9 +46,7 @@ public class AgentLoop {
     private final StreamingChatClient streamingChatClient;
     private final ToolRegistry toolRegistry;
     private final ParallelToolExecutor parallelToolExecutor;
-    private final ToolResultOffloader toolResultOffloader;
-    private final MarkdownMemoryStore memoryStore;
-    private final MemoryPromptRenderer memoryPromptRenderer;
+    private final HookRegistry hookRegistry;
     private final AgentEventBus eventBus;
     private final int maxToolRounds;
     private final boolean thinkingEnabled;
@@ -61,9 +69,7 @@ public class AgentLoop {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
-                ToolResultOffloader.inlineOnly(),
-                null,
-                null,
+                HookRegistry.empty(),
                 eventBus,
                 maxToolRounds,
                 false,
@@ -89,9 +95,7 @@ public class AgentLoop {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
-                toolResultOffloader,
-                null,
-                null,
+                registryWithToolResultOffloader(toolResultOffloader),
                 eventBus,
                 maxToolRounds,
                 false,
@@ -116,9 +120,7 @@ public class AgentLoop {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
-                ToolResultOffloader.inlineOnly(),
-                null,
-                null,
+                HookRegistry.empty(),
                 eventBus,
                 maxToolRounds,
                 provider.thinkingEnabled(),
@@ -144,9 +146,7 @@ public class AgentLoop {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
-                toolResultOffloader,
-                null,
-                null,
+                registryWithToolResultOffloader(toolResultOffloader),
                 eventBus,
                 maxToolRounds,
                 provider.thinkingEnabled(),
@@ -161,9 +161,7 @@ public class AgentLoop {
             StreamingChatClient streamingChatClient,
             ToolRegistry toolRegistry,
             ParallelToolExecutor parallelToolExecutor,
-            ToolResultOffloader toolResultOffloader,
-            MarkdownMemoryStore memoryStore,
-            MemoryPromptRenderer memoryPromptRenderer,
+            HookRegistry hookRegistry,
             AgentEventBus eventBus,
             int maxToolRounds
     ) {
@@ -174,9 +172,7 @@ public class AgentLoop {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
-                toolResultOffloader,
-                memoryStore,
-                memoryPromptRenderer,
+                hookRegistry,
                 eventBus,
                 maxToolRounds,
                 provider.thinkingEnabled(),
@@ -191,9 +187,7 @@ public class AgentLoop {
             StreamingChatClient streamingChatClient,
             ToolRegistry toolRegistry,
             ParallelToolExecutor parallelToolExecutor,
-            ToolResultOffloader toolResultOffloader,
-            MarkdownMemoryStore memoryStore,
-            MemoryPromptRenderer memoryPromptRenderer,
+            HookRegistry hookRegistry,
             AgentEventBus eventBus,
             int maxToolRounds,
             boolean thinkingEnabled,
@@ -205,13 +199,23 @@ public class AgentLoop {
         this.streamingChatClient = Objects.requireNonNull(streamingChatClient);
         this.toolRegistry = Objects.requireNonNull(toolRegistry);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
-        this.toolResultOffloader = Objects.requireNonNull(toolResultOffloader);
-        this.memoryStore = memoryStore;
-        this.memoryPromptRenderer = memoryPromptRenderer;
+        this.hookRegistry = Objects.requireNonNull(hookRegistry);
         this.eventBus = Objects.requireNonNull(eventBus);
         this.maxToolRounds = maxToolRounds;
         this.thinkingEnabled = thinkingEnabled;
         this.reasoningEffort = reasoningEffort;
+    }
+
+    /**
+     * 兼容旧构造器：传入 ToolResultOffloader 时，把它注册成工具结果写入前 Hook。
+     */
+    private static HookRegistry registryWithToolResultOffloader(ToolResultOffloader toolResultOffloader) {
+        HookRegistry registry = HookRegistry.empty();
+        registry.register(
+                AgentHookPoints.BEFORE_TOOL_RESULT_APPEND,
+                new ToolResultOffloadHook(toolResultOffloader)
+        );
+        return registry;
     }
 
     /**
@@ -230,6 +234,12 @@ public class AgentLoop {
             String answer = continueUntilFinal();
             sessionStore.recordRunFinished(answer);
             publish(new AgentEvent.RunFinished(answer));
+            hookRegistry.fireQuietly(AgentHookPoints.AFTER_RUN, new AfterRunContext(
+                    eventBus.sessionName(),
+                    eventBus.currentRunId(),
+                    userInput,
+                    answer
+            ));
             return answer;
         } catch (IOException | RuntimeException e) {
             try {
@@ -261,12 +271,22 @@ public class AgentLoop {
                     context.maxContextTokens()
             ));
             List<Map<String, Object>> tools = toolRegistry.toLlmToolSchemas();
-            List<Message> requestMessages = injectLongTermMemory(context.messages());
+            BeforeLlmRequestContext hookContext = hookRegistry.apply(AgentHookPoints.BEFORE_LLM_REQUEST, new BeforeLlmRequestContext(
+                    eventBus.sessionName(),
+                    eventBus.currentRunId(),
+                    roundNumber,
+                    model,
+                    context.maxContextTokens(),
+                    context.messages(),
+                    tools
+            ));
+            List<Message> requestMessages = hookContext.messages();
+            List<Map<String, Object>> requestTools = hookContext.tools();
             publish(new AgentEvent.LlmRequestStarted(
                     roundNumber,
                     model,
                     requestMessages.size(),
-                    tools.size()
+                    requestTools.size()
             ));
 
             // ChatRequest 是真正发给模型的输入。
@@ -275,8 +295,8 @@ public class AgentLoop {
             ChatRequest request = ChatRequest.streaming(
                     model,
                     requestMessages,
-                    tools,
-                    tools.isEmpty() ? null : "auto",
+                    requestTools,
+                    requestTools.isEmpty() ? null : "auto",
                     thinkingEnabled,
                     reasoningEffort
             );
@@ -302,39 +322,6 @@ public class AgentLoop {
         }
 
         throw new IllegalStateException("Agent stopped after max tool rounds: " + maxToolRounds);
-    }
-
-    /**
-     * 在每轮请求前动态注入长期记忆。
-     *
-     * <p>长期记忆存储在 workspace/memory/long-term-memory.md。
-     * 这里每轮都读取一次，保证上一轮后台任务刚抽取出的记忆，下一轮请求就能生效。</p>
-     */
-    private List<Message> injectLongTermMemory(List<Message> messages) throws IOException {
-        if (memoryStore == null || memoryPromptRenderer == null) {
-            return messages;
-        }
-
-        String memoryMarkdown = memoryStore.load();
-        if (!memoryStore.hasMemoryContent(memoryMarkdown)) {
-            return messages;
-        }
-
-        String memoryPrompt = memoryPromptRenderer.render(memoryMarkdown);
-        if (memoryPrompt.isBlank()) {
-            return messages;
-        }
-
-        int insertAt = 0;
-        while (insertAt < messages.size() && "system".equals(messages.get(insertAt).role())) {
-            insertAt++;
-        }
-
-        List<Message> result = new java.util.ArrayList<>(messages.size() + 1);
-        result.addAll(messages.subList(0, insertAt));
-        result.add(Message.system(memoryPrompt));
-        result.addAll(messages.subList(insertAt, messages.size()));
-        return List.copyOf(result);
     }
 
     /**
@@ -364,24 +351,62 @@ public class AgentLoop {
             ));
         }
 
-        List<ToolResult> results = parallelToolExecutor.executeAll(toolCalls);
+        List<ToolCall> allowedCalls = new ArrayList<>();
+        Map<String, ToolResult> blockedResults = new LinkedHashMap<>();
+        for (ToolCall call : toolCalls) {
+            ToolHookDecision decision = hookRegistry.decide(AgentHookPoints.BEFORE_TOOL_CALL, new BeforeToolCallContext(
+                    eventBus.sessionName(),
+                    eventBus.currentRunId(),
+                    call
+            ));
+            if (decision.type() == ToolHookDecisionType.ALLOW) {
+                allowedCalls.add(call);
+            } else {
+                blockedResults.put(
+                        call.id(),
+                        ToolResult.error(call.id(), renderBlockedToolMessage(decision))
+                                .withExecutionMetadata(call.function().name(), 0)
+                );
+            }
+        }
 
-        for (int i = 0; i < results.size(); i++) {
+        Iterator<ToolResult> allowedResults = parallelToolExecutor.executeAll(allowedCalls).iterator();
+
+        for (int i = 0; i < toolCalls.size(); i++) {
             ToolCall call = toolCalls.get(i);
-            ToolResult result = results.get(i);
-            String compactText = toolResultOffloader.compact(result);
+            ToolResult result = blockedResults.containsKey(call.id())
+                    ? blockedResults.get(call.id())
+                    : allowedResults.next();
+            BeforeToolResultAppendContext resultContext = hookRegistry.apply(
+                    AgentHookPoints.BEFORE_TOOL_RESULT_APPEND,
+                    new BeforeToolResultAppendContext(
+                            eventBus.sessionName(),
+                            eventBus.currentRunId(),
+                            call,
+                            result,
+                            result.renderText()
+                    )
+            );
+            String toolMessageText = resultContext.toolMessageText();
 
             // 工具结果必须以 role=tool 写入，并保留原始 tool_call_id。
-            // 大结果会先被 ToolResultOffloader 写入 JSONL，再把路径和预览写入上下文。
-            sessionStore.append(Message.tool(result.toolCallId(), compactText));
+            // 大结果卸载、脱敏、裁剪这类改写已经通过 before_tool_result_append Hook 完成。
+            sessionStore.append(Message.tool(result.toolCallId(), toolMessageText));
             publish(new AgentEvent.ToolCallDone(
                     result.toolCallId(),
                     call.function().name(),
-                    compactText,
+                    toolMessageText,
                     !result.error(),
                     result.elapsedMillis()
             ));
         }
+    }
+
+    private String renderBlockedToolMessage(ToolHookDecision decision) {
+        if (decision.type() == ToolHookDecisionType.PAUSE_FOR_APPROVAL) {
+            return "工具调用需要人工审批，当前 MVP 尚未接入审批 UI，已暂停执行。原因：" + decision.reason();
+        }
+        return "工具调用被 Hook 拒绝执行。原因：" + decision.reason();
     }
 
     /**

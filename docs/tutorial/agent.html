@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a class="active" href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a class="active" href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -40,7 +40,7 @@
   -> SessionStore
   -> AgentEventBus
        -> AgentEventEnvelope
-       -> TUI / Web / Hook</code></pre>
+       -> TUI / Web / Log</code></pre>
               <p>AgentLoop 是主流程，EventBus 是对外事件出口。</p>
             </div>
             <div class="diagram-card">
@@ -49,7 +49,7 @@
   AgentLoop.java              # 主循环
   AssistantMessageBuilder.java # 拼接流式 assistant/tool_calls
   AgentEventBus.java          # 事件信封和分发
-  AgentEventHandler.java      # TUI/Web/Hook 统一接口
+  AgentEventHandler.java      # TUI/Web/Log 统一接口
   model/
     AgentEvent.java           # Agent 事件类型
     AgentEventEnvelope.java   # 带元信息的事件信封
@@ -78,7 +78,7 @@ AgentLoop -> EventBus: AgentEvent</code></pre>
   -> 收集正文 / thinking / tool_call
   -> 有工具则执行并回灌
   -> 无工具则结束本轮</code></pre>
-              <p>事件流不是附属日志，而是后续 Web、Hook、扩展的统一协议。</p>
+              <p>事件流不是附属日志，而是后续 Web、日志、审计的统一协议。</p>
             </div>
           </div>
         </section>
@@ -154,7 +154,7 @@ private void publish(AgentEvent event) {
               <p class="note-line">LLM 层先把供应商原始流转换成 ProviderStreamEvent，AgentLoop 再转换成 AgentEvent。</p>
               <p class="note-line">run、turn、context、LLM request、message、tool、usage 都会变成 AgentEvent。</p>
               <p class="note-line">AgentEventBus 会把事件包装成 AgentEventEnvelope，补上 runId、sessionName、sequence、timestamp。</p>
-              <p class="note-line">TUI、Web SSE、Hook、日志都实现 AgentEventHandler，复用同一条事件流。</p>
+              <p class="note-line">TUI、Web SSE、日志都实现 AgentEventHandler，复用同一条事件流。</p>
               <p class="note-line">这样新增出口时不用改 AgentLoop，只新增一个 handler 并注册到 EventBus。</p>
             </div>
           </div>
@@ -165,28 +165,35 @@ private void publish(AgentEvent event) {
           <div class="translation">
             <div class="code-pane">
               <span class="label">AgentLoop.java</span>
-              <pre><code>List&lt;ToolResult&gt; results = parallelToolExecutor.executeAll(toolCalls);
+              <pre><code>ToolResult result = allowedResults.next();
+BeforeToolResultAppendContext resultContext = hookRegistry.apply(
+        AgentHookPoints.BEFORE_TOOL_RESULT_APPEND,
+        new BeforeToolResultAppendContext(
+                sessionName,
+                runId,
+                call,
+                result,
+                result.renderText()
+        )
+);
 
-for (int i = 0; i &lt; results.size(); i++) {
-    ToolCall call = toolCalls.get(i);
-    ToolResult result = results.get(i);
-    String compactText = toolResultOffloader.compact(result);
-
-    sessionStore.append(Message.tool(result.toolCallId(), compactText));
+sessionStore.append(Message.tool(
+        result.toolCallId(),
+        resultContext.toolMessageText()
+));
     publish(new AgentEvent.ToolCallDone(
             result.toolCallId(),
             call.function().name(),
-            compactText,
+            resultContext.toolMessageText(),
             !result.error(),
             result.elapsedMillis()
-    ));
-}</code></pre>
+    ));</code></pre>
             </div>
             <div class="explain-pane">
               <span class="label">中文解释</span>
               <p class="note-line">多个工具调用先交给并行执行器，减少等待时间。</p>
               <p class="note-line">每个结果都必须写成 `role=tool`，并带原始 `tool_call_id`。</p>
-              <p class="note-line">大结果会先写入 JSONL 文件，tool 消息只保留路径、recordId 和预览。</p>
+              <p class="note-line">大结果卸载不再硬编码在 AgentLoop，而是挂到 `BEFORE_TOOL_RESULT_APPEND` Hook。</p>
               <p class="note-line">这一步是协议配对：assistant 说“我要工具”，tool 消息负责回答“工具结果在这里”。</p>
               <p class="note-line">同时发出 `ToolCallDone` 事件，让 TUI 能显示工具块、成功失败和耗时。</p>
             </div>
@@ -207,7 +214,7 @@ for (int i = 0; i &lt; results.size(); i++) {
 
         <nav class="footer-nav">
           <a class="button secondary" href="entry.html">上一包：入口</a>
-          <a class="button" href="context.html">下一包：context</a>
+          <a class="button" href="hook.html">下一包：hook</a>
         </nav>
       </article>
       <aside class="toc">

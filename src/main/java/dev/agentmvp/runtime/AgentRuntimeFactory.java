@@ -17,14 +17,17 @@ import dev.agentmvp.context.ContextBuilder;
 import dev.agentmvp.context.SimpleTokenEstimator;
 import dev.agentmvp.context.TranscriptSummarizer;
 import dev.agentmvp.context.model.ContextOptions;
+import dev.agentmvp.hook.AgentHookPoints;
+import dev.agentmvp.hook.HookRegistry;
 import dev.agentmvp.llm.OpenAiCompatibleChatClient;
 import dev.agentmvp.llm.OpenAiCompatibleProviderFactory;
 import dev.agentmvp.llm.StreamingChatClient;
 import dev.agentmvp.llm.model.Message;
 import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
+import dev.agentmvp.memory.LongTermMemoryInjectHook;
 import dev.agentmvp.memory.MarkdownMemoryStore;
 import dev.agentmvp.memory.MemoryExtractionAgent;
-import dev.agentmvp.memory.MemoryExtractionSchedulingHandler;
+import dev.agentmvp.memory.MemoryExtractionHook;
 import dev.agentmvp.memory.MemoryExtractionTaskHandler;
 import dev.agentmvp.memory.MemoryPromptRenderer;
 import dev.agentmvp.mcp.McpToolLoader;
@@ -46,6 +49,7 @@ import dev.agentmvp.tool.LocalToolExecutor;
 import dev.agentmvp.tool.ParallelToolExecutor;
 import dev.agentmvp.tool.ToolRegistry;
 import dev.agentmvp.tool.builtin.BuiltinTools;
+import dev.agentmvp.tool.result.ToolResultOffloadHook;
 import dev.agentmvp.tool.result.ToolResultOffloader;
 import okhttp3.OkHttpClient;
 
@@ -155,13 +159,20 @@ public class AgentRuntimeFactory {
                 )
         );
         backgroundTaskManager.start();
-        AgentEventBus eventBus = new AgentEventBus(
-                sessionName,
-                List.of(
-                        eventHandler,
-                        new MemoryExtractionSchedulingHandler(backgroundTaskManager)
-                )
+        HookRegistry hookRegistry = new HookRegistry();
+        hookRegistry.register(
+                AgentHookPoints.BEFORE_LLM_REQUEST,
+                new LongTermMemoryInjectHook(memoryStore, memoryPromptRenderer)
         );
+        hookRegistry.register(
+                AgentHookPoints.BEFORE_TOOL_RESULT_APPEND,
+                new ToolResultOffloadHook(ToolResultOffloader.defaults(objectMapper, WorkspacePaths.TOOL_RESULTS))
+        );
+        hookRegistry.register(
+                AgentHookPoints.AFTER_RUN,
+                new MemoryExtractionHook(backgroundTaskManager)
+        );
+        AgentEventBus eventBus = AgentEventBus.single(sessionName, eventHandler);
 
         AgentLoop agentLoop = new AgentLoop(
                 provider,
@@ -174,9 +185,7 @@ public class AgentRuntimeFactory {
                 streamingChatClient,
                 toolRegistry,
                 parallelToolExecutor,
-                ToolResultOffloader.defaults(objectMapper, WorkspacePaths.TOOL_RESULTS),
-                memoryStore,
-                memoryPromptRenderer,
+                hookRegistry,
                 eventBus,
                 MAX_TOOL_ROUNDS
         );

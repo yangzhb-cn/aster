@@ -39,7 +39,7 @@
       <div class="panel">
         <h2>当前进展总览</h2>
         <div class="steps">
-          <div class="step"><b>1</b><p><strong>LLM 只走流式。</strong>项目通过 OpenAI-compatible SSE 接收模型增量，先统一成 `ProviderStreamEvent`，再转成 `AgentEventEnvelope` 给 TUI、Web、Hook 使用。</p></div>
+          <div class="step"><b>1</b><p><strong>LLM 只走流式。</strong>项目通过 OpenAI-compatible SSE 接收模型增量，先统一成 `ProviderStreamEvent`，再转成 `AgentEventEnvelope` 给 TUI、Web、日志使用。</p></div>
           <div class="step"><b>2</b><p><strong>工具支持并行。</strong>模型一次返回多个 tool_call 时，`ParallelToolExecutor` 会并发执行。</p></div>
           <div class="step"><b>3</b><p><strong>内置工具独立成类。</strong>`read`、`write`、`bash`、`edit` 都实现 `BuiltinTool`，最后统一注册进 `ToolRegistry`。</p></div>
           <div class="step"><b>4</b><p><strong>后台任务先做框架。</strong>`BackgroundTaskManager` 统一管理任务，调度、执行、JSONL 记录、通知出口已经拆开。</p></div>
@@ -62,7 +62,9 @@
        -> JsonlSessionStore
        -> BackgroundTaskManager
        -> AgentEventBus
-            -> TUI / Web / Hook</code></pre>
+            -> TUI / Web / Log
+       -> HookRegistry
+            -> 记忆 / 权限 / 工具结果卸载</code></pre>
             <p>入口只装配运行时，核心能力都挂在 runtime 下。</p>
           </div>
           <div class="diagram-card">

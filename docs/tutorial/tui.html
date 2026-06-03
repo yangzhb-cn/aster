@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a class="active" href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a class="active" href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -129,8 +129,8 @@ Sink -> Window: update status line</code></pre>
               <p class="note-line">正文和 DeepSeek thinking 分成两个事件。</p>
               <p class="note-line">TUI 因此可以把 reasoning_content 显示成灰色 thinking 块。</p>
               <p class="note-line">usage 也单独成事件，避免混进 assistant 正文或历史消息。</p>
-              <p class="note-line">TUI 不需要处理所有生命周期事件；Web SSE、Hook 可以消费同一批 AgentEventEnvelope。</p>
-              <p class="note-line">TUI 当前只用 envelope.event()，Web 或 Hook 后续可以使用 envelope.meta() 做顺序、审计和关联。</p>
+              <p class="note-line">TUI 不需要处理所有生命周期事件；Web SSE、日志可以消费同一批 AgentEventEnvelope。</p>
+              <p class="note-line">TUI 当前只用 envelope.event()，Web 或日志后续可以使用 envelope.meta() 做顺序、审计和关联。</p>
               <p class="note-line">这比把所有 token 拼进一段 assistant 文本更清楚。</p>
             </div>
           </div>

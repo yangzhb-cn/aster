@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a class="active" href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a class="active" href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -196,7 +196,7 @@ if (event instanceof ProviderStreamEvent.ReasoningDelta delta) {
             <div class="explain-pane">
               <span class="label">中文解释</span>
               <p class="note-line">ProviderStreamEvent 是 LLM 接入层的统一输出。</p>
-              <p class="note-line">AgentEvent 是 Agent 主循环对 TUI、Web、Hook 暴露的事件协议。</p>
+              <p class="note-line">AgentEvent 是 Agent 主循环对 TUI、Web、日志暴露的事件协议。</p>
               <p class="note-line">DeepSeek 的 `reasoning_content` 先变成 `ReasoningDelta`，再变成 `ReasoningToken`。</p>
               <p class="note-line">两层事件分开后，新增供应商时只改 parser，不改 AgentLoop 的主逻辑。</p>
               <p class="note-line">TUI 才能把 thinking 和正文分开显示，Web SSE 也能直接转发同一批事件。</p>

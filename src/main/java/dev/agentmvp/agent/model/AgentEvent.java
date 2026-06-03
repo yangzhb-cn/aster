@@ -66,7 +66,7 @@ public sealed interface AgentEvent permits
     /**
      * 上下文构造完成。
      *
-     * <p>这让 TUI、Web、Hook 都能观察本轮是否触发压缩，以及压缩前后 token 估算。</p>
+     * <p>这让 TUI、Web、日志都能观察本轮是否触发压缩，以及压缩前后 token 估算。</p>
      */
     record ContextBuilt(
             boolean compressed,

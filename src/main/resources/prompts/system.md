@@ -25,7 +25,7 @@
 
 ## Skill 使用
 
-- 如果 system prompt 里列出了可用 Skills，只能先根据 name 和 description 判断是否相关。
+- 如果 <system-reminder> 里列出了可用 Skills，只能先根据 name 和 description 判断是否相关。
 - 如果某个 Skill 对当前任务有帮助，先调用 load_skill(name) 加载完整 SKILL.md。
 - 不要凭空猜测 Skill 的完整内容。
 - references 需要时用 read 读取，scripts 需要时用 bash 执行。

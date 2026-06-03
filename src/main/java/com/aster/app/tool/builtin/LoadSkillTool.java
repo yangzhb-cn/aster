@@ -33,7 +33,7 @@ public class LoadSkillTool extends AbstractBuiltinTool {
                 "按 Skill 名称加载完整 SKILL.md 内容，用于渐进式读取 Skill 说明。",
                 objectSchema(
                         Map.of(
-                                "name", stringSchema("要加载的 Skill 名称，只能是 system prompt 中列出的 Skill name")
+                                "name", stringSchema("要加载的 Skill 名称，只能是 system-reminder 中列出的 Skill name")
                         ),
                         List.of("name")
                 )

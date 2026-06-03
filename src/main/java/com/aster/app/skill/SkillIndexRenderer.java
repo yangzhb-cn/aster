@@ -5,14 +5,14 @@ import com.aster.app.skill.model.SkillMetadata;
 import java.util.List;
 
 /**
- * 把 Skill 索引渲染成 system prompt 片段。
+ * 把 Skill 索引渲染成系统提醒片段。
  *
  * <p>这里不会渲染完整 SKILL.md，只渲染 name 和 description。
  * 完整内容必须由模型通过 load_skill 工具按需加载。</p>
  */
 public class SkillIndexRenderer {
     /**
-     * 根据 Skill 索引生成 system prompt 文本。
+     * 根据 Skill 索引生成提醒文本。
      */
     public String render(List<SkillMetadata> skills) {
         if (skills.isEmpty()) {

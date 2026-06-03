@@ -11,7 +11,8 @@ import java.util.Objects;
  * LLM 请求前 Hook 上下文。
  *
  * <p>messages 是当前即将发给模型的消息列表。tools 是当前暴露给模型的工具 Schema。
- * control 是当前 run 的控制信号。Hook 可以返回新上下文，用于长期记忆注入、
+ * contextSummary 是旧对话压缩后的摘要，只属于本次请求。
+ * control 是当前 run 的控制信号。Hook 可以返回新上下文，用于系统提醒注入、
  * 运行中引导、工具隐藏、权限策略等场景。</p>
  */
 public record BeforeLlmRequestContext(
@@ -20,6 +21,7 @@ public record BeforeLlmRequestContext(
         int round,
         String model,
         int maxContextTokens,
+        String contextSummary,
         AgentRunControl control,
         List<Message> messages,
         List<Map<String, Object>> tools
@@ -40,6 +42,7 @@ public record BeforeLlmRequestContext(
                 round,
                 model,
                 maxContextTokens,
+                contextSummary,
                 control,
                 newMessages,
                 tools
@@ -59,6 +62,7 @@ public record BeforeLlmRequestContext(
                 round,
                 model,
                 maxContextTokens,
+                contextSummary,
                 control,
                 messages,
                 newTools

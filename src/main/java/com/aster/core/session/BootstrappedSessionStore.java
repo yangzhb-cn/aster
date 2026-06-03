@@ -10,7 +10,7 @@ import java.util.Objects;
 /**
  * 带启动消息的 SessionStore 包装器。
  *
- * <p>system prompt 和 Skill 索引属于当前运行环境，不属于用户历史。
+ * <p>基础 system prompt 属于当前运行环境，不属于用户历史。
  * 所以它们不写入 JSONL，只在 loadMessages() 时拼到持久化消息前面。</p>
  */
 public class BootstrappedSessionStore implements SessionStore {

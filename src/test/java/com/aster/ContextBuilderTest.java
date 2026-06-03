@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -21,10 +22,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class ContextBuilderTest {
     /**
-     * 验证旧轮次被压缩成干净的 user 摘要消息，最近轮次原样保留。
+     * 验证旧轮次被压缩成摘要字段，最近已完成轮次和当前轮次原样保留。
      */
     @Test
-    void compressesOldTurnsIntoCleanUserSummary() {
+    void compressesOldTurnsIntoSummaryFieldAndKeepsRecentTurns() {
         ContextBuilder builder = new ContextBuilder(
                 new SimpleTokenEstimator(),
                 ignored -> "old turns were summarized",
@@ -39,6 +40,8 @@ class ContextBuilderTest {
                 )),
                 Message.tool("call_old", "database.url is missing"),
                 Message.assistant("The config is missing database.url."),
+                Message.user("Review the proposed fix."),
+                Message.assistant("The fix should update database.url."),
                 Message.user("Now fix it."),
                 Message.assistant("I will update the config.")
         );
@@ -46,8 +49,15 @@ class ContextBuilderTest {
         ContextBuildResult result = builder.build(history);
 
         assertTrue(result.compressed());
+        assertEquals("old turns were summarized", result.summary());
+        assertFalse(result.messages().stream().anyMatch(message ->
+                message.content() != null && message.content().contains("old turns were summarized")
+        ));
         assertTrue(result.messages().stream().anyMatch(message ->
-                "user".equals(message.role()) && message.content().contains("old turns were summarized")
+                "user".equals(message.role()) && message.content().contains("Review the proposed fix.")
+        ));
+        assertTrue(result.messages().stream().anyMatch(message ->
+                "user".equals(message.role()) && message.content().contains("Now fix it.")
         ));
 
         // 旧工具协议已经被摘要吃掉，不能残留过期的 tool_call/tool_call_id。

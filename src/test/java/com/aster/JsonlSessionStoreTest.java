@@ -22,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * JSONL session 持久化测试。
  *
  * <p>目标不是只保存 messages，而是验证事件日志可以恢复、分支、审计，
- * 并且不会把 system prompt 这类启动环境写进用户历史。</p>
+ * 并且不会把基础 system prompt 这类启动环境写进用户历史。</p>
  */
 class JsonlSessionStoreTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -68,7 +68,7 @@ class JsonlSessionStoreTest {
     }
 
     /**
-     * 验证 system prompt 和 Skill 索引只作为启动消息参与上下文，不写入 JSONL。
+     * 验证基础 system prompt 只作为启动消息参与上下文，不写入 JSONL。
      */
     @Test
     void keepsBootstrapMessagesOutOfJsonlFile() throws Exception {

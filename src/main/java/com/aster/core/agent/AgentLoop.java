@@ -265,6 +265,7 @@ public class AgentLoop {
                     roundNumber,
                     model,
                     context.maxContextTokens(),
+                    context.summary(),
                     control,
                     context.messages(),
                     tools

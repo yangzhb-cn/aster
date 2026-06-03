@@ -117,7 +117,7 @@ Hook 表示“在主流程某个点插入扩展逻辑”。
 
 | HookPoint | 用途 |
 | --- | --- |
-| `BEFORE_LLM_REQUEST` | 注入长期记忆、改写本轮 messages/tools。 |
+| `BEFORE_LLM_REQUEST` | 注入 `<system-reminder>`、改写本轮 messages/tools。 |
 | `BEFORE_TOOL_CALL` | 工具权限、高危险工具审查、HITL。 |
 | `BEFORE_TOOL_RESULT_APPEND` | 工具结果写入上下文前裁剪、脱敏、外部卸载。 |
 | `AFTER_RUN` | 每轮对话结束后提交后台任务，例如长期记忆抽取。 |
@@ -143,9 +143,9 @@ Stage 是主流程必经步骤，不靠外部注册决定是否执行。
 关键规则：
 
 - 按 user turn 切分消息。
-- 保留最近若干 user turn。
+- 保留当前最后一个 user turn，以及它之前最近 3 个已完成 user turn。
 - 压缩更旧的 turn。
-- 压缩摘要作为单独 message 注入。
+- 压缩摘要不作为单独 message 注入，由请求前 Hook 放入最后 user 消息开头的 `<system-reminder>`。
 - 最终发送前必须校验 `assistant.tool_calls` 与 `role=tool` 的 `tool_call_id` 成对。
 - 压缩后的 assistant message 不允许残留已经失配的 `tool_calls` 字段。
 
@@ -184,9 +184,10 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 
 - `SkillToolExtension`：注册 `load_skill` 工具。
 - `McpToolExtension`：读取 `workspace/mcp.json` 并注册 MCP tools。
-- `MemoryExtension`：注册长期记忆注入和抽取 Hook。
-- `ToolResultExtension`：注册大工具结果卸载 Hook。
 - `SteerExtension`：注册运行中引导 Hook。
+- `SystemReminderExtension`：注册请求前 `<system-reminder>` 注入 Hook。
+- `MemoryExtension`：注册长期记忆抽取 Hook。
+- `ToolResultExtension`：注册大工具结果卸载 Hook。
 
 规则：
 
@@ -242,7 +243,7 @@ Skill 是渐进式加载，不是真正运行时插件系统。
 规则：
 
 - `workspace/skills/*/SKILL.md` 会被扫描。
-- 只把 Skill 的 name/description 注入 system prompt。
+- 只把 Skill 的 name/description 注入请求前 `<system-reminder>`。
 - 需要完整内容时，由 LLM 调用 `load_skill` 加载。
 - 不要启动时把所有 Skill 全文塞进上下文。
 - `load_skill` 由 `SkillToolExtension` 注册，不属于四个基础内置工具。
@@ -255,15 +256,15 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 
 - system prompt
 - 上下文摘要 prompt
-- 长期记忆注入 prompt
+- 长期记忆提醒 prompt
 - 长期记忆抽取 prompt
 
 不要把长 prompt 硬编码进 Java 类。
 
 ### 长期记忆
 
-长期记忆第一版用 Markdown 存储，并在每轮 LLM 请求前临时注入最后一条 user 消息开头的 `<system-reminder>` 块。
-这个提醒块只进入本次模型请求，不写入 SessionStore。
+长期记忆第一版用 Markdown 存储，并在每轮 LLM 请求前由 `SystemReminderExtension` 临时注入最后一条 user 消息开头的 `<system-reminder>` 块。
+这个提醒块同时承载 Skill 索引、旧对话摘要和长期记忆，只进入本次模型请求，不写入 SessionStore。
 
 只允许四类长期记忆：
 

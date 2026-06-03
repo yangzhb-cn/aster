@@ -70,13 +70,13 @@ public class ContextBuilder {
             }
         }
 
-        int splitIndex = Math.max(0, userTurns.size() - options.keepRecentTurns());
+        int splitIndex = keepTailStart(userTurns.size());
         List<Turn> compressHead = new ArrayList<>();
         // orphan 不进最终原文，只能进入摘要。它们没有明确 user 归属，
         // 原样保留很容易变成“半截 tool 协议”。
         compressHead.addAll(orphanTurns);
-        // 早期完整 turn 被压缩；最近 N 个完整 turn 原样保留。
-        // 这是常见的“摘要 + 滑动窗口”组合。
+        // 早期完整 turn 被压缩；当前最后一个 user turn 和它前面的最近 N 个已完成 turn 原样保留。
+        // 这是教学版的“旧对话摘要 + 近期原文窗口”组合。
         compressHead.addAll(userTurns.subList(0, splitIndex));
 
         List<Turn> keepTail = userTurns.subList(splitIndex, userTurns.size());
@@ -88,14 +88,6 @@ public class ContextBuilder {
         String summary = null;
         if (!summaryInput.isEmpty()) {
             summary = summarizer.summarize(summaryInput);
-
-            // 摘要必须重建成一条干净的普通消息，不能克隆旧 assistant 消息。
-            // 否则旧 tool_calls 可能残留，而对应工具结果已经被摘要吃掉。
-            // 这里用 user 角色是为了兼容大多数 OpenAI 兼容 Chat API。
-            // 语义上它不是用户的新请求，所以 content 里明确写“系统自动生成的历史摘要”。
-            finalMessages.add(Message.user(
-                    "以下是系统自动生成的历史对话摘要，不是用户的新请求：\n\n" + summary
-            ));
         }
 
         finalMessages.addAll(flatten(keepTail));
@@ -110,6 +102,19 @@ public class ContextBuilder {
                 options.maxContextTokens(),
                 summary
         );
+    }
+
+    /**
+     * 计算需要原文保留的 user turn 起点。
+     *
+     * <p>最后一个 user turn 代表当前请求所在轮次；它之前最多再保留 keepRecentTurns
+     * 个已完成 turn。更旧的 turn 只进入摘要，不再作为普通 user 消息发送。</p>
+     */
+    private int keepTailStart(int userTurnCount) {
+        if (userTurnCount <= 0) {
+            return 0;
+        }
+        return Math.max(0, userTurnCount - 1 - options.keepRecentTurns());
     }
 
     /**

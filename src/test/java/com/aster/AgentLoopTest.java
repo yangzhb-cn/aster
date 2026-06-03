@@ -22,7 +22,7 @@ import com.aster.llm.model.OpenAiCompatibleProvider;
 import com.aster.llm.model.ProviderStreamEvent;
 import com.aster.llm.model.TokenUsage;
 import com.aster.llm.model.ToolCallDelta;
-import com.aster.app.memory.LongTermMemoryInjectHook;
+import com.aster.app.extension.SystemReminderInjectHook;
 import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
 import com.aster.app.memory.model.MemoryCandidate;
@@ -750,12 +750,16 @@ class AgentLoopTest {
     }
 
     /**
-     * 验证每轮请求前会读取 Markdown 长期记忆，并作为临时 XML 提醒块注入最后一条 user 消息。
+     * 验证请求前 Hook 会把 Skill 索引、旧对话摘要和长期记忆合并进最后一条 user 消息的 XML 提醒块。
      */
     @Test
-    void injectsMarkdownLongTermMemoryIntoLastUserMessageBeforeEachLlmRequest() throws Exception {
+    void injectsSystemReminderIntoLastUserMessageBeforeEachLlmRequest() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         InMemorySessionStore sessionStore = new InMemorySessionStore();
+        sessionStore.append(Message.user("旧请求"));
+        sessionStore.append(Message.assistant("旧回答"));
+        sessionStore.append(Message.user("最近请求"));
+        sessionStore.append(Message.assistant("最近回答"));
         ToolRegistry toolRegistry = new ToolRegistry(
                 new LocalToolExecutor(objectMapper),
                 new McpToolExecutor()
@@ -767,10 +771,10 @@ class AgentLoopTest {
                 "用户明确说：中文注释，以后也是"
         )));
         MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer("""
-                <system-reminder>
+                ## 长期记忆
+
                 长期记忆注入：
                 {{memory}}
-                </system-reminder>
                 """);
         List<List<Message>> capturedRequests = new ArrayList<>();
 
@@ -782,7 +786,7 @@ class AgentLoopTest {
         HookRegistry hookRegistry = HookRegistry.empty();
         hookRegistry.register(
                 AgentHookPoints.BEFORE_LLM_REQUEST,
-                new LongTermMemoryInjectHook(memoryStore, memoryPromptRenderer)
+                new SystemReminderInjectHook("当前可用 Skills：\n\n- demo：演示 Skill", memoryStore, memoryPromptRenderer)
         );
 
         AgentLoop loop = new AgentLoop(
@@ -790,8 +794,8 @@ class AgentLoopTest {
                 sessionStore,
                 new ContextBuilder(
                         new SimpleTokenEstimator(),
-                        new TranscriptSummarizer(1_000),
-                        ContextOptions.defaults()
+                        new TranscriptSummarizer("摘要 prompt", 1_000),
+                        new ContextOptions(10, 0.1, 1)
                 ),
                 fakeStreamingLlm,
                 toolRegistry,
@@ -804,17 +808,21 @@ class AgentLoopTest {
         assertEquals("answer", loop.run("你好"));
 
         List<Message> requestMessages = capturedRequests.getFirst();
-        assertEquals(1, requestMessages.size());
-        Message requestUserMessage = requestMessages.getFirst();
+        Message requestUserMessage = requestMessages.getLast();
         assertEquals("user", requestUserMessage.role());
         assertTrue(requestUserMessage.content().startsWith("<system-reminder>"));
+        assertTrue(requestUserMessage.content().contains("当前可用 Skills"));
+        assertTrue(requestUserMessage.content().contains("demo"));
+        assertTrue(requestUserMessage.content().contains("## 旧对话摘要"));
+        assertTrue(requestUserMessage.content().contains("旧请求"));
         assertTrue(requestUserMessage.content().contains("长期记忆注入"));
         assertTrue(requestUserMessage.content().contains("用户要求代码注释使用中文"));
         assertTrue(requestUserMessage.content().endsWith("你好"));
 
         List<Message> storedMessages = sessionStore.loadMessages();
-        assertEquals("user", storedMessages.getFirst().role());
-        assertEquals("你好", storedMessages.getFirst().content());
+        Message storedUserMessage = storedMessages.get(storedMessages.size() - 2);
+        assertEquals("user", storedUserMessage.role());
+        assertEquals("你好", storedUserMessage.content());
     }
 
     /**

@@ -43,10 +43,10 @@ class SkillRepositoryTest {
     }
 
     /**
-     * 验证 Skill 索引只包含轻量信息，不把完整正文提前塞进 system prompt。
+     * 验证 Skill 索引只包含轻量信息，不把完整正文提前塞进请求前提醒。
      */
     @Test
-    void rendersOnlySkillIndexForSystemPrompt() throws Exception {
+    void rendersOnlySkillIndexForSystemReminder() throws Exception {
         Path skillsDirectory = tempDir.resolve("skills");
         writeSkill(skillsDirectory, "web-access", "web-access", "网页访问经验", "不要提前出现的完整正文");
 

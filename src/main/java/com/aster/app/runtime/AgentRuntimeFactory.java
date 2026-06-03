@@ -38,7 +38,6 @@ import com.aster.core.session.BootstrappedSessionStore;
 import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionCatalog;
 import com.aster.core.session.SessionStore;
-import com.aster.app.skill.SkillIndexRenderer;
 import com.aster.app.skill.SkillRepository;
 import com.aster.core.tool.LocalToolExecutor;
 import com.aster.core.tool.ParallelToolExecutor;
@@ -124,11 +123,6 @@ public class AgentRuntimeFactory {
         // 基础 system prompt 来自 jar 内置 resources/prompts/system.md。
         bootstrapMessages.add(Message.system(systemPrompt));
 
-        String skillIndex = new SkillIndexRenderer().render(skillRepository.listMetadata());
-        if (!skillIndex.isBlank()) {
-            // Skill 索引只包含 name/description；完整 SKILL.md 由 load_skill 按需加载。
-            bootstrapMessages.add(Message.system(skillIndex));
-        }
         SessionStore sessionStore = new BootstrappedSessionStore(
                 bootstrapMessages,
                 JsonlSessionStore.openNamed(objectMapper, WorkspacePaths.SESSIONS, sessionName)

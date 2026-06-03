@@ -59,7 +59,7 @@ src/main/java/com/aster/
 │   ├── tool/result/        大工具结果 JSONL 外部卸载
 │   ├── mcp/                MCP client/server/tool adapter
 │   ├── skill/              Skill 扫描、索引、加载
-│   ├── memory/             长期记忆注入、抽取、Markdown 存储
+│   ├── memory/             长期记忆抽取、Markdown 存储、提醒段落渲染
 │   ├── background/         后台任务框架
 │   ├── notification/       后台任务通知出口
 │   └── prompt/             resources/prompts/*.md 加载
@@ -85,7 +85,7 @@ TuiMain
      -> ContextPipeline 构造本轮 LLM 上下文
         -> LoadSessionMessagesStage 读取完整 session 历史
         -> ContextCompressionStage 压缩旧 turn 并校验工具协议
-     -> HookRegistry.BEFORE_LLM_REQUEST 临时注入长期记忆 / steer 引导
+     -> HookRegistry.BEFORE_LLM_REQUEST 临时注入 Skill 索引 / 旧对话摘要 / 长期记忆 / steer 引导
      -> StreamingChatClient 发起 SSE 请求
      -> OpenAiCompatibleStreamParser 转成 ProviderStreamEvent
      -> AgentLoop 转成 AgentEvent
@@ -107,9 +107,10 @@ TuiMain
 RuntimeExtension：
   SkillToolExtension      -> 注册 load_skill
   McpToolExtension        -> 加载 workspace/mcp.json 并注册 MCP tools
-  MemoryExtension         -> 注册长期记忆注入和抽取 Hook
-  ToolResultExtension     -> 注册大工具结果卸载 Hook
   SteerExtension          -> 注册运行中引导 Hook
+  SystemReminderExtension -> 注册请求前 <system-reminder> 注入 Hook
+  MemoryExtension         -> 注册长期记忆抽取 Hook
+  ToolResultExtension     -> 注册大工具结果卸载 Hook
 
 SlashCommand：
   /exit
@@ -151,7 +152,7 @@ Hook 是“在某个主流程点插入扩展逻辑”，用于改写、阻断或
 
 | HookPoint | 当前用途 |
 |---|---|
-| `BEFORE_LLM_REQUEST` | 把 Markdown 长期记忆临时注入最后一条 user 消息开头的 `<system-reminder>` 块。 |
+| `BEFORE_LLM_REQUEST` | 把 Skill 索引、旧对话摘要和长期记忆临时注入最后一条 user 消息开头的 `<system-reminder>` 块。 |
 | `BEFORE_TOOL_CALL` | 预留给工具权限、高危工具审查、HITL。 |
 | `BEFORE_TOOL_RESULT_APPEND` | 大工具结果卸载到 `workspace/artifacts/tool-results/*.jsonl`。 |
 | `AFTER_RUN` | 每轮对话结束后提交长期记忆抽取后台任务。 |
@@ -163,7 +164,7 @@ Stage 是 Agent 主流程必经步骤，不靠外部注册决定是否执行。
 | Stage | 当前用途 |
 |---|---|
 | `LoadSessionMessagesStage` | 从 session 读取完整历史。 |
-| `ContextCompressionStage` | 按 user turn 压缩上下文，并校验 tool_call/tool_result 协议。 |
+| `ContextCompressionStage` | 按 user turn 压缩旧对话，保留当前 turn 和它之前最近 3 个已完成 turn，并校验 tool_call/tool_result 协议。 |
 | `ContextPipeline` | 串起上下文相关 Stage，产出本轮请求 LLM 的 `ContextBuildResult`。 |
 
 ## Workspace

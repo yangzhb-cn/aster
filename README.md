@@ -249,6 +249,14 @@ Plan 规则：
 
 默认使用 DeepSeek `deepseek-v4-flash`，走 OpenAI-compatible 协议。
 
+第一次运行可以先复制环境变量示例：
+
+```bash
+cp .env.example .env
+```
+
+然后编辑 `.env`，至少填入 `DEEPSEEK_API_KEY`。项目根目录的 `aster2tui`、`aster2web`、`aster2im` 脚本都会自动加载 `.env`。
+
 ```bash
 export DEEPSEEK_API_KEY=你的 key
 mvn -q exec:java
@@ -300,6 +308,23 @@ Telegram 当前使用 long polling，不需要公网 webhook。`TELEGRAM_ALLOWED
 如果需要调整定时任务扫描频率，可以在 `.env` 写 `SCHEDULE_INTERVAL_SECONDS=10`。
 Telegram 支持 `/team <任务>` 启动同一套只读 Agent Team 探索。
 Telegram 也支持 `/plan <任务>`、`/start` 和 `/plan cancel`。
+
+常用环境变量：
+
+| 变量 | 用途 |
+| --- | --- |
+| `DEEPSEEK_API_KEY` | 默认 DeepSeek 模型 API Key。 |
+| `OPENAI_COMPATIBLE_PROVIDER` | 覆盖供应商名称，例如 `deepseek` 或自定义 provider。 |
+| `OPENAI_COMPATIBLE_BASE_URL` | 覆盖 OpenAI-compatible API base URL。 |
+| `OPENAI_COMPATIBLE_API_KEY` | 覆盖通用 OpenAI-compatible API Key，优先级高于 `DEEPSEEK_API_KEY`。 |
+| `OPENAI_COMPATIBLE_MODEL` | 覆盖模型名。 |
+| `ASTER_WEB_PORT` | Web Chat 监听端口，`aster2web` 默认使用 `8081`。 |
+| `ASTER_SESSION` | Web Chat 启动时绑定的 session 名称。 |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot token。 |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | Telegram 允许访问的 chatId 白名单，多个用逗号分隔。 |
+| `OWNER_ID` | `aster2im` 的简化配置；未设置白名单时会作为 `TELEGRAM_ALLOWED_CHAT_IDS` 使用。 |
+| `TAVILY_API_KEY` | `web_search` 工具调用 Tavily 搜索时使用。 |
+| `SCHEDULE_INTERVAL_SECONDS` | 后台任务扫描间隔，单位秒，默认 `10`。 |
 
 也可以用通用 OpenAI-compatible 配置覆盖：
 

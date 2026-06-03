@@ -12,6 +12,7 @@ replay_pid*
 # 本地配置和密钥
 .env
 .env.*
+!.env.example
 *.local
 mcp.json
 workspace/

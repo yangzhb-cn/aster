@@ -28,6 +28,7 @@ public class AgentRuntime implements AutoCloseable {
     private final AgentLoop agentLoop;
     private final AgentRunCoordinator runCoordinator;
     private final AgentTeamRunner agentTeamRunner;
+    private final PlanModeCoordinator planModeCoordinator;
     private final AgentEventPublisher eventPublisher;
     private final BackgroundTaskManager backgroundTaskManager;
     private final ToolApprovalManager toolApprovalManager;
@@ -47,6 +48,7 @@ public class AgentRuntime implements AutoCloseable {
             AgentLoop agentLoop,
             AgentRunCoordinator runCoordinator,
             AgentTeamRunner agentTeamRunner,
+            PlanModeCoordinator planModeCoordinator,
             AgentEventPublisher eventPublisher,
             BackgroundTaskManager backgroundTaskManager,
             ToolApprovalManager toolApprovalManager,
@@ -60,6 +62,7 @@ public class AgentRuntime implements AutoCloseable {
         this.agentLoop = Objects.requireNonNull(agentLoop);
         this.runCoordinator = Objects.requireNonNull(runCoordinator);
         this.agentTeamRunner = Objects.requireNonNull(agentTeamRunner);
+        this.planModeCoordinator = Objects.requireNonNull(planModeCoordinator);
         this.eventPublisher = Objects.requireNonNull(eventPublisher);
         this.backgroundTaskManager = Objects.requireNonNull(backgroundTaskManager);
         this.toolApprovalManager = Objects.requireNonNull(toolApprovalManager);
@@ -85,6 +88,12 @@ public class AgentRuntime implements AutoCloseable {
         if (teamBusy()) {
             throw new IllegalStateException("Agent Team 正在运行，结束后再提交普通消息。");
         }
+        if (planModeCoordinator.isBusy()) {
+            throw new IllegalStateException("Plan 正在生成或执行，结束后再提交普通消息。");
+        }
+        if (planModeCoordinator.hasPendingPlan()) {
+            throw new IllegalStateException("当前有待执行计划，请输入 /start 执行，/plan <新目标> 重新计划，或 /plan cancel 取消。");
+        }
         runCoordinator.submit(userInput);
     }
 
@@ -97,12 +106,42 @@ public class AgentRuntime implements AutoCloseable {
             if (teamBusy) {
                 throw new IllegalStateException("Agent Team 正在运行。");
             }
+            if (planModeCoordinator.isBusy() || planModeCoordinator.hasPendingPlan()) {
+                throw new IllegalStateException("Plan 模式中不能启动 /team，请先 /start 或 /plan cancel。");
+            }
             if (runCoordinator.isBusy()) {
                 throw new IllegalStateException("Agent 正在运行，结束后再启动 /team。");
             }
             teamBusy = true;
             currentTeam = teamExecutor.submit(() -> runTeam(input));
         }
+    }
+
+    /**
+     * 生成一份动态 DAG 计划，等待用户 /start 确认执行。
+     */
+    public void submitPlan(String task) {
+        if (teamBusy()) {
+            throw new IllegalStateException("Agent Team 正在运行，结束后再进入 /plan。");
+        }
+        planModeCoordinator.submitPlan(task);
+    }
+
+    /**
+     * 执行当前待确认计划。
+     */
+    public boolean startPlan() {
+        if (teamBusy()) {
+            throw new IllegalStateException("Agent Team 正在运行。");
+        }
+        return planModeCoordinator.startPlan();
+    }
+
+    /**
+     * 取消当前 Plan。
+     */
+    public boolean cancelPlan() {
+        return planModeCoordinator.cancelPlan("用户取消 Plan。");
     }
 
     /**
@@ -119,7 +158,8 @@ public class AgentRuntime implements AutoCloseable {
         boolean stopped = runCoordinator.stop();
         boolean canceledApprovals = toolApprovalManager.cancelAll("用户请求停止");
         boolean stoppedTeam = stopTeam();
-        return stopped || canceledApprovals || stoppedTeam;
+        boolean stoppedPlan = planModeCoordinator.cancelPlan("用户请求停止。");
+        return stopped || canceledApprovals || stoppedTeam || stoppedPlan;
     }
 
     /**
@@ -161,7 +201,14 @@ public class AgentRuntime implements AutoCloseable {
      * 判断当前是否有正在执行或等待执行的输入。
      */
     public boolean isBusy() {
-        return runCoordinator.isBusy() || teamBusy();
+        return runCoordinator.isBusy() || teamBusy() || planModeCoordinator.isBusy();
+    }
+
+    /**
+     * 判断当前是否有等待 /start 的计划。
+     */
+    public boolean hasPendingPlan() {
+        return planModeCoordinator.hasPendingPlan();
     }
 
     /**
@@ -205,6 +252,7 @@ public class AgentRuntime implements AutoCloseable {
     @Override
     public void close() {
         toolApprovalManager.cancelAll("runtime closing");
+        planModeCoordinator.close();
         teamExecutor.shutdownNow();
         runCoordinator.close();
         backgroundTaskManager.close();

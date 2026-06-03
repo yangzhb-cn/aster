@@ -3,8 +3,8 @@ package com.aster.app.plan.model;
 /**
  * Planner 可以生成的任务类型。
  *
- * <p>当前 /team 只使用 PLANNING、FILE_READ、ANALYSIS。
- * FILE_WRITE、COMMAND 和 VERIFICATION 先保留给后续 /plan 使用。</p>
+ * <p>/team 只使用 PLANNING、FILE_READ、ANALYSIS；
+ * 动态 /plan 可以使用全部类型。</p>
  */
 public enum PlanTaskType {
     PLANNING,

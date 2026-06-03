@@ -1,7 +1,9 @@
 package com.aster;
 
+import com.aster.ui.tui.command.PlanCommand;
 import com.aster.ui.tui.command.SessionCommand;
 import com.aster.ui.tui.command.SlashCommandRegistry;
+import com.aster.ui.tui.command.StartCommand;
 import com.aster.ui.tui.command.StopCommand;
 import com.aster.ui.tui.command.TeamCommand;
 import org.junit.jupiter.api.Test;
@@ -28,9 +30,15 @@ class SlashCommandRegistryTest {
                 .anyMatch(option -> option.insertText().equals("/session use ")));
         assertTrue(registry.visibleOptions("/te").stream()
                 .anyMatch(option -> option.insertText().equals("/team ")));
+        assertTrue(registry.visibleOptions("/pl").stream()
+                .anyMatch(option -> option.insertText().equals("/plan ")));
+        assertTrue(registry.visibleOptions("/st").stream()
+                .anyMatch(option -> option.insertText().equals("/start")));
 
         assertInstanceOf(StopCommand.class, registry.find("/stop").orElseThrow());
         assertInstanceOf(TeamCommand.class, registry.find("/team 探索当前架构").orElseThrow());
+        assertInstanceOf(PlanCommand.class, registry.find("/plan 修改 Web 页面").orElseThrow());
+        assertInstanceOf(StartCommand.class, registry.find("/start").orElseThrow());
         assertInstanceOf(SessionCommand.class, registry.find("/session current").orElseThrow());
         assertEquals(true, registry.find("/unknown").isEmpty());
     }

@@ -138,7 +138,25 @@ public class WebServer implements AutoCloseable {
         }
 
         synchronized (runtimeLock) {
-            if (text.startsWith("/team")) {
+            if ("/start".equals(text)) {
+                if (!runtime.startPlan()) {
+                    sendJson(exchange, 409, Map.of("error", "当前没有待执行的 Plan"));
+                    return;
+                }
+            } else if (text.startsWith("/plan")) {
+                String task = text.length() <= "/plan".length() ? "" : text.substring("/plan".length()).trim();
+                if ("cancel".equalsIgnoreCase(task)) {
+                    if (!runtime.cancelPlan()) {
+                        sendJson(exchange, 409, Map.of("error", "当前没有可取消的 Plan"));
+                        return;
+                    }
+                } else if (task.isBlank()) {
+                    sendJson(exchange, 400, Map.of("error", "用法：/plan 要完成的任务"));
+                    return;
+                } else {
+                    runtime.submitPlan(task);
+                }
+            } else if (text.startsWith("/team")) {
                 String task = text.length() <= "/team".length() ? "" : text.substring("/team".length()).trim();
                 if (task.isBlank()) {
                     sendJson(exchange, 400, Map.of("error", "用法：/team 要探索的问题"));
@@ -486,6 +504,7 @@ public class WebServer implements AutoCloseable {
             status.put("provider", runtime.provider().name());
             status.put("skillCount", runtime.skillCount());
             status.put("busy", runtime.isBusy());
+            status.put("pendingPlan", runtime.hasPendingPlan());
             status.put("queuedCount", runtime.queuedCount());
             status.put("pendingApprovals", runtime.pendingToolApprovals().stream()
                     .map(this::approvalPayload)

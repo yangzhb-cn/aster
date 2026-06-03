@@ -79,20 +79,23 @@ public class TelegramUpdatePoller implements AutoCloseable {
     private void handleCommand(TelegramMessage message, String text) throws IOException {
         String command = normalizeCommand(text);
         switch (command) {
-            case "/start", "/help" -> botClient.sendMessage(message.chat().id(), """
-                    Aster Telegram 已连接。
-
-                    直接发送文本即可对话。
-                    /session 查看当前会话
-                    /new 新建会话
-                    /team <任务> 启动只读 Agent Team 探索
-                    /stop 停止当前任务
-                    /approve [id] 批准工具，省略 id 表示全部批准
-                    /deny [id] [reason] 拒绝工具，省略 id 表示全部拒绝
-                    """.stripTrailing());
+            case "/start" -> {
+                if (!runtimeManager.startPlan(message)) {
+                    sendHelp(message);
+                }
+            }
+            case "/help" -> sendHelp(message);
             case "/session" -> runtimeManager.showSession(message);
             case "/new" -> runtimeManager.newSession(message);
             case "/team" -> runtimeManager.submitTeam(message, commandArgument(text));
+            case "/plan" -> {
+                String task = commandArgument(text);
+                if ("cancel".equalsIgnoreCase(task)) {
+                    runtimeManager.cancelPlan(message);
+                } else {
+                    runtimeManager.submitPlan(message, task);
+                }
+            }
             case "/stop" -> runtimeManager.stop(message);
             case "/approve" -> runtimeManager.approve(message, commandArgument(text));
             case "/deny" -> {
@@ -106,6 +109,23 @@ public class TelegramUpdatePoller implements AutoCloseable {
             }
             default -> botClient.sendMessage(message.chat().id(), "未知命令。发送 /help 查看可用命令。");
         }
+    }
+
+    private void sendHelp(TelegramMessage message) throws IOException {
+        botClient.sendMessage(message.chat().id(), """
+                    Aster Telegram 已连接。
+
+                    直接发送文本即可对话。
+                    /session 查看当前会话
+                    /new 新建会话
+                    /team <任务> 启动只读 Agent Team 探索
+                    /plan <任务> 生成动态 DAG 计划
+                    /start 执行当前 Plan
+                    /plan cancel 取消当前 Plan
+                    /stop 停止当前任务
+                    /approve [id] 批准工具，省略 id 表示全部批准
+                    /deny [id] [reason] 拒绝工具，省略 id 表示全部拒绝
+                    """.stripTrailing());
     }
 
     private String normalizeCommand(String text) {

@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-Aster 是一个教学版 Java Agent MVP，用来演示 AgentLoop、流式 LLM、上下文压缩、工具调用、HITL 工具审批、MCP、Skill、Session 持久化、长期记忆、后台任务、固定 DAG Agent Team 和 TUI/Web/IM 的最小可运行架构。
+Aster 是一个教学版 Java Agent MVP，用来演示 AgentLoop、流式 LLM、上下文压缩、工具调用、HITL 工具审批、MCP、Skill、Session 持久化、长期记忆、后台任务、动态 DAG Plan、固定 DAG Agent Team 和 TUI/Web/IM 的最小可运行架构。
 
 它不是完整产品。做改动时优先保持结构清晰、代码少、教学可读，不要为了“以后可能需要”提前堆复杂抽象。
 
@@ -336,6 +336,7 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 - `memory/injection.md`：长期记忆注入提醒 prompt。
 - `memory/extraction.md`：长期记忆抽取 prompt。
 - `team/*.md`：Agent Team 各角色 system prompt，以及 Team 完整探索材料交回主 Agent 整理的 user prompt。
+- `plan/*.md`：动态 DAG planner、Plan 节点执行 Agent，以及 Plan 执行材料交回主 Agent 整理的 user prompt。
 
 不要把长 prompt 硬编码进 Java 类。
 
@@ -371,13 +372,25 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 
 ### Plan / Agent Team
 
-`app/plan/` 是可复用 DAG 执行内核，当前供 `/team` 使用，后续 `/plan` 也应复用这里，不要另写一套依赖调度器。
+`app/plan/` 是可复用 DAG 执行内核，供动态 `/plan` 和固定 `/team` 使用，不要另写一套依赖调度器。
 
 当前核心类：
 
 - `ExecutionPlan`：保存原始目标和 `PlanTask` 列表。
 - `PlanTask`：保存 id、description、type、dependencies、status、result。
 - `PlanRunner`：根据 ready tasks 并行执行 DAG；写类任务可通过 `writeLocked()` 串行。
+- `PlanPlannerAgent`：把用户目标拆成动态 JSON DAG，并校验依赖存在、id 唯一和无环。
+- `PlanTaskExecutor`：用临时内存 session 子 Agent 执行单个 Plan 节点，复用当前 runtime 的工具和 Hook。
+- `PlanModeCoordinator`：保存待确认 Plan，处理 `/plan`、`/start`、`/plan cancel` 的状态流转。
+
+动态 `/plan` 规则：
+
+- `/plan <任务>` 只生成并展示 DAG，不立即执行。
+- `/start` 才把待确认 DAG 交给 `PlanRunner` 按依赖解锁并发执行。
+- `/plan <新任务>` 可以替换待确认草案；`/plan cancel` 取消待确认或运行中的 Plan。
+- Plan 子 Agent 可以使用当前 ToolRegistry 和 HookRegistry，因此 `bash`、`write`、`edit` 仍走 HITL 审批。
+- Plan 子 Agent 使用内存 session，不写入主 session 原始历史。
+- Plan 执行材料最后交给主 Agent 整理最终回答。
 
 `app/team/` 是固定 DAG 的探索型 Agent Team。
 
@@ -392,7 +405,6 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 - Team 子 Agent 的工具调用事件不转发给 UI，只展示成员流式输出和成员完成事件。
 - Team 完成后只把完整探索材料交给主 Agent 整理最终回答，不由 Team 自己生成最终回答。
 - Team 运行情况通过 `AgentEvent` 发给 TUI/Web/Telegram，不要让 UI 直接读 Team 内部对象。
-- 后续做 `/plan` 时，可以新增 PlannerAgent 生成动态 `ExecutionPlan`，但仍应走 `PlanRunner`。
 
 ## UI 规则
 
@@ -409,8 +421,9 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 - TUI 只消费 `AgentEventEnvelope`，不要直接侵入 AgentLoop。
 - Web 对话输入只通过 `AgentRuntime.submit/steer/stop`，session CRUD 通过 `SessionIndex` 管理元信息，通过 `JsonlSessionStore` 读取历史。
 - `/team` 走 `AgentRuntime.submitTeam`，Team 完成后由 runtime 把完整探索材料作为内部请求交给主 Agent 整理。
+- `/plan` 走 `AgentRuntime.submitPlan/startPlan/cancelPlan`，不要让 UI 自己执行 DAG。
 - Web 静态资源放在 `src/main/resources/web/`，不要引入前端构建链路。
-- Telegram 只通过 `AgentRuntime.submit/stop/approve/deny` 输入，通过 `TelegramAgentEventHandler` 消费 `AgentEventEnvelope` 输出。
+- Telegram 只通过 `AgentRuntime.submit/submitPlan/startPlan/cancelPlan/stop/approve/deny` 输入，通过 `TelegramAgentEventHandler` 消费 `AgentEventEnvelope` 输出。
 - Telegram 必须使用 `TELEGRAM_ALLOWED_CHAT_IDS` 白名单；chat 到 session 的当前映射保存在 `workspace/im/telegram-sessions.json`。
 - 输出采用 Markdown-ish 渲染，支持标题、列表、表格、代码块、引用、分割线等基础格式。
 - 终端渲染对 emoji 兼容性有限，默认不要依赖 emoji 表达语义。
@@ -460,6 +473,7 @@ mvn test
 - Session JSONL
 - 后台任务
 - 长期记忆
+- 动态 DAG Plan
 - 固定 DAG Agent Team
 - Prompt
 - TUI Markdown 渲染
@@ -493,7 +507,7 @@ workspace/
 6. TUI 斜杠命令：放 `ui/tui/command/`，不要塞回 `AgentTuiWindow`。
 7. Web 展示和 HTTP 输入：放 `ui/web/`，复用 `AgentRuntime` 和 `AgentEventHandler`。
 8. IM 展示和输入：放 `ui/im/`，复用 `AgentRuntime` 和 `AgentEventHandler`。
-9. DAG 计划和 Agent Team：DAG 内核放 `app/plan/`，Team 封装放 `app/team/`，触发入口放 UI 命令或 runtime。
+9. DAG 计划和 Agent Team：动态 DAG 内核放 `app/plan/`，Team 固定探索封装放 `app/team/`，触发入口放 UI 命令或 runtime。
 10. 具体业务能力：放 `app/` 对应子包，并通过 RuntimeExtension 或 runtime 接入。
 11. 展示变化：放 `ui/`，消费事件，不改 AgentLoop。
 

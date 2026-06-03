@@ -838,6 +838,55 @@ function handleAgentEvent(event) {
     refreshStatus();
     return;
   }
+  if (type === "PlanDraftStarted") {
+    addMessage("system", `Plan 生成中：${payload.task || ""}`);
+    state.busy = true;
+    return;
+  }
+  if (type === "PlanProposed") {
+    addMessage("system", payload.planMarkdown || "Plan 已生成。输入 /start 执行。");
+    state.busy = false;
+    refreshStatus();
+    return;
+  }
+  if (type === "PlanExecutionStarted") {
+    addMessage("system", `Plan 开始执行：${payload.task || ""}`);
+    state.busy = true;
+    return;
+  }
+  if (type === "PlanTaskStarted") {
+    addMessage("system", `Plan 节点开始：${payload.taskId || ""} ${payload.taskType || ""}\n${payload.description || ""}`);
+    return;
+  }
+  if (type === "PlanTaskFinished") {
+    const stateText = payload.success ? "完成" : "失败";
+    addMessage(
+      payload.success ? "system" : "error",
+      `Plan 节点${stateText}：${payload.taskId || ""} · ${payload.elapsedMillis || 0}ms\n${previewText(payload.text || "").text}`
+    );
+    return;
+  }
+  if (type === "PlanExecutionFinished") {
+    state.busy = false;
+    addMessage(
+      payload.success ? "system" : "error",
+      payload.success ? "Plan 执行完成，正在交给主 Agent 整理。" : "Plan 执行失败，正在交给主 Agent 整理已有材料。"
+    );
+    refreshStatus();
+    return;
+  }
+  if (type === "PlanCanceled") {
+    state.busy = false;
+    addMessage("system", `Plan 已取消：${payload.reason || ""}`);
+    refreshStatus();
+    return;
+  }
+  if (type === "PlanFailed") {
+    state.busy = false;
+    addMessage("error", `Plan 失败：${payload.task || ""}\n${payload.errorMessage || ""}`);
+    refreshStatus();
+    return;
+  }
   if (type === "ToolCallStart") {
     const block = addToolBlock(payload);
     if (payload.toolCallId) state.tools.set(payload.toolCallId, block);

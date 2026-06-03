@@ -26,6 +26,9 @@ class PromptLoaderTest {
         String teamCodeResearcherPrompt = loader.load(PromptPaths.TEAM_CODE_RESEARCHER_SYSTEM);
         String teamRiskReviewerPrompt = loader.load(PromptPaths.TEAM_RISK_REVIEWER_SYSTEM);
         String teamFinalSummaryPrompt = loader.load(PromptPaths.TEAM_FINAL_SUMMARY_USER);
+        String planPlannerPrompt = loader.load(PromptPaths.PLAN_PLANNER_SYSTEM);
+        String planTaskExecutorPrompt = loader.load(PromptPaths.PLAN_TASK_EXECUTOR_SYSTEM);
+        String planFinalSummaryPrompt = loader.load(PromptPaths.PLAN_FINAL_SUMMARY_USER);
 
         assertTrue(systemPrompt.contains("Aster System Prompt"));
         assertTrue(systemPrompt.contains("Skill 使用"));
@@ -38,6 +41,9 @@ class PromptLoaderTest {
         assertTrue(teamCodeResearcherPrompt.contains("code_researcher"));
         assertTrue(teamRiskReviewerPrompt.contains("risk_reviewer"));
         assertTrue(teamFinalSummaryPrompt.contains("{{team_material}}"));
+        assertTrue(planPlannerPrompt.contains("tasks"));
+        assertTrue(planTaskExecutorPrompt.contains("Plan 节点执行 Agent"));
+        assertTrue(planFinalSummaryPrompt.contains("{{plan_result}}"));
     }
 
     /**

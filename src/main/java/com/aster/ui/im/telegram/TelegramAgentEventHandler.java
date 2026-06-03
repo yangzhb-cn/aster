@@ -95,6 +95,45 @@ public class TelegramAgentEventHandler implements AgentEventHandler {
                     + " · " + team.elapsedMillis() + "ms\n" + preview(team.summary()));
             return;
         }
+        if (event instanceof AgentEvent.PlanDraftStarted plan) {
+            sender.sendMessage(chatId, "Plan 生成中：" + plan.task());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanProposed plan) {
+            sender.sendMessage(chatId, preview(plan.planMarkdown()));
+            return;
+        }
+        if (event instanceof AgentEvent.PlanExecutionStarted plan) {
+            sender.sendMessage(chatId, "Plan 开始执行：" + plan.task());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanTaskStarted task) {
+            sender.sendMessage(chatId, "Plan 节点开始：" + task.taskId()
+                    + " " + task.type()
+                    + "\n" + task.description());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanTaskFinished task) {
+            sender.sendMessage(chatId, "Plan 节点" + (task.success() ? "完成" : "失败")
+                    + "：" + task.taskId()
+                    + " · " + task.elapsedMillis() + "ms\n"
+                    + preview(task.text()));
+            return;
+        }
+        if (event instanceof AgentEvent.PlanExecutionFinished plan) {
+            sender.sendMessage(chatId, plan.success()
+                    ? "Plan 执行完成，正在交给主 Agent 整理。"
+                    : "Plan 执行失败，正在交给主 Agent 整理已有材料。");
+            return;
+        }
+        if (event instanceof AgentEvent.PlanCanceled plan) {
+            sender.sendMessage(chatId, "Plan 已取消：" + plan.reason());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanFailed plan) {
+            sender.sendMessage(chatId, "Plan 失败：" + plan.task() + "\n" + plan.errorMessage());
+            return;
+        }
         if (event instanceof AgentEvent.RunFailed failed) {
             finalSent = true;
             sender.sendMessage(chatId, "执行失败：" + failed.errorMessage());

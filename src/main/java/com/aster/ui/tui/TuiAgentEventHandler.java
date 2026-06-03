@@ -100,6 +100,38 @@ public class TuiAgentEventHandler implements AgentEventHandler {
             window.showTeamRunFinished(team.success(), team.summary(), team.elapsedMillis());
             return;
         }
+        if (event instanceof AgentEvent.PlanDraftStarted plan) {
+            window.showPlanDraftStarted(plan.task());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanProposed plan) {
+            window.showPlanProposed(plan.planMarkdown());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanExecutionStarted plan) {
+            window.showPlanExecutionStarted(plan.task());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanTaskStarted task) {
+            window.showPlanTaskStarted(task.taskId(), task.type(), task.description());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanTaskFinished task) {
+            window.showPlanTaskFinished(task.taskId(), task.success(), task.text(), task.elapsedMillis());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanExecutionFinished plan) {
+            window.showPlanExecutionFinished(plan.success());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanCanceled plan) {
+            window.showPlanCanceled(plan.reason());
+            return;
+        }
+        if (event instanceof AgentEvent.PlanFailed plan) {
+            window.showPlanFailed(plan.task(), plan.errorMessage());
+            return;
+        }
         if (event instanceof AgentEvent.ToolCallStart toolCall) {
             window.showToolStart(toolCall.toolCallId(), toolCall.toolName(), toolCall.argumentsJson());
             return;

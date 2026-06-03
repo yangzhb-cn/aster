@@ -52,6 +52,8 @@ import com.aster.app.tool.builtin.BuiltinTools;
 import com.aster.app.todo.JsonTodoStore;
 import com.aster.app.todo.TodoScanTaskHandler;
 import com.aster.app.todo.TodoStore;
+import com.aster.app.plan.PlanPlannerAgent;
+import com.aster.app.plan.PlanTaskExecutor;
 import com.aster.app.team.AgentTeamRunner;
 import com.aster.app.team.TeamAgentFactory;
 import com.aster.app.team.TeamTaskExecutor;
@@ -123,6 +125,9 @@ public class AgentRuntimeFactory {
                 promptLoader.load(PromptPaths.TEAM_RISK_REVIEWER_SYSTEM)
         );
         String teamFinalSummaryUserPrompt = promptLoader.load(PromptPaths.TEAM_FINAL_SUMMARY_USER);
+        String planPlannerSystemPrompt = promptLoader.load(PromptPaths.PLAN_PLANNER_SYSTEM);
+        String planTaskExecutorSystemPrompt = promptLoader.load(PromptPaths.PLAN_TASK_EXECUTOR_SYSTEM);
+        String planFinalSummaryUserPrompt = promptLoader.load(PromptPaths.PLAN_FINAL_SUMMARY_USER);
 
         OkHttpClient httpClient = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofSeconds(30))
@@ -235,11 +240,31 @@ public class AgentRuntimeFactory {
                         eventPublisher
                 )
         );
+        PlanModeCoordinator planModeCoordinator = new PlanModeCoordinator(
+                new PlanPlannerAgent(
+                        objectMapper,
+                        provider,
+                        streamingChatClient,
+                        planPlannerSystemPrompt
+                ),
+                new PlanTaskExecutor(
+                        provider,
+                        streamingChatClient,
+                        toolRegistry,
+                        hookRegistry,
+                        eventPublisher,
+                        planTaskExecutorSystemPrompt
+                ),
+                runCoordinator,
+                eventPublisher,
+                planFinalSummaryUserPrompt
+        );
 
         return new AgentRuntime(
                 agentLoop,
                 runCoordinator,
                 agentTeamRunner,
+                planModeCoordinator,
                 eventPublisher,
                 backgroundTaskManager,
                 toolApprovalManager,

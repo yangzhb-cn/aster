@@ -32,6 +32,14 @@ public sealed interface AgentEvent permits
         AgentEvent.TeamMemberToken,
         AgentEvent.TeamMemberFinished,
         AgentEvent.TeamRunFinished,
+        AgentEvent.PlanDraftStarted,
+        AgentEvent.PlanProposed,
+        AgentEvent.PlanExecutionStarted,
+        AgentEvent.PlanTaskStarted,
+        AgentEvent.PlanTaskFinished,
+        AgentEvent.PlanExecutionFinished,
+        AgentEvent.PlanCanceled,
+        AgentEvent.PlanFailed,
         AgentEvent.ToolCallStart,
         AgentEvent.ToolCallDone,
         AgentEvent.UsageReported,
@@ -218,6 +226,54 @@ public sealed interface AgentEvent permits
      * Agent Team 探索任务结束。
      */
     record TeamRunFinished(boolean success, String summary, long elapsedMillis) implements AgentEvent {
+    }
+
+    /**
+     * /plan 正在生成动态 DAG。
+     */
+    record PlanDraftStarted(String task) implements AgentEvent {
+    }
+
+    /**
+     * /plan 已生成待确认 DAG。
+     */
+    record PlanProposed(String task, String planMarkdown) implements AgentEvent {
+    }
+
+    /**
+     * /start 已开始执行当前 Plan。
+     */
+    record PlanExecutionStarted(String task, String planMarkdown) implements AgentEvent {
+    }
+
+    /**
+     * Plan DAG 中的一个节点开始执行。
+     */
+    record PlanTaskStarted(String taskId, String type, String description) implements AgentEvent {
+    }
+
+    /**
+     * Plan DAG 中的一个节点执行结束。
+     */
+    record PlanTaskFinished(String taskId, boolean success, String text, long elapsedMillis) implements AgentEvent {
+    }
+
+    /**
+     * Plan DAG 执行结束，完整材料会继续交给主 Agent 整理。
+     */
+    record PlanExecutionFinished(boolean success, String resultMarkdown) implements AgentEvent {
+    }
+
+    /**
+     * 当前 Plan 已被用户取消。
+     */
+    record PlanCanceled(String reason) implements AgentEvent {
+    }
+
+    /**
+     * 当前 Plan 生成或执行失败。
+     */
+    record PlanFailed(String task, String errorMessage) implements AgentEvent {
     }
 
     /**

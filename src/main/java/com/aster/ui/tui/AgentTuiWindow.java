@@ -315,6 +315,97 @@ public class AgentTuiWindow implements AutoCloseable {
     }
 
     /**
+     * 显示 Plan DAG 正在生成。
+     */
+    public void showPlanDraftStarted(String task) {
+        enqueue(() -> {
+            addBlock(new SystemBlock("Plan 生成中：" + task));
+            status = "planning";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Plan DAG 草案。
+     */
+    public void showPlanProposed(String planMarkdown) {
+        enqueue(() -> {
+            addBlock(new SystemBlock(planMarkdown));
+            status = "plan ready | /start";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Plan 开始执行。
+     */
+    public void showPlanExecutionStarted(String task) {
+        enqueue(() -> {
+            addBlock(new SystemBlock("Plan 开始执行：" + task));
+            status = "plan running";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Plan 节点开始执行。
+     */
+    public void showPlanTaskStarted(String taskId, String type, String description) {
+        enqueue(() -> {
+            addBlock(new SystemBlock("Plan 节点开始：" + taskId + " " + type + "\n" + description));
+            status = "plan task running: " + taskId;
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Plan 节点执行结束。
+     */
+    public void showPlanTaskFinished(String taskId, boolean success, String text, long elapsedMillis) {
+        enqueue(() -> {
+            addBlock(new SystemBlock("Plan 节点" + (success ? "完成" : "失败")
+                    + "：" + taskId + " · " + elapsedMillis + "ms\n" + truncateForSystem(text)));
+            status = "plan task " + (success ? "done: " : "failed: ") + taskId;
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Plan 整体执行结束。
+     */
+    public void showPlanExecutionFinished(boolean success) {
+        enqueue(() -> {
+            addBlock(new SystemBlock(success
+                    ? "Plan 执行完成，正在交给主 Agent 整理。"
+                    : "Plan 执行失败，正在交给主 Agent 整理已有材料。"));
+            status = success ? "plan done" : "plan failed";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Plan 已取消。
+     */
+    public void showPlanCanceled(String reason) {
+        enqueue(() -> {
+            addBlock(new SystemBlock("Plan 已取消：" + reason));
+            status = "plan canceled";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Plan 失败。
+     */
+    public void showPlanFailed(String task, String errorMessage) {
+        enqueue(() -> {
+            addBlock(new ErrorBlock("Plan 失败：" + task + "\n" + errorMessage));
+            status = "plan failed";
+            dirty = true;
+        });
+    }
+
+    /**
      * 更新底部预算行，不把 usage 当作一条对话消息插入历史区。
      */
     public void showUsage(TokenUsage usage, int maxContextTokens) {

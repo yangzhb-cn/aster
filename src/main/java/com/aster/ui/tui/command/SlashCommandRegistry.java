@@ -26,6 +26,8 @@ public class SlashCommandRegistry {
                 new ExitCommand(),
                 new SessionCommand(),
                 new TeamCommand(),
+                new PlanCommand(),
+                new StartCommand(),
                 new SteerCommand(),
                 new StopCommand(),
                 new ApproveCommand(),

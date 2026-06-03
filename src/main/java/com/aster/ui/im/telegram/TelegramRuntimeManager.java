@@ -61,6 +61,42 @@ public class TelegramRuntimeManager implements AutoCloseable {
     }
 
     /**
+     * 为当前 chat 生成动态 Plan。
+     */
+    public synchronized void submitPlan(TelegramMessage message, String task) throws IOException {
+        if (task == null || task.isBlank()) {
+            sender.sendMessage(message.chat().id(), "用法：/plan 要完成的任务");
+            return;
+        }
+        ChatRuntime chatRuntime = runtimeFor(message);
+        chatRuntime.runtime().submitPlan(task);
+        sessionIndex.touch(chatRuntime.sessionId());
+        sender.sendMessage(message.chat().id(), "Plan 生成中：" + task);
+    }
+
+    /**
+     * 执行当前 chat 待确认的 Plan。
+     */
+    public synchronized boolean startPlan(TelegramMessage message) throws IOException {
+        ChatRuntime chatRuntime = runtimeFor(message);
+        boolean started = chatRuntime.runtime().startPlan();
+        if (started) {
+            sessionIndex.touch(chatRuntime.sessionId());
+            sender.sendMessage(message.chat().id(), "Plan 已开始执行。");
+        }
+        return started;
+    }
+
+    /**
+     * 取消当前 chat 的 Plan。
+     */
+    public synchronized void cancelPlan(TelegramMessage message) throws IOException {
+        ChatRuntime chatRuntime = runtimeFor(message);
+        boolean canceled = chatRuntime.runtime().cancelPlan();
+        sender.sendMessage(message.chat().id(), canceled ? "Plan 已取消。" : "当前没有可取消的 Plan。");
+    }
+
+    /**
      * 停止当前 chat 正在执行的 run。
      */
     public synchronized void stop(TelegramMessage message) throws IOException {

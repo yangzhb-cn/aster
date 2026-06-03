@@ -115,6 +115,31 @@ public final class WebAgentEventMapper {
             payload.put("success", value.success());
             payload.put("summary", value.summary());
             payload.put("elapsedMillis", value.elapsedMillis());
+        } else if (event instanceof AgentEvent.PlanDraftStarted value) {
+            payload.put("task", value.task());
+        } else if (event instanceof AgentEvent.PlanProposed value) {
+            payload.put("task", value.task());
+            payload.put("planMarkdown", value.planMarkdown());
+        } else if (event instanceof AgentEvent.PlanExecutionStarted value) {
+            payload.put("task", value.task());
+            payload.put("planMarkdown", value.planMarkdown());
+        } else if (event instanceof AgentEvent.PlanTaskStarted value) {
+            payload.put("taskId", value.taskId());
+            payload.put("taskType", value.type());
+            payload.put("description", value.description());
+        } else if (event instanceof AgentEvent.PlanTaskFinished value) {
+            payload.put("taskId", value.taskId());
+            payload.put("success", value.success());
+            payload.put("text", value.text());
+            payload.put("elapsedMillis", value.elapsedMillis());
+        } else if (event instanceof AgentEvent.PlanExecutionFinished value) {
+            payload.put("success", value.success());
+            payload.put("resultMarkdown", value.resultMarkdown());
+        } else if (event instanceof AgentEvent.PlanCanceled value) {
+            payload.put("reason", value.reason());
+        } else if (event instanceof AgentEvent.PlanFailed value) {
+            payload.put("task", value.task());
+            payload.put("errorMessage", value.errorMessage());
         } else if (event instanceof AgentEvent.ToolCallStart value) {
             payload.put("toolCallId", value.toolCallId());
             payload.put("toolName", value.toolName());

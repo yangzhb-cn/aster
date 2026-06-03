@@ -750,10 +750,10 @@ class AgentLoopTest {
     }
 
     /**
-     * 验证每轮请求前会读取 Markdown 长期记忆，并作为 system message 注入模型请求。
+     * 验证每轮请求前会读取 Markdown 长期记忆，并作为临时 XML 提醒块注入最后一条 user 消息。
      */
     @Test
-    void injectsMarkdownLongTermMemoryBeforeEachLlmRequest() throws Exception {
+    void injectsMarkdownLongTermMemoryIntoLastUserMessageBeforeEachLlmRequest() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         InMemorySessionStore sessionStore = new InMemorySessionStore();
         ToolRegistry toolRegistry = new ToolRegistry(
@@ -766,7 +766,12 @@ class AgentLoopTest {
                 "用户要求代码注释使用中文。",
                 "用户明确说：中文注释，以后也是"
         )));
-        MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer("长期记忆注入：\n{{memory}}");
+        MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer("""
+                <system-reminder>
+                长期记忆注入：
+                {{memory}}
+                </system-reminder>
+                """);
         List<List<Message>> capturedRequests = new ArrayList<>();
 
         StreamingChatClient fakeStreamingLlm = (request, handler) -> {
@@ -799,10 +804,17 @@ class AgentLoopTest {
         assertEquals("answer", loop.run("你好"));
 
         List<Message> requestMessages = capturedRequests.getFirst();
-        assertEquals("system", requestMessages.getFirst().role());
-        assertTrue(requestMessages.getFirst().content().contains("长期记忆注入"));
-        assertTrue(requestMessages.getFirst().content().contains("用户要求代码注释使用中文"));
-        assertEquals("user", requestMessages.get(1).role());
+        assertEquals(1, requestMessages.size());
+        Message requestUserMessage = requestMessages.getFirst();
+        assertEquals("user", requestUserMessage.role());
+        assertTrue(requestUserMessage.content().startsWith("<system-reminder>"));
+        assertTrue(requestUserMessage.content().contains("长期记忆注入"));
+        assertTrue(requestUserMessage.content().contains("用户要求代码注释使用中文"));
+        assertTrue(requestUserMessage.content().endsWith("你好"));
+
+        List<Message> storedMessages = sessionStore.loadMessages();
+        assertEquals("user", storedMessages.getFirst().role());
+        assertEquals("你好", storedMessages.getFirst().content());
     }
 
     /**

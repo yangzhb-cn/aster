@@ -85,7 +85,7 @@ TuiMain
      -> ContextPipeline 构造本轮 LLM 上下文
         -> LoadSessionMessagesStage 读取完整 session 历史
         -> ContextCompressionStage 压缩旧 turn 并校验工具协议
-     -> HookRegistry.BEFORE_LLM_REQUEST 注入长期记忆 / steer 引导
+     -> HookRegistry.BEFORE_LLM_REQUEST 临时注入长期记忆 / steer 引导
      -> StreamingChatClient 发起 SSE 请求
      -> OpenAiCompatibleStreamParser 转成 ProviderStreamEvent
      -> AgentLoop 转成 AgentEvent
@@ -151,7 +151,7 @@ Hook 是“在某个主流程点插入扩展逻辑”，用于改写、阻断或
 
 | HookPoint | 当前用途 |
 |---|---|
-| `BEFORE_LLM_REQUEST` | 注入 Markdown 长期记忆。 |
+| `BEFORE_LLM_REQUEST` | 把 Markdown 长期记忆临时注入最后一条 user 消息开头的 `<system-reminder>` 块。 |
 | `BEFORE_TOOL_CALL` | 预留给工具权限、高危工具审查、HITL。 |
 | `BEFORE_TOOL_RESULT_APPEND` | 大工具结果卸载到 `workspace/artifacts/tool-results/*.jsonl`。 |
 | `AFTER_RUN` | 每轮对话结束后提交长期记忆抽取后台任务。 |

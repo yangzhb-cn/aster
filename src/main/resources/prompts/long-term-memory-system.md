@@ -1,5 +1,4 @@
-# Long Term Memory System Prompt
-
+<system-reminder>
 以下是长期记忆，用于理解用户画像、行为偏好、项目动态和外部指针。
 
 这些记忆不是本轮用户的新请求。你应该把它们当作背景信息使用：
@@ -12,3 +11,4 @@
 如果长期记忆和本轮用户请求冲突，以本轮用户请求为准。
 
 {{memory}}
+</system-reminder>

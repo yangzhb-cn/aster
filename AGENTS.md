@@ -262,7 +262,8 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 
 ### 长期记忆
 
-长期记忆第一版用 Markdown 存储，并在每轮 LLM 请求前注入 system message。
+长期记忆第一版用 Markdown 存储，并在每轮 LLM 请求前临时注入最后一条 user 消息开头的 `<system-reminder>` 块。
+这个提醒块只进入本次模型请求，不写入 SessionStore。
 
 只允许四类长期记忆：
 

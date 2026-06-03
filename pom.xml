@@ -4,7 +4,7 @@
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <groupId>dev.agentmvp</groupId>
+    <groupId>com.aster</groupId>
     <artifactId>aster</artifactId>
     <name>Aster</name>
     <version>0.1.0-SNAPSHOT</version>
@@ -61,7 +61,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.3.0</version>
                 <configuration>
-                    <mainClass>dev.agentmvp.ui.tui.TuiMain</mainClass>
+                    <mainClass>com.aster.ui.tui.TuiMain</mainClass>
                 </configuration>
             </plugin>
         </plugins>

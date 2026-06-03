@@ -35,7 +35,7 @@ llm
 ## 包结构
 
 ```text
-src/main/java/dev/agentmvp/
+src/main/java/com/aster/
 ├── llm/                    模型 API 适配层
 │   ├── StreamingChatClient
 │   ├── OpenAiCompatibleChatClient

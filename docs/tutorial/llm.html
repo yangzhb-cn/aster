@@ -21,7 +21,7 @@
     <div class="layout">
       <article>
         <section class="section" id="what">
-          <p class="eyebrow">Package · dev.agentmvp.llm</p>
+          <p class="eyebrow">Package · com.aster.llm</p>
           <h1>llm 包：只保留流式模型调用。</h1>
           <p class="lead">当前项目没有非流式路径。`OkHttpStreamingChatClient` 负责把 `ChatRequest` 变成 HTTP 请求，再把每行 <span class="term" data-tip="SSE 是 Server-Sent Events，服务端可以一小段一小段把数据推给客户端，常用于流式模型输出。">SSE</span> 交给 `OpenAiCompatibleStreamParser`，统一输出 `ProviderStreamEvent`。DeepSeek V4 默认打开 thinking mode，并请求服务端在流式末尾返回真实 token usage。</p>
         </section>

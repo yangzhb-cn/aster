@@ -5,6 +5,7 @@ import com.aster.app.background.BackgroundTaskManager;
 import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.hitl.model.ToolApprovalRequest;
 import com.aster.app.team.AgentTeamRunner;
+import com.aster.app.team.model.TeamRunOutput;
 import com.aster.core.event.model.AgentEvent;
 import com.aster.llm.model.OpenAiCompatibleProvider;
 import com.aster.app.mcp.McpToolExecutor;
@@ -34,6 +35,7 @@ public class AgentRuntime implements AutoCloseable {
     private final McpToolExecutor mcpToolExecutor;
     private final OpenAiCompatibleProvider provider;
     private final String sessionName;
+    private final String teamFinalSummaryUserPrompt;
     private final int skillCount;
     private final ExecutorService teamExecutor = Executors.newSingleThreadExecutor();
     private final Object teamLock = new Object();
@@ -52,6 +54,7 @@ public class AgentRuntime implements AutoCloseable {
             McpToolExecutor mcpToolExecutor,
             OpenAiCompatibleProvider provider,
             String sessionName,
+            String teamFinalSummaryUserPrompt,
             int skillCount
     ) {
         this.agentLoop = Objects.requireNonNull(agentLoop);
@@ -64,6 +67,7 @@ public class AgentRuntime implements AutoCloseable {
         this.mcpToolExecutor = Objects.requireNonNull(mcpToolExecutor);
         this.provider = Objects.requireNonNull(provider);
         this.sessionName = Objects.requireNonNull(sessionName);
+        this.teamFinalSummaryUserPrompt = Objects.requireNonNull(teamFinalSummaryUserPrompt);
         this.skillCount = skillCount;
     }
 
@@ -210,13 +214,17 @@ public class AgentRuntime implements AutoCloseable {
 
     private void runTeam(String task) {
         eventPublisher.beginRun();
+        TeamRunOutput output = null;
         try {
-            agentTeamRunner.run(task);
+            output = agentTeamRunner.run(task);
         } finally {
             synchronized (teamLock) {
                 teamBusy = false;
                 currentTeam = null;
             }
+        }
+        if (output != null && !Thread.currentThread().isInterrupted()) {
+            runCoordinator.submit(renderTeamFinalSummaryPrompt(output));
         }
     }
 
@@ -244,5 +252,14 @@ public class AgentRuntime implements AutoCloseable {
             throw new IllegalArgumentException(name + " is required");
         }
         return value.trim();
+    }
+
+    /**
+     * 把 Team 完整探索材料包装成主 Agent 的内部整理请求。
+     */
+    private String renderTeamFinalSummaryPrompt(TeamRunOutput output) {
+        return teamFinalSummaryUserPrompt
+                .replace("{{task}}", output.task())
+                .replace("{{team_material}}", output.material());
     }
 }

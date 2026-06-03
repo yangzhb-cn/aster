@@ -331,10 +331,11 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 
 包括：
 
-- system prompt
-- 上下文摘要 prompt
-- 长期记忆提醒 prompt
-- 长期记忆抽取 prompt
+- `agent/system.md`：主 Agent system prompt。
+- `context/summary.md`：旧对话压缩摘要 prompt。
+- `memory/injection.md`：长期记忆注入提醒 prompt。
+- `memory/extraction.md`：长期记忆抽取 prompt。
+- `team/*.md`：Agent Team 各角色 system prompt，以及 Team 完整探索材料交回主 Agent 整理的 user prompt。
 
 不要把长 prompt 硬编码进 Java 类。
 
@@ -383,10 +384,13 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 当前规则：
 
 - `/team <任务>` 由 TUI/Web/Telegram 命令触发，不注册成 LLM 可见工具。
-- 第一版固定 DAG 是 `planner -> code_researcher + risk_reviewer`。
+- 第一版固定 DAG 是 `planner -> 3 个 code_researcher + 2 个 risk_reviewer 并行探索`。
+- Team 子 Agent 总并发上限是 5。
 - Team 子 Agent 只做探索，不写主 session，不修改文件。
 - Team 子 Agent 只注册 `read`、`ls`、`glob`、`grep`、`web_fetch`、`web_search`。
 - 不要在 Team 子 Agent 里注册 `write`、`edit`、`bash`、`todo`、`background_task`、`subagent` 或未来的 `agent_team`，避免并发修改和递归代理。
+- Team 子 Agent 的工具调用事件不转发给 UI，只展示成员流式输出和成员完成事件。
+- Team 完成后只把完整探索材料交给主 Agent 整理最终回答，不由 Team 自己生成最终回答。
 - Team 运行情况通过 `AgentEvent` 发给 TUI/Web/Telegram，不要让 UI 直接读 Team 内部对象。
 - 后续做 `/plan` 时，可以新增 PlannerAgent 生成动态 `ExecutionPlan`，但仍应走 `PlanRunner`。
 
@@ -404,7 +408,7 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 
 - TUI 只消费 `AgentEventEnvelope`，不要直接侵入 AgentLoop。
 - Web 对话输入只通过 `AgentRuntime.submit/steer/stop`，session CRUD 通过 `SessionIndex` 管理元信息，通过 `JsonlSessionStore` 读取历史。
-- `/team` 走 `AgentRuntime.submitTeam`，不写入普通用户消息，不占用主 AgentLoop 的工具协议。
+- `/team` 走 `AgentRuntime.submitTeam`，Team 完成后由 runtime 把完整探索材料作为内部请求交给主 Agent 整理。
 - Web 静态资源放在 `src/main/resources/web/`，不要引入前端构建链路。
 - Telegram 只通过 `AgentRuntime.submit/stop/approve/deny` 输入，通过 `TelegramAgentEventHandler` 消费 `AgentEventEnvelope` 输出。
 - Telegram 必须使用 `TELEGRAM_ALLOWED_CHAT_IDS` 白名单；chat 到 session 的当前映射保存在 `workspace/im/telegram-sessions.json`。

@@ -160,7 +160,7 @@ ProviderStreamEvent
 - `AssistantToken`：assistant 正文流式增量。
 - `ReasoningToken`：DeepSeek `reasoning_content` 增量。
 - `ToolApprovalRequested` / `ToolApprovalResolved`：高危工具人工审批状态。
-- `TeamRunStarted` / `TeamMemberStarted` / `TeamMemberFinished` / `TeamRunFinished`：固定 DAG Agent Team 探索状态。
+- `TeamRunStarted` / `TeamMemberStarted` / `TeamMemberFinished` / `TeamRunFinished`：固定 DAG Agent Team 探索状态；最终回答仍由主 Agent 整理输出。
 - `ToolCallStart` / `ToolCallDone`：工具调用状态。
 - `UsageReported`：输入、缓存、输出 token 统计。
 - `ContextBuilt`：上下文压缩前后 token 估算。
@@ -226,9 +226,11 @@ Session 规则：
 Agent Team 规则：
 
 - `/team <任务>` 从 TUI、Web 或 Telegram 触发，不作为 LLM 工具暴露。
-- 第一版只做只读探索，固定 DAG 是 `planner -> code_researcher + risk_reviewer`。
+- 第一版只做只读探索，固定 DAG 是 `planner -> 3 个 code_researcher + 2 个 risk_reviewer 并行探索`，Team 子 Agent 总并发上限是 5。
 - Team 子 Agent 使用内存 session，不写入主 session 原始历史。
 - 子 Agent 只注册 `read`、`ls`、`glob`、`grep`、`web_fetch`、`web_search`，不注册 `write`、`edit`、`bash`、`todo`、`background_task` 或递归子 Agent。
+- Team 子 Agent 的工具调用事件不转发到 UI，避免探索阶段刷出大量工具块。
+- Team 完成后把完整探索材料交回主 Agent，由主 Agent 整理最终回答。
 - `app/plan` 是后续 `/plan` 可以复用的 DAG 内核；当前 `/team` 不使用 LLM 动态生成计划。
 
 ## 运行

@@ -57,12 +57,16 @@ public class TeamTaskExecutor {
     }
 
     private TeamRole roleFor(PlanTask task) {
-        return switch (task.id()) {
-            case TeamPlanFactory.PLANNER_ID -> TeamRole.PLANNER;
-            case TeamPlanFactory.CODE_RESEARCHER_ID -> TeamRole.CODE_RESEARCHER;
-            case TeamPlanFactory.RISK_REVIEWER_ID -> TeamRole.RISK_REVIEWER;
-            default -> throw new IllegalArgumentException("未知 Team task: " + task.id());
-        };
+        if (TeamPlanFactory.PLANNER_ID.equals(task.id())) {
+            return TeamRole.PLANNER;
+        }
+        if (TeamPlanFactory.CODE_RESEARCHER_IDS.contains(task.id())) {
+            return TeamRole.CODE_RESEARCHER;
+        }
+        if (TeamPlanFactory.RISK_REVIEWER_IDS.contains(task.id())) {
+            return TeamRole.RISK_REVIEWER;
+        }
+        throw new IllegalArgumentException("未知 Team task: " + task.id());
     }
 
     private String memberPrompt(TeamRole role, PlanTask task, ExecutionPlan plan) {

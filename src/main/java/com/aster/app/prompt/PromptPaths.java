@@ -14,6 +14,7 @@ public final class PromptPaths {
     public static final String TEAM_PLANNER_SYSTEM = "/prompts/team/planner-system.md";
     public static final String TEAM_CODE_RESEARCHER_SYSTEM = "/prompts/team/code-researcher-system.md";
     public static final String TEAM_RISK_REVIEWER_SYSTEM = "/prompts/team/risk-reviewer-system.md";
+    public static final String TEAM_FINAL_SUMMARY_USER = "/prompts/team/final-summary-user.md";
 
     private PromptPaths() {
     }

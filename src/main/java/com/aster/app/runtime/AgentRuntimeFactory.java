@@ -122,6 +122,7 @@ public class AgentRuntimeFactory {
                 promptLoader.load(PromptPaths.TEAM_CODE_RESEARCHER_SYSTEM),
                 promptLoader.load(PromptPaths.TEAM_RISK_REVIEWER_SYSTEM)
         );
+        String teamFinalSummaryUserPrompt = promptLoader.load(PromptPaths.TEAM_FINAL_SUMMARY_USER);
 
         OkHttpClient httpClient = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofSeconds(30))
@@ -246,6 +247,7 @@ public class AgentRuntimeFactory {
                 mcpToolExecutor,
                 provider,
                 sessionName,
+                teamFinalSummaryUserPrompt,
                 skillRepository.listMetadata().size()
         );
     }

@@ -24,14 +24,20 @@ class AgentTeamTest {
     void createsFixedExplorationDag() {
         ExecutionPlan plan = TeamPlanFactory.explorationPlan("探索 Web 入口");
 
-        assertEquals(3, plan.tasks().size());
+        assertEquals(6, plan.tasks().size());
         assertEquals(PlanTaskType.PLANNING, plan.task("T1").type());
-        assertEquals(List.of("T1"), plan.task("T2").dependencies());
-        assertEquals(List.of("T1"), plan.task("T3").dependencies());
+        for (String taskId : TeamPlanFactory.CODE_RESEARCHER_IDS) {
+            assertEquals(PlanTaskType.FILE_READ, plan.task(taskId).type());
+            assertEquals(List.of("T1"), plan.task(taskId).dependencies());
+        }
+        for (String taskId : TeamPlanFactory.RISK_REVIEWER_IDS) {
+            assertEquals(PlanTaskType.ANALYSIS, plan.task(taskId).type());
+            assertEquals(List.of("T1"), plan.task(taskId).dependencies());
+        }
     }
 
     /**
-     * 验证 PlanRunner 会先执行 planner，再执行依赖 planner 的两个节点。
+     * 验证 PlanRunner 会先执行 planner，再并行执行 3 个 reader 和 2 个 reviewer。
      */
     @Test
     void runsReadyTasksByDependency() throws Exception {
@@ -42,14 +48,18 @@ class AgentTeamTest {
                 executed.add(task.id());
             }
             return "done " + task.id();
-        }, 2);
+        }, 5);
 
         assertTrue(runner.run(plan).success());
-        assertEquals(PlanTaskStatus.COMPLETED, plan.task("T1").status());
-        assertEquals(PlanTaskStatus.COMPLETED, plan.task("T2").status());
-        assertEquals(PlanTaskStatus.COMPLETED, plan.task("T3").status());
+        for (String taskId : List.of("T1", "T2", "T3", "T4", "T5", "T6")) {
+            assertEquals(PlanTaskStatus.COMPLETED, plan.task(taskId).status());
+        }
         assertEquals("T1", executed.get(0));
-        assertTrue(executed.contains("T2"));
-        assertTrue(executed.contains("T3"));
+        for (String taskId : TeamPlanFactory.CODE_RESEARCHER_IDS) {
+            assertTrue(executed.indexOf(taskId) > 0);
+        }
+        for (String taskId : TeamPlanFactory.RISK_REVIEWER_IDS) {
+            assertTrue(executed.indexOf(taskId) > 0);
+        }
     }
 }

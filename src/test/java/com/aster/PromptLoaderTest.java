@@ -25,6 +25,7 @@ class PromptLoaderTest {
         String teamPlannerPrompt = loader.load(PromptPaths.TEAM_PLANNER_SYSTEM);
         String teamCodeResearcherPrompt = loader.load(PromptPaths.TEAM_CODE_RESEARCHER_SYSTEM);
         String teamRiskReviewerPrompt = loader.load(PromptPaths.TEAM_RISK_REVIEWER_SYSTEM);
+        String teamFinalSummaryPrompt = loader.load(PromptPaths.TEAM_FINAL_SUMMARY_USER);
 
         assertTrue(systemPrompt.contains("Aster System Prompt"));
         assertTrue(systemPrompt.contains("Skill 使用"));
@@ -36,6 +37,7 @@ class PromptLoaderTest {
         assertTrue(teamPlannerPrompt.contains("planner"));
         assertTrue(teamCodeResearcherPrompt.contains("code_researcher"));
         assertTrue(teamRiskReviewerPrompt.contains("risk_reviewer"));
+        assertTrue(teamFinalSummaryPrompt.contains("{{team_material}}"));
     }
 
     /**

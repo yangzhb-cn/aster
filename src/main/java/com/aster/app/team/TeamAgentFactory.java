@@ -98,36 +98,11 @@ public class TeamAgentFactory {
     private AgentEventBus teamEventBus(TeamRole role, String taskId, AgentEventPublisher eventPublisher) {
         return AgentEventBus.single("team-" + role.id(), envelope -> {
             AgentEvent event = envelope.event();
+            // Team 子 Agent 工具调用数量很多，只转发成员正文，避免 UI 被 read/grep 事件刷屏。
             if (event instanceof AgentEvent.AssistantToken token) {
                 eventPublisher.publish(new AgentEvent.TeamMemberToken(taskId, role.id(), token.text()));
-                return;
-            }
-            if (event instanceof AgentEvent.ToolCallStart tool) {
-                eventPublisher.publish(new AgentEvent.ToolCallStart(
-                        teamToolCallId(taskId, role, tool.toolCallId()),
-                        teamToolName(taskId, role, tool.toolName()),
-                        tool.argumentsJson()
-                ));
-                return;
-            }
-            if (event instanceof AgentEvent.ToolCallDone tool) {
-                eventPublisher.publish(new AgentEvent.ToolCallDone(
-                        teamToolCallId(taskId, role, tool.toolCallId()),
-                        teamToolName(taskId, role, tool.toolName()),
-                        tool.text(),
-                        tool.success(),
-                        tool.elapsedMillis()
-                ));
             }
         });
-    }
-
-    private String teamToolCallId(String taskId, TeamRole role, String toolCallId) {
-        return taskId + "_" + role.id() + "_" + toolCallId;
-    }
-
-    private String teamToolName(String taskId, TeamRole role, String toolName) {
-        return role.id() + "(" + taskId + ")." + toolName;
     }
 
     private ToolRegistry readonlyToolRegistry() {

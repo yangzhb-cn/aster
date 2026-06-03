@@ -13,6 +13,10 @@ import com.aster.app.background.BackgroundTaskScheduler;
 import com.aster.app.background.BackgroundTaskStore;
 import com.aster.app.background.JsonlBackgroundTaskStore;
 import com.aster.app.background.ReminderTaskHandler;
+import com.aster.app.background.model.BackgroundTask;
+import com.aster.app.background.model.TaskAction;
+import com.aster.app.background.model.TaskStatus;
+import com.aster.app.background.model.TaskTrigger;
 import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.extension.RuntimeExtensionContext;
 import com.aster.app.extension.RuntimeExtensionRegistry;
@@ -45,6 +49,9 @@ import com.aster.core.tool.LocalToolExecutor;
 import com.aster.core.tool.ParallelToolExecutor;
 import com.aster.core.tool.ToolRegistry;
 import com.aster.app.tool.builtin.BuiltinTools;
+import com.aster.app.todo.JsonTodoStore;
+import com.aster.app.todo.TodoScanTaskHandler;
+import com.aster.app.todo.TodoStore;
 import okhttp3.OkHttpClient;
 
 import java.io.IOException;
@@ -52,6 +59,7 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -122,6 +130,7 @@ public class AgentRuntimeFactory {
         BuiltinTools.registerAll(toolRegistry, Path.of("."));
         MarkdownMemoryStore memoryStore = new MarkdownMemoryStore(WorkspacePaths.LONG_TERM_MEMORY);
         MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer(longTermMemorySystemPrompt);
+        TodoStore todoStore = new JsonTodoStore(objectMapper, WorkspacePaths.TODO_FILE);
 
         List<Message> bootstrapMessages = new ArrayList<>();
         // 基础 system prompt 来自 jar 内置 resources/prompts/system.md。
@@ -144,9 +153,11 @@ public class AgentRuntimeFactory {
                 notificationSink,
                 List.of(
                         new ReminderTaskHandler(),
+                        new TodoScanTaskHandler(todoStore),
                         new MemoryExtractionTaskHandler(memoryExtractionAgent)
                 )
         );
+        ensureTodoScanTask(backgroundTaskManager);
         backgroundTaskManager.start();
         HookRegistry hookRegistry = new HookRegistry();
         ToolApprovalManager toolApprovalManager = new ToolApprovalManager();
@@ -164,7 +175,8 @@ public class AgentRuntimeFactory {
                 memoryStore,
                 memoryPromptRenderer,
                 backgroundTaskManager,
-                toolApprovalManager
+                toolApprovalManager,
+                todoStore
         );
         RuntimeExtensionRegistry extensionRegistry = RuntimeExtensionRegistry.defaults();
         extensionRegistry.registerTools(extensionContext);
@@ -239,6 +251,22 @@ public class AgentRuntimeFactory {
                 store,
                 new BackgroundTaskScheduler(store, executor)
         );
+    }
+
+    private void ensureTodoScanTask(BackgroundTaskManager backgroundTaskManager) throws IOException {
+        boolean exists = backgroundTaskManager.listTasks().stream()
+                .anyMatch(task -> task.enabled()
+                        && task.status() == TaskStatus.ACTIVE
+                        && task.action() != null
+                        && TodoScanTaskHandler.ACTION_TYPE.equals(task.action().type()));
+        if (exists) {
+            return;
+        }
+        backgroundTaskManager.create(BackgroundTask.create(
+                "便签待办扫描",
+                TaskTrigger.interval(10),
+                new TaskAction(TodoScanTaskHandler.ACTION_TYPE, Map.of())
+        ));
     }
 
 }

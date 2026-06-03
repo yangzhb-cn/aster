@@ -41,7 +41,9 @@ public class BackgroundTaskExecutor {
             TaskRun run = TaskRun.success(task, startedAt, Instant.now().toString(), message);
             store.appendRun(run);
             markOneShotTaskFinished(task, true);
-            eventBus.publish(new BackgroundTaskEvent.TaskCompleted(run));
+            if (message != null && !message.isBlank()) {
+                eventBus.publish(new BackgroundTaskEvent.TaskCompleted(run));
+            }
         } catch (Exception e) {
             TaskRun run = TaskRun.failed(task, startedAt, Instant.now().toString(), e.getMessage());
             try {

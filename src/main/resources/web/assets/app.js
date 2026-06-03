@@ -30,6 +30,11 @@ const contextBefore = $("#contextBefore");
 const contextAfter = $("#contextAfter");
 const contextMax = $("#contextMax");
 const contextCompressed = $("#contextCompressed");
+const todoForm = $("#todoForm");
+const todoContent = $("#todoContent");
+const todoDueAt = $("#todoDueAt");
+const refreshTodosButton = $("#refreshTodosButton");
+const todoList = $("#todoList");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -249,6 +254,7 @@ function addToolBlock(payload = {}) {
     truncated: node.querySelector(".tool-truncated"),
     collapsed: false,
     userToggled: false,
+    payload: {},
   };
   block.toggle.addEventListener("click", () => setToolCollapsed(block, !block.collapsed, true));
   messagesEl.append(node);
@@ -317,17 +323,22 @@ async function resolveApproval(approvalId, approved) {
 }
 
 function updateToolBlock(block, payload = {}, status = "running") {
-  const title = formatToolTitle(payload.toolName, payload.argumentsJson);
-  block.title.textContent = title || payload.toolName || "tool";
-  block.status.textContent = formatToolStatus(status, payload.elapsedMillis);
+  block.payload = {
+    ...block.payload,
+    ...Object.fromEntries(Object.entries(payload).filter(([, value]) => value !== undefined && value !== null && value !== "")),
+  };
+  const merged = block.payload;
+  const title = formatToolTitle(merged.toolName, merged.argumentsJson);
+  block.title.textContent = title || merged.toolName || "tool";
+  block.status.textContent = formatToolStatus(status, merged.elapsedMillis);
   block.card.className = `tool-card ${status}`;
   if (block.collapsed) block.card.classList.add("collapsed");
-  block.meta.textContent = payload.toolCallId ? `id=${payload.toolCallId}` : "";
+  block.meta.textContent = merged.toolCallId ? `id=${merged.toolCallId}` : "";
 
-  const argsPreview = renderToolPreview(block.args, block.argsCode, null, formatToolArguments(payload.argumentsJson));
-  const outputPreview = renderToolPreview(block.output, block.outputCode, block.truncated, payload.text || "");
+  renderToolPreview(block.args, block.argsCode, null, formatToolArguments(merged.argumentsJson));
+  renderToolPreview(block.output, block.outputCode, block.truncated, merged.text || "");
   if (!block.userToggled) {
-    setToolCollapsed(block, status !== "running" && (argsPreview.truncated || outputPreview.truncated), false);
+    setToolCollapsed(block, status !== "running", false);
   }
   scrollToBottom();
 }
@@ -540,17 +551,46 @@ async function loadSessionMessages(sessionId) {
     messagesEl.innerHTML = "";
     state.currentAssistant = null;
     state.currentReasoning = null;
+    state.tools.clear();
     for (const message of payload.messages || []) {
-      addMessage(normalizeStoredRole(message.role), message.content || "");
+      renderStoredMessage(message);
     }
   } catch (error) {
     addMessage("error", error.message);
   }
 }
 
+function renderStoredMessage(message = {}) {
+  const toolCalls = Array.isArray(message.toolCalls) ? message.toolCalls : [];
+  if (message.role === "assistant" && toolCalls.length) {
+    for (const toolCall of toolCalls) {
+      const block = addToolBlock({
+        toolCallId: toolCall.id,
+        toolName: toolCall.name,
+        argumentsJson: toolCall.argumentsJson,
+      });
+      if (toolCall.id) state.tools.set(toolCall.id, block);
+      setToolCollapsed(block, true, false);
+    }
+    return;
+  }
+
+  if (message.role === "tool") {
+    const toolCallId = message.toolCallId || "";
+    let block = state.tools.get(toolCallId);
+    if (!block) {
+      block = addToolBlock({ toolCallId, toolName: "tool" });
+      if (toolCallId) state.tools.set(toolCallId, block);
+    }
+    updateToolBlock(block, { toolCallId, text: message.content || "" }, "done");
+    return;
+  }
+
+  addMessage(normalizeStoredRole(message.role), message.content || "");
+}
+
 function normalizeStoredRole(role) {
   if (role === "user" || role === "assistant") return role;
-  if (role === "tool") return "system";
   return "system";
 }
 
@@ -600,6 +640,104 @@ async function archiveSession(sessionId) {
   }
 }
 
+async function loadTodos() {
+  try {
+    renderTodos((await requestJson("/api/todos")).todos || []);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function renderTodos(todos) {
+  todoList.innerHTML = "";
+  if (!todos.length) {
+    const empty = document.createElement("div");
+    empty.className = "todo-empty";
+    empty.textContent = "暂无待办";
+    todoList.append(empty);
+    return;
+  }
+  for (const todo of todos) {
+    const item = document.createElement("article");
+    item.className = `todo-item ${String(todo.status || "").toLowerCase()}`;
+    item.dataset.id = todo.id;
+    item.innerHTML = `
+      <label class="todo-check">
+        <input type="checkbox" data-action="complete" ${todo.status === "COMPLETED" ? "checked" : ""} />
+        <span></span>
+      </label>
+      <button class="todo-archive" type="button" data-action="archive" title="归档" aria-label="归档">x</button>
+    `;
+    item.querySelector("span").innerHTML = `
+      <strong>${escapeHtml(todo.content || "")}</strong>
+      <small>${escapeHtml(formatTodoMeta(todo))}</small>
+    `;
+    todoList.append(item);
+  }
+}
+
+function formatTodoMeta(todo) {
+  const parts = [];
+  if (todo.priority) parts.push(todo.priority);
+  if (todo.dueAt) parts.push(formatDateTime(todo.dueAt));
+  if (todo.result) parts.push(todo.result);
+  return parts.join(" · ");
+}
+
+function formatDateTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function todoDueAtValue() {
+  if (!todoDueAt.value) return "";
+  const date = new Date(todoDueAt.value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+async function createTodoFromForm(event) {
+  event.preventDefault();
+  const content = todoContent.value.trim();
+  if (!content) return;
+  try {
+    const payload = await requestJson("/api/todos", {
+      method: "POST",
+      body: {
+        content,
+        dueAt: todoDueAtValue(),
+        priority: "medium",
+      },
+    });
+    renderTodos(payload.todos || []);
+    todoContent.value = "";
+    todoDueAt.value = "";
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function completeTodo(todoId) {
+  try {
+    renderTodos((await postJson("/api/todos/complete", { id: todoId, result: "Web 手动完成" })).todos || []);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function archiveTodo(todoId) {
+  try {
+    renderTodos((await postJson("/api/todos/archive", { id: todoId })).todos || []);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
 function handleAgentEvent(event) {
   const type = event.type;
   const payload = event.payload || {};
@@ -625,6 +763,13 @@ function handleAgentEvent(event) {
   if (type === "ReasoningToken") {
     if (!state.currentReasoning) state.currentReasoning = addMessage("thinking", "");
     updateMessage(state.currentReasoning, state.currentReasoning.text + (payload.text || ""));
+    return;
+  }
+  if (type === "MessageFinished" && payload.role === "assistant" && payload.hasToolCalls) {
+    if (state.currentAssistant) {
+      state.currentAssistant.node.remove();
+      state.currentAssistant = null;
+    }
     return;
   }
   if (type === "ToolApprovalRequested") {
@@ -687,6 +832,7 @@ function connectEvents() {
   source.addEventListener("notification", (event) => {
     const data = JSON.parse(event.data);
     addMessage("system", data.run?.message || data.type);
+    loadTodos();
   });
   source.onerror = () => {
     connectionState.textContent = "reconnecting";
@@ -732,6 +878,19 @@ promptEl.addEventListener("keydown", (event) => {
 });
 
 newSessionButton.addEventListener("click", createSession);
+refreshTodosButton.addEventListener("click", loadTodos);
+todoForm.addEventListener("submit", createTodoFromForm);
+
+todoList.addEventListener("click", (event) => {
+  const actionTarget = event.target.closest("[data-action]");
+  const item = event.target.closest(".todo-item");
+  if (!actionTarget || !item) return;
+  if (actionTarget.dataset.action === "complete") {
+    completeTodo(item.dataset.id);
+  } else if (actionTarget.dataset.action === "archive") {
+    archiveTodo(item.dataset.id);
+  }
+});
 
 sessionList.addEventListener("click", (event) => {
   const actionButton = event.target.closest("[data-action]");
@@ -751,6 +910,7 @@ sessionList.addEventListener("click", (event) => {
 
 refreshStatus();
 loadSessions();
+loadTodos();
 connectEvents();
 setInterval(refreshStatus, 3000);
 setInterval(loadSessions, 5000);

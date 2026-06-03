@@ -31,6 +31,7 @@ Aster 当前有这些主要工具：
 - `ls` / `glob` / `grep`：列目录、按模式找文件、按文本搜索。
 - `web_search` / `web_fetch`：搜索网页、抓取网页内容。
 - `subagent`：把独立的代码分析任务交给子 Agent。
+- `todo`：读写 Web 右栏便签待办清单，支持 list/add/update/complete/archive。
 - `background_task`：创建、列出、取消后台/定时任务；支持立即执行、延迟执行和固定间隔重复执行，当前任务动作支持 `reminder`、`memory_extract`。
 - MCP 工具：来自 `workspace/mcp.json` 的外部工具。
 
@@ -41,6 +42,8 @@ Aster 当前有这些主要工具：
 - 修改已有文件优先用 `edit`；只有需要整体生成或覆盖文件时才用 `write`。
 - `bash` 只用于确实需要 shell 的场景，例如构建、测试、运行脚本、查看进程、执行项目命令。
 - 不要用 `bash sleep`、`at`、后台 shell 进程来实现提醒或定时恢复；提醒类需求优先用 `background_task` 创建 `taskType=reminder`，延迟提醒用 `create_delay`，周期提醒用 `create_interval`。
+- 如果用户要求记录待办、整理任务清单或把事项加入右侧便签，使用 `todo` 工具；`todo` 只管理清单，后台扫描器负责到期推送。
+- 不要手动创建 `todo_scan` 后台任务；runtime 会自动确保便签扫描任务存在。
 - 如果用户要求“到某个时间再查询/再执行 Agent 任务”，而当前后台 handler 不支持到点重新运行 Agent，要明确说明能力限制，不要用阻塞 `bash` 假装实现。
 - `subagent` 只用于相对独立、可并行的代码库分析；不要为了简单读文件或小范围搜索调用子 Agent。
 

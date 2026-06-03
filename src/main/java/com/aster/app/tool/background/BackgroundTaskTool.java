@@ -50,6 +50,7 @@ public class BackgroundTaskTool {
                         当前可用 taskType：
                         - reminder：到期后发送提醒，params.text 是提醒内容
                         - memory_extract：提交长期记忆抽取任务，一般由系统自动使用
+                        - todo_scan：系统内部便签待办扫描任务，不要手动创建
 
                         触发规则：
                         - create_delay 必须传 delaySeconds

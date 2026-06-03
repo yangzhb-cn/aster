@@ -15,6 +15,7 @@ import com.aster.app.memory.MemoryPromptRenderer;
 import com.aster.llm.model.ToolCall;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.skill.SkillRepository;
+import com.aster.app.todo.JsonTodoStore;
 import com.aster.llm.model.OpenAiCompatibleProvider;
 import com.aster.core.hook.HookRegistry;
 import com.aster.core.session.InMemorySessionStore;
@@ -206,7 +207,8 @@ class BuiltinToolsTest {
                 new MarkdownMemoryStore(tempDir.resolve("memory.md")),
                 new MemoryPromptRenderer("{{memory}}"),
                 backgroundTaskManager,
-                new ToolApprovalManager()
+                new ToolApprovalManager(),
+                new JsonTodoStore(objectMapper, tempDir.resolve("todos.json"))
         );
     }
 }

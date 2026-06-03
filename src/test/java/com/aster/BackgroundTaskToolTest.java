@@ -17,6 +17,7 @@ import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.skill.SkillRepository;
+import com.aster.app.todo.JsonTodoStore;
 import com.aster.core.hook.HookRegistry;
 import com.aster.core.session.InMemorySessionStore;
 import com.aster.core.tool.LocalToolExecutor;
@@ -184,7 +185,8 @@ class BackgroundTaskToolTest {
                 new MarkdownMemoryStore(tempDir.resolve("memory.md")),
                 new MemoryPromptRenderer("{{memory}}"),
                 manager,
-                new ToolApprovalManager()
+                new ToolApprovalManager(),
+                new JsonTodoStore(objectMapper, tempDir.resolve("todos.json"))
         );
     }
 

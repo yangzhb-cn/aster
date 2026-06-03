@@ -93,6 +93,20 @@
             </div>
           </div>
         </section>
+        <section class="rail-section todo-section">
+          <div class="todo-head">
+            <span class="eyebrow">TODO</span>
+            <button id="refreshTodosButton" class="icon-button" type="button" title="刷新待办" aria-label="刷新待办">R</button>
+          </div>
+          <form id="todoForm" class="todo-form">
+            <label class="sr-only" for="todoContent">待办内容</label>
+            <textarea id="todoContent" rows="3" placeholder="写一个代办"></textarea>
+            <label class="sr-only" for="todoDueAt">到期时间</label>
+            <input id="todoDueAt" type="datetime-local" />
+            <button id="addTodoButton" type="submit">添加</button>
+          </form>
+          <div id="todoList" class="todo-list"></div>
+        </section>
       </aside>
     </div>
 

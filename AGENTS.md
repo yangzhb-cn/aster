@@ -189,6 +189,7 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 - `SkillToolExtension`：注册 `load_skill` 工具。
 - `DeveloperToolExtension`：注册 `ls`、`glob`、`grep`、`subagent`、`web_fetch`、`web_search`。
 - `BackgroundTaskToolExtension`：注册 `background_task` 后台任务管理工具。
+- `TodoToolExtension`：注册 `todo` Web 便签待办工具。
 - `McpToolExtension`：读取 `workspace/mcp.json` 并注册 MCP tools。
 - `ToolApprovalExtension`：注册 `bash`、`write`、`edit` 工具调用人工审批 Hook。
 - `SteerExtension`：注册运行中引导 Hook。
@@ -271,9 +272,21 @@ HITL 审批放在 `app/hitl/`，通过 `ToolApprovalExtension` 注册到 `BEFORE
 
 - 工具只调用 `BackgroundTaskManager`，不要直接调用 `BackgroundTaskScheduler` 或 `BackgroundTaskExecutor`。
 - `background_task` 只管理任务定义：创建 immediate/delay/interval、列出任务、取消任务。
-- 真正执行什么由 `TaskAction.type` 对应的 `BackgroundTaskHandler` 决定；当前支持 `reminder`、`memory_extract`。
+- 真正执行什么由 `TaskAction.type` 对应的 `BackgroundTaskHandler` 决定；当前支持 `reminder`、`todo_scan`、`memory_extract`。
+- `todo_scan` 是系统内部便签待办扫描动作，由 runtime 启动时确保存在，不要求 Agent 手动创建。
 - 不要新增 `noop` 类任务；没有真实动作的任务不应该暴露给 Agent。
 - 新增一种后台动作时，先新增 `BackgroundTaskHandler`，再让 `background_task` 创建对应 `TaskAction`。
+
+### 便签待办
+
+便签待办放在 `app/todo/`，Web 右栏、Agent `todo` 工具和后台扫描器共用同一个 `TodoStore`。
+
+规则：
+
+- 当前状态保存到 `workspace/todos/todos.json`，不要用 JSONL 保存当前清单。
+- `app/tool/todo/TodoTool` 只管理清单：list/add/update/complete/archive。
+- `TodoScanTaskHandler` 只处理到期提醒：扫描 `status=PENDING` 且 `dueAt <= now` 的待办，推送通知并标记 completed。
+- 第一版不让后台 Agent 自动执行复杂任务；如果要做自动执行，新增独立 handler，不要塞进 `TodoScanTaskHandler`。
 
 ### 工具结果外部卸载
 
@@ -351,6 +364,7 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 - 任务记录写入 `workspace/tasks/*.jsonl`，保留审计痕迹。
 - `BackgroundTaskScheduler` 按 `SCHEDULE_INTERVAL_SECONDS` 周期扫描任务清单和运行记录，默认 10 秒。
 - `immediate` 创建后会触发一次即时扫描；`delay` 到 `createdAt + delaySeconds` 后执行一次；`interval` 按上次完成时间加 `intervalSeconds` 重复执行。
+- runtime 启动时会确保存在一个 `todo_scan` interval 后台任务，用来扫描 `workspace/todos/todos.json`。
 - 后续定时提醒、记忆抽取、索引构建等都应该作为后台任务 handler 扩展。
 
 ## UI 规则

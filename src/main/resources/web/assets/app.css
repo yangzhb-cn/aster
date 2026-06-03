@@ -779,6 +779,114 @@ th {
   background: var(--rail);
 }
 
+.todo-section {
+  margin-bottom: 0;
+}
+
+.todo-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.todo-form {
+  display: grid;
+  gap: 8px;
+}
+
+.todo-form textarea,
+.todo-form input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px;
+  outline: none;
+}
+
+.todo-form textarea {
+  min-height: 92px;
+  resize: vertical;
+}
+
+.todo-form textarea:focus,
+.todo-form input:focus {
+  border-color: var(--accent);
+}
+
+.todo-list {
+  display: grid;
+  gap: 8px;
+}
+
+.todo-empty {
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.todo-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.todo-item.completed {
+  background: var(--surface-soft);
+}
+
+.todo-check {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  color: var(--text);
+}
+
+.todo-check input {
+  margin-top: 4px;
+  accent-color: var(--accent);
+}
+
+.todo-check strong,
+.todo-check small {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.todo-check strong {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.todo-check small {
+  margin-top: 4px;
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.todo-item.completed .todo-check strong {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.todo-archive {
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--danger);
+}
+
 @keyframes rise {
   from {
     opacity: 0;

@@ -58,10 +58,12 @@ src/main/java/com/aster/
 │   ├── tool/builtin/       read / write / bash / edit 四个固定底座工具
 │   ├── tool/developer/     ls / glob / grep / subagent / web_fetch / web_search 扩展工具
 │   ├── tool/background/    background_task 后台任务管理工具
+│   ├── tool/todo/          todo 便签待办工具
 │   ├── tool/result/        大工具结果 JSONL 外部卸载
 │   ├── hitl/               bash / write / edit 工具调用人工审批
 │   ├── mcp/                MCP client/server/tool adapter
 │   ├── skill/              Skill 扫描、索引、加载
+│   ├── todo/               Web 便签待办存储和扫描 handler
 │   ├── memory/             长期记忆抽取、Markdown 存储、提醒段落渲染
 │   ├── background/         后台任务框架
 │   ├── notification/       后台任务通知出口
@@ -79,7 +81,7 @@ src/main/java/com/aster/
 TuiMain / WebMain / TelegramMain
   -> AgentRuntimeFactory
      -> BuiltinTools 注册 read/write/bash/edit
-     -> RuntimeExtensionRegistry 注册 load_skill、开发者工具、后台任务工具、MCP、工具审批、system-reminder、长期记忆抽取、工具结果卸载、steer
+     -> RuntimeExtensionRegistry 注册 load_skill、开发者工具、后台任务工具、todo、MCP、工具审批、system-reminder、长期记忆抽取、工具结果卸载、steer
   -> AgentRunCoordinator
      -> 空闲输入立即执行
      -> 运行中普通输入进入 follow-up 队列
@@ -115,6 +117,7 @@ RuntimeExtension：
   SkillToolExtension      -> 注册 load_skill
   DeveloperToolExtension  -> 注册 ls/glob/grep/subagent/web_fetch/web_search
   BackgroundTaskToolExtension -> 注册 background_task
+  TodoToolExtension       -> 注册 todo
   McpToolExtension        -> 加载 workspace/mcp.json 并注册 MCP tools
   ToolApprovalExtension   -> 注册 bash/write/edit 工具审批 Hook
   SteerExtension          -> 注册运行中引导 Hook
@@ -190,6 +193,7 @@ workspace/
 ├── sessions/                         session index.json + *.jsonl
 ├── im/                               Telegram chat-session 映射
 ├── tasks/                            后台任务 JSONL
+├── todos/                            Web 便签待办 JSON
 ├── skills/                           本地 Skill 目录
 ├── artifacts/tool-results/           大工具结果 JSONL
 └── memory/                           长期记忆 Markdown
@@ -206,7 +210,13 @@ Session 规则：
 
 - `workspace/tasks/tasks.jsonl` 保存任务定义，`workspace/tasks/runs.jsonl` 保存每次执行记录。
 - `BackgroundTaskScheduler` 默认每 10 秒扫描一次任务清单和运行记录；可用 `SCHEDULE_INTERVAL_SECONDS` 覆盖。
-- 当前可执行的后台动作是 `reminder` 和 `memory_extract`，没有 `noop` 任务类型。
+- 当前可执行的后台动作是 `reminder`、`todo_scan` 和 `memory_extract`，没有 `noop` 任务类型。
+
+便签待办规则：
+
+- `workspace/todos/todos.json` 保存 Web 右栏和 Agent `todo` 工具共用的当前清单。
+- Web 可以新增、勾选完成和归档待办；Agent 可以通过 `todo` 工具读写同一份清单。
+- 第一版 `todo_scan` 只做 dueAt 到期提醒并标记完成，不启动后台 Agent 自动执行复杂任务。
 
 ## 运行
 

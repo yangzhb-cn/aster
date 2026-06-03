@@ -3,11 +3,16 @@ package com.aster.ui.web;
 import com.aster.app.runtime.AgentRuntime;
 import com.aster.app.runtime.AgentRuntimeFactory;
 import com.aster.app.runtime.WorkspacePaths;
+import com.aster.app.hitl.model.ToolApprovalRequest;
+import com.aster.app.todo.JsonTodoStore;
+import com.aster.app.todo.TodoStore;
+import com.aster.app.todo.model.TodoItem;
 import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionCatalog;
 import com.aster.core.session.SessionIndex;
 import com.aster.core.session.model.SessionRecord;
 import com.aster.llm.model.Message;
+import com.aster.llm.model.ToolCall;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -43,6 +48,7 @@ public class WebServer implements AutoCloseable {
     private final WebAgentEventHandler eventHandler;
     private final WebNotificationSink notificationSink;
     private final SessionIndex sessionIndex;
+    private final TodoStore todoStore;
     private final Object runtimeLock = new Object();
     private final HttpServer server;
     private AgentRuntime runtime;
@@ -54,6 +60,7 @@ public class WebServer implements AutoCloseable {
         this.eventHandler = new WebAgentEventHandler(objectMapper, clients);
         this.notificationSink = new WebNotificationSink(objectMapper, clients);
         this.sessionIndex = new SessionIndex(objectMapper, WorkspacePaths.SESSIONS);
+        this.todoStore = new JsonTodoStore(objectMapper, WorkspacePaths.TODO_FILE);
         SessionRecord session = sessionIndex.ensure(sessionName, sessionName);
         this.currentSessionId = session.id();
         this.currentDisplayName = session.displayName();
@@ -92,6 +99,7 @@ public class WebServer implements AutoCloseable {
         server.createContext("/api/approvals", this::handleApprovals);
         server.createContext("/api/status", this::handleStatus);
         server.createContext("/api/sessions", this::handleSessions);
+        server.createContext("/api/todos", this::handleTodos);
     }
 
     private void handleEvents(HttpExchange exchange) throws IOException {
@@ -266,6 +274,73 @@ public class WebServer implements AutoCloseable {
         }
     }
 
+    /**
+     * 处理 Web 便签待办 CRUD。
+     */
+    private void handleTodos(HttpExchange exchange) throws IOException {
+        try {
+            String path = exchange.getRequestURI().getPath();
+            if ("/api/todos".equals(path)) {
+                if ("GET".equals(exchange.getRequestMethod())) {
+                    sendJson(exchange, 200, todosPayload());
+                    return;
+                }
+                if ("POST".equals(exchange.getRequestMethod())) {
+                    createTodo(exchange);
+                    return;
+                }
+            }
+            if ("/api/todos/update".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                updateTodo(exchange);
+                return;
+            }
+            if ("/api/todos/complete".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                completeTodo(exchange);
+                return;
+            }
+            if ("/api/todos/archive".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                archiveTodo(exchange);
+                return;
+            }
+            sendJson(exchange, 404, Map.of("error", "Not Found"));
+        } catch (IOException e) {
+            sendJson(exchange, 400, Map.of("error", e.getMessage()));
+        }
+    }
+
+    private void createTodo(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        todoStore.add(
+                requiredValue(payload, "content"),
+                stringValue(payload, "priority"),
+                stringValue(payload, "dueAt")
+        );
+        sendJson(exchange, 201, todosPayload());
+    }
+
+    private void updateTodo(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        todoStore.update(
+                requiredValue(payload, "id"),
+                stringValue(payload, "content"),
+                stringValue(payload, "priority"),
+                stringValue(payload, "dueAt")
+        );
+        sendJson(exchange, 200, todosPayload());
+    }
+
+    private void completeTodo(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        todoStore.complete(requiredValue(payload, "id"), stringValue(payload, "result"));
+        sendJson(exchange, 200, todosPayload());
+    }
+
+    private void archiveTodo(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        todoStore.archive(requiredValue(payload, "id"));
+        sendJson(exchange, 200, todosPayload());
+    }
+
     private void createSession(HttpExchange exchange) throws IOException {
         ensureIdle();
         String displayName = readStringPayload(exchange, "displayName");
@@ -403,7 +478,9 @@ public class WebServer implements AutoCloseable {
             status.put("skillCount", runtime.skillCount());
             status.put("busy", runtime.isBusy());
             status.put("queuedCount", runtime.queuedCount());
-            status.put("pendingApprovals", runtime.pendingToolApprovals());
+            status.put("pendingApprovals", runtime.pendingToolApprovals().stream()
+                    .map(this::approvalPayload)
+                    .toList());
         }
         status.put("sseClients", clients.size());
         return status;
@@ -414,6 +491,25 @@ public class WebServer implements AutoCloseable {
         payload.put("sessions", sessionIndex.listActive());
         payload.put("currentSessionId", currentSessionId);
         payload.put("status", statusPayload());
+        return payload;
+    }
+
+    private Map<String, Object> todosPayload() throws IOException {
+        return Map.of("todos", todoStore.listActive().stream()
+                .map(this::todoPayload)
+                .toList());
+    }
+
+    private Map<String, Object> todoPayload(TodoItem item) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", item.id());
+        payload.put("content", item.content());
+        payload.put("status", item.status().name());
+        payload.put("priority", item.priority());
+        payload.put("dueAt", item.dueAt());
+        payload.put("result", item.result());
+        payload.put("createdAt", item.createdAt());
+        payload.put("updatedAt", item.updatedAt());
         return payload;
     }
 
@@ -472,6 +568,14 @@ public class WebServer implements AutoCloseable {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("role", message.role());
         payload.put("content", messageContent(message));
+        if (message.hasToolCalls()) {
+            payload.put("toolCalls", message.toolCalls().stream()
+                    .map(this::toolCallPayload)
+                    .toList());
+        }
+        if (message.toolCallId() != null && !message.toolCallId().isBlank()) {
+            payload.put("toolCallId", message.toolCallId());
+        }
         return payload;
     }
 
@@ -479,13 +583,30 @@ public class WebServer implements AutoCloseable {
         if (message.content() != null) {
             return message.content();
         }
-        if (message.hasToolCalls()) {
-            return message.toolCalls().stream()
-                    .map(toolCall -> "工具调用: " + toolCall.function().name() + " " + toolCall.function().argumentsJson())
-                    .reduce((left, right) -> left + "\n" + right)
-                    .orElse("");
-        }
         return "";
+    }
+
+    private Map<String, Object> toolCallPayload(ToolCall toolCall) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", toolCall.id());
+        if (toolCall.function() != null) {
+            payload.put("name", toolCall.function().name());
+            payload.put("argumentsJson", toolCall.function().argumentsJson());
+        }
+        return payload;
+    }
+
+    private Map<String, Object> approvalPayload(ToolApprovalRequest request) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("approvalId", request.approvalId());
+        payload.put("sessionName", request.sessionName());
+        payload.put("runId", request.runId());
+        payload.put("toolCallId", request.toolCallId());
+        payload.put("toolName", request.toolName());
+        payload.put("argumentsJson", request.argumentsJson());
+        payload.put("reason", request.reason());
+        payload.put("requestedAt", request.requestedAt() == null ? "" : request.requestedAt().toString());
+        return payload;
     }
 
     private void sendJson(HttpExchange exchange, int status, Object body) throws IOException {

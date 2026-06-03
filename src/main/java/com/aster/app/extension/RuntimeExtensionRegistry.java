@@ -28,6 +28,7 @@ public class RuntimeExtensionRegistry {
                 new SkillToolExtension(),
                 new DeveloperToolExtension(),
                 new BackgroundTaskToolExtension(),
+                new TodoToolExtension(),
                 new McpToolExtension(),
                 new ToolApprovalExtension(),
                 new SteerExtension(),

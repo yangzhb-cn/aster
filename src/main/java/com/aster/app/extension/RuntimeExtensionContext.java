@@ -6,6 +6,7 @@ import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
 import com.aster.app.skill.SkillRepository;
+import com.aster.app.todo.TodoStore;
 import com.aster.core.hook.HookRegistry;
 import com.aster.core.session.SessionStore;
 import com.aster.core.tool.ToolRegistry;
@@ -35,7 +36,8 @@ public record RuntimeExtensionContext(
         MarkdownMemoryStore memoryStore,
         MemoryPromptRenderer memoryPromptRenderer,
         BackgroundTaskManager backgroundTaskManager,
-        ToolApprovalManager toolApprovalManager
+        ToolApprovalManager toolApprovalManager,
+        TodoStore todoStore
 ) {
     public RuntimeExtensionContext {
         Objects.requireNonNull(objectMapper);
@@ -51,5 +53,6 @@ public record RuntimeExtensionContext(
         Objects.requireNonNull(memoryPromptRenderer);
         Objects.requireNonNull(backgroundTaskManager);
         Objects.requireNonNull(toolApprovalManager);
+        Objects.requireNonNull(todoStore);
     }
 }

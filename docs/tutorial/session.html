@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>Aster 教程</span></a>
     <nav class="nav-links">
       <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a class="active" href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
@@ -21,9 +21,9 @@
     <div class="layout">
       <article>
         <section class="section" id="what">
-          <p class="eyebrow">Package · dev.agentmvp.session</p>
+          <p class="eyebrow">Package · dev.agentmvp.core.session</p>
           <h1>session 包：用 JSONL 事件日志保存事实来源。</h1>
-          <p class="lead">SessionStore 不再只是内存 messages。当前运行时把历史写入 `workspace/sessions/default.jsonl`，通过事件回放恢复当前分支的完整消息，再交给 ContextBuilder 构造模型上下文。</p>
+          <p class="lead">SessionStore 不再只是内存 messages。当前运行时把历史写入 `workspace/sessions/default.jsonl`，通过事件回放恢复当前分支的完整消息，再交给 ContextPipeline 构造模型上下文。</p>
         </section>
 
         <section class="section" id="diagrams">
@@ -39,12 +39,12 @@
             -> SessionEvent
             -> SessionReplayer
                  -> branch replay
-                 -> messages for ContextBuilder</code></pre>
+	                 -> messages for ContextPipeline</code></pre>
               <p>session 保存完整事实，压缩发生在 context 层。</p>
             </div>
             <div class="diagram-card">
               <h3>文件结构图</h3>
-              <pre><code>session/
+              <pre><code>core/session/
   SessionStore.java          # 会话存储接口
   JsonlSessionStore.java     # 追加写 JSONL
   BootstrappedSessionStore.java # 叠加 system prompt
@@ -62,9 +62,9 @@
 Factory -> JsonlSessionStore: openNamed(name)
 AgentLoop -> SessionStore: append(user)
 AgentLoop -> SessionStore: append(assistant/tool)
-ContextBuilder -> SessionStore: loadMessages()
+ContextPipeline -> SessionStore: loadMessages()
 SessionStore -> SessionReplayer: replay(branch)
-SessionReplayer -> ContextBuilder: messages</code></pre>
+SessionReplayer -> ContextPipeline: messages</code></pre>
               <p>恢复会话时先回放 JSONL，再交给上下文构造。</p>
             </div>
             <div class="diagram-card">
@@ -88,7 +88,7 @@ SessionReplayer -> ContextBuilder: messages</code></pre>
             <div class="package-map">
               <div class="package-pill"><code>JsonlSessionStore</code><span>append-only 事件日志，可恢复、可审计。</span></div>
               <div class="package-pill"><code>SessionReplayer</code><span>按 branch 回放消息，并裁剪半截工具协议。</span></div>
-              <div class="package-pill"><code>ContextBuilder</code><span>每次请求前构造实际上下文，可压缩旧 turn。</span></div>
+              <div class="package-pill"><code>ContextPipeline</code><span>每次请求前执行内置 Stage，构造实际上下文。</span></div>
             </div>
           </div>
         </section>
@@ -162,7 +162,7 @@ public synchronized void append(Message message) throws IOException {
             <div class="callout-icon">i</div>
             <div>
               <strong>为什么这和 PaiCLI 的短期记忆不同？</strong>
-              <p>这里没有单独做“短期记忆层”。当前 MVP 是 session 事件日志：完整历史先存成可回放事实，真正进模型窗口的消息由 ContextBuilder 临时构造。</p>
+              <p>这里没有单独做“短期记忆层”。当前 MVP 是 session 事件日志：完整历史先存成可回放事实，真正进模型窗口的消息由 ContextPipeline 临时构造。</p>
             </div>
           </div>
         </section>
@@ -172,7 +172,7 @@ public synchronized void append(Message message) throws IOException {
             <h2>场景题</h2>
             <p>如果任务跑了 100 轮，哪一层应该保存完整可恢复历史？</p>
             <button class="quiz-option" data-value="a">JsonlSessionStore。</button>
-            <button class="quiz-option" data-value="b">ContextBuilder 的输出。</button>
+            <button class="quiz-option" data-value="b">ContextPipeline 的输出。</button>
             <button class="quiz-option" data-value="c">LLM 的请求体临时变量。</button>
             <div class="quiz-actions"><button data-check-quiz>检查答案</button></div>
             <div class="quiz-feedback"></div>

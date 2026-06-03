@@ -1,8 +1,8 @@
 package dev.agentmvp;
 
-import dev.agentmvp.memory.MarkdownMemoryStore;
-import dev.agentmvp.memory.model.MemoryCandidate;
-import dev.agentmvp.memory.model.MemoryType;
+import dev.agentmvp.app.memory.MarkdownMemoryStore;
+import dev.agentmvp.app.memory.model.MemoryCandidate;
+import dev.agentmvp.app.memory.model.MemoryType;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

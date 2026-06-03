@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>agent-small-mvp 教程导航</title>
+  <title>Aster 教程导航</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>Aster 教程</span></a>
     <nav class="nav-links">
       <a href="entry.html">入口</a>
       <a href="agent.html">agent</a>
@@ -30,7 +30,7 @@
   <main>
     <section class="hero">
       <p class="eyebrow">Navigation · 当前进展版</p>
-      <h1>从一次用户输入，读懂一个 Java Agent MVP。</h1>
+      <h1>从一次用户输入，读懂 Aster。</h1>
       <p>这份教程按 Java 顶层包拆分：一个包一个 HTML。每页都包含真实源码片段和中文解释，重点讲清楚当前项目已经完成的 AgentLoop、上下文压缩、MCP、内置工具、Skill 适配层、DeepSeek thinking、后台任务框架和 Lanterna TUI。</p>
       <p>说明：`model`、`builtin`、`server` 这类子包会并入所属顶层包页面讲解，避免导航页被纯数据模型页面冲散。</p>
     </section>
@@ -58,7 +58,8 @@
   -> AgentRuntimeFactory
        -> AgentLoop
        -> ToolRegistry
-       -> ContextBuilder
+       -> ContextPipeline
+            -> 内置 Stage
        -> JsonlSessionStore
        -> BackgroundTaskManager
        -> AgentEventBus
@@ -70,21 +71,17 @@
           <div class="diagram-card">
             <h3>文件结构图</h3>
             <pre><code>src/main/java/dev/agentmvp/
-  agent/       # 主循环和 Agent 事件
-  llm/         # OpenAI-compatible 流式接入
-  context/     # 上下文压缩和协议校验
-  tool/        # 本地工具、MCP 工具统一层
-  mcp/         # JSON-RPC MCP 适配
-  session/     # JSONL 会话持久化
-  background/  # 后台任务框架
-  tui/         # Lanterna 终端界面</code></pre>
-            <p>一个顶层包对应一个教程页，model 子包跟随所属模块解释。</p>
+  llm/          # 模型 API 适配
+  core/         # Agent 主流程、事件、Hook、Stage、上下文、工具契约
+  app/          # 内置工具、MCP、Skill、记忆、后台任务、运行时装配
+  ui/           # TUI，后续可扩展 Web</code></pre>
+            <p>现在按依赖方向拆成四层：ui -> app/runtime -> core -> llm。</p>
           </div>
           <div class="diagram-card">
             <h3>时序图</h3>
             <pre><code>User -> TUI: 输入
 TUI -> AgentLoop: run(input)
-AgentLoop -> ContextBuilder: 构造上下文
+AgentLoop -> ContextPipeline: 构造上下文
 AgentLoop -> LLM: 流式请求
 LLM -> AgentLoop: ProviderStreamEvent
 AgentLoop -> ToolRegistry: 并行工具调用
@@ -129,7 +126,7 @@ AgentEventBus -> TUI: 渲染</code></pre>
     <section class="hero" style="padding-top: 0">
       <div class="flow" data-steps='[
         {"node":"user","text":"用户在 TUI 输入问题。"},
-        {"node":"agent","text":"AgentLoop 读取完整 session，并请 ContextBuilder 构造本轮上下文。"},
+        {"node":"agent","text":"AgentLoop 执行 ContextPipeline，由内置 Stage 读取完整 session 并构造本轮上下文。"},
         {"node":"llm","text":"StreamingChatClient 把请求发给 OpenAI-compatible LLM，并把流式响应转成 ProviderStreamEvent。"},
         {"node":"tool","text":"如果模型返回 tool_calls，工具层并行执行并写回 role=tool。"},
         {"node":"final","text":"模型基于工具结果继续生成最终回答。"}

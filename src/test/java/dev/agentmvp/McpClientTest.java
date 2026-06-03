@@ -2,9 +2,9 @@ package dev.agentmvp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.agentmvp.llm.model.ToolCall;
-import dev.agentmvp.mcp.McpClient;
-import dev.agentmvp.tool.model.Tool;
-import dev.agentmvp.tool.model.ToolResult;
+import dev.agentmvp.app.mcp.McpClient;
+import dev.agentmvp.core.tool.model.Tool;
+import dev.agentmvp.core.tool.model.ToolResult;
 import okhttp3.OkHttpClient;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;

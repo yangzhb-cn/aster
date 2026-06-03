@@ -1,6 +1,6 @@
 package dev.agentmvp;
 
-import dev.agentmvp.session.SessionCatalog;
+import dev.agentmvp.core.session.SessionCatalog;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

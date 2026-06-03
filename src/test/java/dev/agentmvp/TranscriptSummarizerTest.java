@@ -1,6 +1,6 @@
 package dev.agentmvp;
 
-import dev.agentmvp.context.TranscriptSummarizer;
+import dev.agentmvp.core.context.TranscriptSummarizer;
 import dev.agentmvp.llm.model.Message;
 import org.junit.jupiter.api.Test;
 

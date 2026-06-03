@@ -11,7 +11,7 @@ import java.util.Map;
  * OpenAI 兼容 chat/completions 请求体。
  *
  * <p>这个 MVP 只走流式，所以 stream 应该传 true。tools 是已经转换好的
- * OpenAI 工具结构，messages 是 ContextBuilder 压缩后的最终上下文。</p>
+ * OpenAI 工具结构，messages 是 ContextPipeline 构造出的最终上下文。</p>
  */
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public record ChatRequest(

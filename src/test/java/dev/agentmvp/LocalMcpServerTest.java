@@ -2,14 +2,14 @@ package dev.agentmvp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.agentmvp.llm.model.ToolCall;
-import dev.agentmvp.mcp.McpClient;
-import dev.agentmvp.mcp.server.LocalMcpHttpServer;
-import dev.agentmvp.mcp.server.LocalMcpServer;
-import dev.agentmvp.mcp.server.LocalMcpToolRegistry;
-import dev.agentmvp.mcp.server.model.LocalMcpTool;
-import dev.agentmvp.mcp.server.model.McpToolCallResult;
-import dev.agentmvp.tool.model.Tool;
-import dev.agentmvp.tool.model.ToolResult;
+import dev.agentmvp.app.mcp.McpClient;
+import dev.agentmvp.app.mcp.server.LocalMcpHttpServer;
+import dev.agentmvp.app.mcp.server.LocalMcpServer;
+import dev.agentmvp.app.mcp.server.LocalMcpToolRegistry;
+import dev.agentmvp.app.mcp.server.model.LocalMcpTool;
+import dev.agentmvp.app.mcp.server.model.McpToolCallResult;
+import dev.agentmvp.core.tool.model.Tool;
+import dev.agentmvp.core.tool.model.ToolResult;
 import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.Test;
 

@@ -3,10 +3,10 @@ package dev.agentmvp;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.agentmvp.llm.model.Message;
 import dev.agentmvp.llm.model.ToolCall;
-import dev.agentmvp.session.BootstrappedSessionStore;
-import dev.agentmvp.session.JsonlSessionStore;
-import dev.agentmvp.session.SessionReplayer;
-import dev.agentmvp.session.model.SessionReplayResult;
+import dev.agentmvp.core.session.BootstrappedSessionStore;
+import dev.agentmvp.core.session.JsonlSessionStore;
+import dev.agentmvp.core.session.SessionReplayer;
+import dev.agentmvp.core.session.model.SessionReplayResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

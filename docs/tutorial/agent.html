@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>Aster 教程</span></a>
     <nav class="nav-links">
       <a href="entry.html">入口</a><a class="active" href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
@@ -21,7 +21,7 @@
     <div class="layout">
       <article>
         <section class="section" id="what">
-          <p class="eyebrow">Package · dev.agentmvp.agent</p>
+          <p class="eyebrow">Package · dev.agentmvp.core.agent</p>
           <h1>agent 包：主循环是 Agent 的心跳。</h1>
           <p class="lead">把 <span class="term" data-tip="LLM 是大语言模型，比如 DeepSeek、Kimi、GPT 一类服务。">LLM</span> 想成远程同事，`AgentLoop` 就是项目经理：给它上下文，接收回复，发现它要工具就安排工具，拿到结果再让它继续。</p>
         </section>
@@ -32,7 +32,9 @@
             <div class="diagram-card">
               <h3>架构图</h3>
               <pre><code>AgentLoop
-  -> ContextBuilder
+  -> ContextPipeline
+       -> LoadSessionMessagesStage
+       -> ContextCompressionStage
   -> StreamingChatClient
        -> ProviderStreamEvent
   -> AssistantMessageBuilder
@@ -45,22 +47,32 @@
             </div>
             <div class="diagram-card">
               <h3>文件结构图</h3>
-              <pre><code>agent/
+              <pre><code>core/agent/
   AgentLoop.java              # 主循环
   AssistantMessageBuilder.java # 拼接流式 assistant/tool_calls
+core/event/
   AgentEventBus.java          # 事件信封和分发
   AgentEventHandler.java      # TUI/Web/Log 统一接口
   model/
     AgentEvent.java           # Agent 事件类型
     AgentEventEnvelope.java   # 带元信息的事件信封
-    AgentEventMeta.java       # runId/session/sequence</code></pre>
-              <p>事件模型放在 model 子包，主包保留主循环和总线。</p>
+    AgentEventMeta.java       # runId/session/sequence
+core/stage/
+  Stage.java                  # 主流程必经步骤
+  StagePipeline.java          # 多个 Stage 的固定流水线
+  LoadSessionMessagesStage.java
+  ContextCompressionStage.java
+core/context/
+  ContextPipeline.java        # 上下文内置 Stage 流水线</code></pre>
+              <p>agent 包只保留主循环；event 和 stage 独立出来，方便后续多 Agent 复用。</p>
             </div>
             <div class="diagram-card">
               <h3>时序图</h3>
               <pre><code>User -> AgentLoop: run(input)
 AgentLoop -> SessionStore: append(user)
-AgentLoop -> ContextBuilder: build(messages)
+AgentLoop -> ContextPipeline: build()
+ContextPipeline -> SessionStore: loadMessages()
+ContextPipeline -> ContextBuilder: build(messages)
 AgentLoop -> LLM: stream(request)
 LLM -> AgentLoop: ProviderStreamEvent
 AgentLoop -> ToolExecutor: executeAll(toolCalls)
@@ -87,7 +99,7 @@ AgentLoop -> EventBus: AgentEvent</code></pre>
           <div class="chat">
             <span class="label">组件群聊</span>
             <div class="chat-message show"><span class="chat-name">User</span>帮我读文件并修改。</div>
-            <div class="chat-message right"><span class="chat-name">AgentLoop</span>我先把完整 session 交给 ContextBuilder，构造本轮消息。</div>
+            <div class="chat-message right"><span class="chat-name">AgentLoop</span>我先执行 ContextPipeline，拿到本轮可发送消息。</div>
             <div class="chat-message"><span class="chat-name">LLM</span>我先返回 reasoning_content，再请求 read 和 edit 两个工具。</div>
             <div class="chat-message right"><span class="chat-name">ParallelToolExecutor</span>收到，多个 tool_call 可以并行跑，并记录每个工具耗时。</div>
             <div class="chat-message"><span class="chat-name">AgentLoop</span>工具结果已写回 role=tool，继续问模型生成最终答案。</div>
@@ -114,7 +126,7 @@ ChatRequest request = ChatRequest.streaming(
             </div>
             <div class="explain-pane">
               <span class="label">中文解释</span>
-              <p class="note-line">先从 SessionStore 取完整历史，再让 ContextBuilder 决定本轮发多少。</p>
+              <p class="note-line">先执行 ContextPipeline：读取完整历史，再让 ContextBuilder 决定本轮发多少。</p>
               <p class="note-line">工具定义从 ToolRegistry 导出成 OpenAI-compatible schema。</p>
               <p class="note-line">没有工具时不传 `tool_choice=auto`，避免某些兼容模型报错。</p>
               <p class="note-line">DeepSeek 默认打开 thinking mode，所以请求里会带 `thinking` 和 `reasoning_effort`。</p>

@@ -1,7 +1,7 @@
 package dev.agentmvp;
 
-import dev.agentmvp.tui.render.MarkdownLineType;
-import dev.agentmvp.tui.render.MarkdownRenderer;
+import dev.agentmvp.ui.tui.render.MarkdownLineType;
+import dev.agentmvp.ui.tui.render.MarkdownRenderer;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

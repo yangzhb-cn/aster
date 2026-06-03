@@ -5,7 +5,8 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>dev.agentmvp</groupId>
-    <artifactId>agent-small-mvp</artifactId>
+    <artifactId>aster</artifactId>
+    <name>Aster</name>
     <version>0.1.0-SNAPSHOT</version>
 
     <properties>
@@ -60,7 +61,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.3.0</version>
                 <configuration>
-                    <mainClass>dev.agentmvp.tui.TuiMain</mainClass>
+                    <mainClass>dev.agentmvp.ui.tui.TuiMain</mainClass>
                 </configuration>
             </plugin>
         </plugins>

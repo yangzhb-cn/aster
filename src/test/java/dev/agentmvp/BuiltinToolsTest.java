@@ -2,12 +2,12 @@ package dev.agentmvp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.agentmvp.llm.model.ToolCall;
-import dev.agentmvp.mcp.McpToolExecutor;
-import dev.agentmvp.skill.SkillRepository;
-import dev.agentmvp.tool.LocalToolExecutor;
-import dev.agentmvp.tool.ToolRegistry;
-import dev.agentmvp.tool.builtin.BuiltinTools;
-import dev.agentmvp.tool.model.ToolResult;
+import dev.agentmvp.app.mcp.McpToolExecutor;
+import dev.agentmvp.app.skill.SkillRepository;
+import dev.agentmvp.core.tool.LocalToolExecutor;
+import dev.agentmvp.core.tool.ToolRegistry;
+import dev.agentmvp.app.tool.builtin.BuiltinTools;
+import dev.agentmvp.core.tool.model.ToolResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

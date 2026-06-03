@@ -2,11 +2,11 @@ package dev.agentmvp;
 
 import dev.agentmvp.llm.model.Message;
 import dev.agentmvp.llm.model.ToolCall;
-import dev.agentmvp.context.model.ContextBuildResult;
-import dev.agentmvp.context.ContextBuilder;
-import dev.agentmvp.context.model.ContextOptions;
-import dev.agentmvp.context.SimpleTokenEstimator;
-import dev.agentmvp.context.ToolProtocolValidator;
+import dev.agentmvp.core.context.model.ContextBuildResult;
+import dev.agentmvp.core.context.ContextBuilder;
+import dev.agentmvp.core.context.model.ContextOptions;
+import dev.agentmvp.core.context.SimpleTokenEstimator;
+import dev.agentmvp.core.context.ToolProtocolValidator;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

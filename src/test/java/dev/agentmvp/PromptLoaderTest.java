@@ -1,7 +1,7 @@
 package dev.agentmvp;
 
-import dev.agentmvp.prompt.PromptLoader;
-import dev.agentmvp.prompt.PromptPaths;
+import dev.agentmvp.app.prompt.PromptLoader;
+import dev.agentmvp.app.prompt.PromptPaths;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -23,7 +23,7 @@ class PromptLoaderTest {
         String memorySystemPrompt = loader.load(PromptPaths.LONG_TERM_MEMORY_SYSTEM);
         String memoryExtractionPrompt = loader.load(PromptPaths.MEMORY_EXTRACTION);
 
-        assertTrue(systemPrompt.contains("Agent System Prompt"));
+        assertTrue(systemPrompt.contains("Aster System Prompt"));
         assertTrue(systemPrompt.contains("Skill 使用"));
         assertTrue(summaryPrompt.contains("Context Summary Prompt"));
         assertTrue(summaryPrompt.contains("工具协议安全"));

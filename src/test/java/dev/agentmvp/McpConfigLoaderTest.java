@@ -1,9 +1,9 @@
 package dev.agentmvp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.agentmvp.mcp.config.McpConfigLoader;
-import dev.agentmvp.mcp.config.model.McpConfig;
-import dev.agentmvp.mcp.config.model.McpServerConfig;
+import dev.agentmvp.app.mcp.config.McpConfigLoader;
+import dev.agentmvp.app.mcp.config.model.McpConfig;
+import dev.agentmvp.app.mcp.config.model.McpServerConfig;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

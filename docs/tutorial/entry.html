@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>Aster 教程</span></a>
     <nav class="nav-links">
       <a class="active" href="entry.html">入口</a>
       <a href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
@@ -44,11 +44,11 @@
             </div>
             <div class="diagram-card">
               <h3>文件结构图</h3>
-              <pre><code>tui/
+              <pre><code>ui/tui/
   TuiMain.java              # 终端入口
   AgentTuiWindow.java       # Lanterna 界面和输入循环
   TuiAgentEventHandler.java # AgentEvent -> UI
-runtime/
+app/runtime/
   AgentRuntimeFactory.java  # 装配 LLM、工具、上下文、session
   AgentRuntime.java         # 对入口暴露的运行时对象</code></pre>
               <p>TUI 负责交互，runtime 负责把模块组装成可运行对象。</p>

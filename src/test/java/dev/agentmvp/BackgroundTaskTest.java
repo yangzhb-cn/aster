@@ -1,19 +1,19 @@
 package dev.agentmvp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import dev.agentmvp.background.BackgroundTaskEventBus;
-import dev.agentmvp.background.BackgroundTaskExecutor;
-import dev.agentmvp.background.BackgroundTaskManager;
-import dev.agentmvp.background.BackgroundTaskScheduler;
-import dev.agentmvp.background.JsonlBackgroundTaskStore;
-import dev.agentmvp.background.NoopTaskHandler;
-import dev.agentmvp.background.model.BackgroundTask;
-import dev.agentmvp.background.model.BackgroundTaskEvent;
-import dev.agentmvp.background.model.TaskAction;
-import dev.agentmvp.background.model.TaskRun;
-import dev.agentmvp.background.model.TaskRunStatus;
-import dev.agentmvp.background.model.TaskStatus;
-import dev.agentmvp.background.model.TaskTrigger;
+import dev.agentmvp.app.background.BackgroundTaskEventBus;
+import dev.agentmvp.app.background.BackgroundTaskExecutor;
+import dev.agentmvp.app.background.BackgroundTaskManager;
+import dev.agentmvp.app.background.BackgroundTaskScheduler;
+import dev.agentmvp.app.background.JsonlBackgroundTaskStore;
+import dev.agentmvp.app.background.NoopTaskHandler;
+import dev.agentmvp.app.background.model.BackgroundTask;
+import dev.agentmvp.app.background.model.BackgroundTaskEvent;
+import dev.agentmvp.app.background.model.TaskAction;
+import dev.agentmvp.app.background.model.TaskRun;
+import dev.agentmvp.app.background.model.TaskRunStatus;
+import dev.agentmvp.app.background.model.TaskStatus;
+import dev.agentmvp.app.background.model.TaskTrigger;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

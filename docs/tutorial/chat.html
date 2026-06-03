@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>Aster 教程</span></a>
     <nav class="nav-links">
       <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a class="active" href="chat.html">chat</a>
     </nav>
@@ -48,9 +48,9 @@ ToolCall
   ToolCall.java      # 完整工具调用
   ToolCallDelta.java # 流式工具调用片段
   ChatRequest.java   # messages + tools + thinking
-agent/
+core/agent/
   AssistantMessageBuilder.java # 拼接 assistant content/tool_calls
-context/
+core/context/
   ToolProtocolValidator.java   # 校验工具协议配对</code></pre>
               <p>教程叫 chat 包，是为了单独讲消息协议；源码模型在 llm/model 下。</p>
             </div>

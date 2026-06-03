@@ -1,9 +1,9 @@
 package dev.agentmvp;
 
-import dev.agentmvp.skill.SkillIndexRenderer;
-import dev.agentmvp.skill.SkillRepository;
-import dev.agentmvp.skill.model.SkillDocument;
-import dev.agentmvp.skill.model.SkillMetadata;
+import dev.agentmvp.app.skill.SkillIndexRenderer;
+import dev.agentmvp.app.skill.SkillRepository;
+import dev.agentmvp.app.skill.model.SkillDocument;
+import dev.agentmvp.app.skill.model.SkillMetadata;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 

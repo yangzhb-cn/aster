@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>Aster 教程</span></a>
     <nav class="nav-links">
       <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="hook.html">hook</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a class="active" href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
@@ -21,7 +21,7 @@
     <div class="layout">
       <article>
         <section class="section" id="what">
-          <p class="eyebrow">Package · dev.agentmvp.mcp</p>
+          <p class="eyebrow">Package · dev.agentmvp.app.mcp</p>
           <h1>mcp 包：把外部工具翻译成项目内部 Tool。</h1>
           <p class="lead">MCP 的协议细节被包在 `McpClient`、`McpToolAdapter`、`McpToolExecutor` 里。AgentLoop 只看见普通 `Tool`，不需要知道背后是本地 stdio 进程还是 HTTP JSON-RPC。</p>
         </section>
@@ -45,7 +45,7 @@
             </div>
             <div class="diagram-card">
               <h3>文件结构图</h3>
-              <pre><code>mcp/
+              <pre><code>app/mcp/
   McpClient.java             # JSON-RPC 客户端
   McpToolLoader.java         # initialize + tools/list + register
   McpToolAdapter.java        # MCP tool -> Tool

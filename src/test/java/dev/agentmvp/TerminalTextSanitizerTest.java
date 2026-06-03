@@ -1,6 +1,6 @@
 package dev.agentmvp;
 
-import dev.agentmvp.tui.render.TerminalTextSanitizer;
+import dev.agentmvp.ui.tui.render.TerminalTextSanitizer;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;

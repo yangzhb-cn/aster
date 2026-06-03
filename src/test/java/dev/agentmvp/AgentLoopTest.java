@@ -2,38 +2,39 @@ package dev.agentmvp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
-import dev.agentmvp.agent.AgentEventBus;
-import dev.agentmvp.agent.AgentLoop;
-import dev.agentmvp.agent.model.AgentEvent;
-import dev.agentmvp.agent.model.AgentEventEnvelope;
-import dev.agentmvp.context.ContextBuilder;
-import dev.agentmvp.context.SimpleTokenEstimator;
-import dev.agentmvp.context.TranscriptSummarizer;
-import dev.agentmvp.context.model.ContextOptions;
-import dev.agentmvp.hook.AgentHookPoints;
-import dev.agentmvp.hook.BeforeToolCallContext;
-import dev.agentmvp.hook.HookHandler;
-import dev.agentmvp.hook.HookRegistry;
-import dev.agentmvp.hook.ToolHookDecision;
+import dev.agentmvp.core.event.AgentEventBus;
+import dev.agentmvp.core.agent.AgentLoop;
+import dev.agentmvp.core.event.model.AgentEvent;
+import dev.agentmvp.core.event.model.AgentEventEnvelope;
+import dev.agentmvp.core.context.ContextBuilder;
+import dev.agentmvp.core.context.SimpleTokenEstimator;
+import dev.agentmvp.core.context.TranscriptSummarizer;
+import dev.agentmvp.core.context.model.ContextOptions;
+import dev.agentmvp.core.hook.AgentHookPoints;
+import dev.agentmvp.core.hook.BeforeToolCallContext;
+import dev.agentmvp.core.hook.HookHandler;
+import dev.agentmvp.core.hook.HookRegistry;
+import dev.agentmvp.core.hook.ToolHookDecision;
 import dev.agentmvp.llm.StreamingChatClient;
 import dev.agentmvp.llm.model.Message;
 import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
 import dev.agentmvp.llm.model.ProviderStreamEvent;
 import dev.agentmvp.llm.model.TokenUsage;
 import dev.agentmvp.llm.model.ToolCallDelta;
-import dev.agentmvp.memory.LongTermMemoryInjectHook;
-import dev.agentmvp.memory.MarkdownMemoryStore;
-import dev.agentmvp.memory.MemoryPromptRenderer;
-import dev.agentmvp.memory.model.MemoryCandidate;
-import dev.agentmvp.memory.model.MemoryType;
-import dev.agentmvp.mcp.McpToolExecutor;
-import dev.agentmvp.session.InMemorySessionStore;
-import dev.agentmvp.tool.LocalToolExecutor;
-import dev.agentmvp.tool.ParallelToolExecutor;
-import dev.agentmvp.tool.ToolRegistry;
-import dev.agentmvp.tool.model.Tool;
-import dev.agentmvp.tool.model.ToolResult;
-import dev.agentmvp.tool.result.ToolResultOffloader;
+import dev.agentmvp.app.memory.LongTermMemoryInjectHook;
+import dev.agentmvp.app.memory.MarkdownMemoryStore;
+import dev.agentmvp.app.memory.MemoryPromptRenderer;
+import dev.agentmvp.app.memory.model.MemoryCandidate;
+import dev.agentmvp.app.memory.model.MemoryType;
+import dev.agentmvp.app.mcp.McpToolExecutor;
+import dev.agentmvp.core.session.InMemorySessionStore;
+import dev.agentmvp.core.tool.LocalToolExecutor;
+import dev.agentmvp.core.tool.ParallelToolExecutor;
+import dev.agentmvp.core.tool.ToolRegistry;
+import dev.agentmvp.core.tool.model.Tool;
+import dev.agentmvp.core.tool.model.ToolResult;
+import dev.agentmvp.app.tool.result.ToolResultOffloadHook;
+import dev.agentmvp.app.tool.result.ToolResultOffloader;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -107,7 +108,7 @@ class AgentLoopTest {
         };
 
         AgentLoop loop = new AgentLoop(
-                "fake-model",
+                new OpenAiCompatibleProvider("fake", "http://localhost", "test-key", "fake-model"),
                 sessionStore,
                 new ContextBuilder(
                         new SimpleTokenEstimator(),
@@ -238,8 +239,14 @@ class AgentLoopTest {
             handler.onDone();
         };
 
+        HookRegistry hookRegistry = HookRegistry.empty();
+        hookRegistry.register(
+                AgentHookPoints.BEFORE_TOOL_RESULT_APPEND,
+                new ToolResultOffloadHook(new ToolResultOffloader(objectMapper, tempDir, 30, 20))
+        );
+
         AgentLoop loop = new AgentLoop(
-                "fake-model",
+                new OpenAiCompatibleProvider("fake", "http://localhost", "test-key", "fake-model"),
                 sessionStore,
                 new ContextBuilder(
                         new SimpleTokenEstimator(),
@@ -249,7 +256,7 @@ class AgentLoopTest {
                 fakeStreamingLlm,
                 toolRegistry,
                 new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
-                new ToolResultOffloader(objectMapper, tempDir, 30, 20),
+                hookRegistry,
                 AgentEventBus.noop("test"),
                 4
         );

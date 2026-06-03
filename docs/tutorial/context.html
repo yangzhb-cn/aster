@@ -11,7 +11,7 @@
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>Aster 教程</span></a>
     <nav class="nav-links">
       <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="hook.html">hook</a><a class="active" href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
@@ -21,7 +21,7 @@
     <div class="layout">
       <article>
         <section class="section" id="what">
-          <p class="eyebrow">Package · dev.agentmvp.context</p>
+          <p class="eyebrow">Package · dev.agentmvp.core.context</p>
           <h1>context 包：压缩上下文，但不切断协议。</h1>
           <p class="lead">这里的核心不是“少发点字”，而是安全地少发。`ContextBuilder` 按 <span class="term" data-tip="turn 是一轮用户对话：从 user 消息开始，包含后面的 assistant 回复、tool_calls 和 tool 结果。">user turn</span> 切块，避免把 assistant 的工具调用和 tool 结果拆开。</p>
         </section>
@@ -32,7 +32,8 @@
             <div class="diagram-card">
               <h3>架构图</h3>
               <pre><code>SessionStore 完整历史
-  -> ContextBuilder
+  -> ContextPipeline
+       -> ContextBuilder
        -> TokenEstimator
        -> buildTurns()
        -> Summarizer
@@ -43,7 +44,7 @@
             </div>
             <div class="diagram-card">
               <h3>文件结构图</h3>
-              <pre><code>context/
+              <pre><code>core/context/
   ContextBuilder.java        # 构造和压缩上下文
   ToolProtocolValidator.java # 校验 tool_call/tool_result 配对
   TranscriptSummarizer.java  # 调用摘要提示词
@@ -53,16 +54,17 @@
     TurnType.java            # system / turn / orphan
     ContextOptions.java      # 阈值和保留轮数
     ContextBuildResult.java  # 构造结果</code></pre>
-              <p>ContextBuilder 负责流程，model 子包只表达结果和配置。</p>
+              <p>ContextPipeline 是内置 Stage 入口，ContextBuilder 负责具体压缩规则，model 子包只表达结果和配置。</p>
             </div>
             <div class="diagram-card">
               <h3>时序图</h3>
-              <pre><code>AgentLoop -> SessionStore: loadMessages()
-AgentLoop -> ContextBuilder: build(messages)
+              <pre><code>AgentLoop -> ContextPipeline: build()
+ContextPipeline -> SessionStore: loadMessages()
+ContextPipeline -> ContextBuilder: build(messages)
 ContextBuilder -> TokenEstimator: estimate()
 ContextBuilder -> Summarizer: summarize(oldTurns)
 ContextBuilder -> Validator: validate(finalMessages)
-ContextBuilder -> AgentLoop: ContextBuildResult</code></pre>
+ContextPipeline -> AgentLoop: ContextBuildResult</code></pre>
               <p>不管是否触发压缩，最终都要校验工具协议。</p>
             </div>
             <div class="diagram-card">

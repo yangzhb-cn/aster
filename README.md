@@ -2,7 +2,7 @@
 
 Aster 是一个用于学习 Agent 架构的 Java 21 最小实现。
 
-项目重点不是做完整产品，而是把 Agent 的核心链路拆清楚：流式 LLM、AgentLoop、上下文压缩、工具调用、MCP 适配、Skill 加载、Session 持久化、Hook 扩展、后台任务、长期记忆和 TUI 展示。
+项目重点不是做完整产品，而是把 Agent 的核心链路拆清楚：流式 LLM、AgentLoop、上下文压缩、工具调用、MCP 适配、Skill 加载、Session 持久化、Hook 扩展、后台任务、长期记忆、TUI、Web 和 IM 展示。
 
 ## 技术栈
 
@@ -49,7 +49,7 @@ src/main/java/com/aster/
 │   ├── hook/               HookPoint / HookHandler / HookRegistry / AgentHookPoints
 │   ├── stage/              Stage / StagePipeline / 内置必经流程
 │   ├── context/            ContextBuilder / ContextPipeline / ToolProtocolValidator
-│   ├── session/            SessionStore / JsonlSessionStore / SessionReplayer
+│   ├── session/            SessionStore / JsonlSessionStore / SessionReplayer / SessionIndex
 │   └── tool/               ToolHandler / ToolExecutor / ToolRegistry / ParallelToolExecutor
 │
 ├── app/                    具体能力实现和运行时装配
@@ -65,16 +65,18 @@ src/main/java/com/aster/
 │   └── prompt/             resources/prompts/*.md 加载
 │
 └── ui/
-    └── tui/                Lanterna 终端 UI，command/ 注册斜杠命令
+    ├── tui/                Lanterna 终端 UI，command/ 注册斜杠命令
+    ├── web/                JDK HttpServer + SSE Web Chat
+    └── im/telegram/        Telegram Bot long polling 入口
 ```
 
 ## 主流程
 
 ```text
-TuiMain
+TuiMain / WebMain / TelegramMain
   -> AgentRuntimeFactory
      -> BuiltinTools 注册 read/write/bash/edit
-     -> RuntimeExtensionRegistry 注册 load_skill、MCP、长期记忆、工具结果卸载、steer
+     -> RuntimeExtensionRegistry 注册 load_skill、MCP、system-reminder、长期记忆抽取、工具结果卸载、steer
   -> AgentRunCoordinator
      -> 空闲输入立即执行
      -> 运行中普通输入进入 follow-up 队列
@@ -89,7 +91,8 @@ TuiMain
      -> StreamingChatClient 发起 SSE 请求
      -> OpenAiCompatibleStreamParser 转成 ProviderStreamEvent
      -> AgentLoop 转成 AgentEvent
-     -> TuiAgentEventHandler 流式刷新界面
+     -> TuiAgentEventHandler / WebAgentEventHandler 流式刷新界面
+     -> TelegramAgentEventHandler 合并最终回答后发回 Telegram
      -> ParallelToolExecutor 并行执行多个 tool_call
      -> HookRegistry.BEFORE_TOOL_RESULT_APPEND 卸载大工具结果
      -> SessionStore 写回 assistant/tool 消息
@@ -174,12 +177,20 @@ Stage 是 Agent 主流程必经步骤，不靠外部注册决定是否执行。
 ```text
 workspace/
 ├── mcp.json.example
-├── sessions/                         session JSONL
+├── sessions/                         session index.json + *.jsonl
+├── im/                               Telegram chat-session 映射
 ├── tasks/                            后台任务 JSONL
 ├── skills/                           本地 Skill 目录
 ├── artifacts/tool-results/           大工具结果 JSONL
 └── memory/                           长期记忆 Markdown
 ```
+
+Session 规则：
+
+- `workspace/sessions/<sessionId>.jsonl` 保存完整原始事件历史。
+- `workspace/sessions/index.json` 保存 `displayName`、创建/更新时间和 `archived` 状态。
+- 新 sessionId 采用 `sess_yyyyMMdd_HHmmss_uid` 形式；displayName 只用于 UI 展示。
+- 删除会话只把索引里的 `archived` 置为 `true`，不删除 JSONL 审计文件。
 
 ## 运行
 
@@ -189,6 +200,49 @@ workspace/
 export DEEPSEEK_API_KEY=你的 key
 mvn -q exec:java
 ```
+
+也可以直接使用项目根目录的启动脚本。脚本会自动读取 `.env`：
+
+```bash
+./aster2tui
+```
+
+启动 Web Chat：
+
+```bash
+export DEEPSEEK_API_KEY=你的 key
+mvn -q -Dexec.mainClass=com.aster.ui.web.WebMain exec:java
+```
+
+或：
+
+```bash
+./aster2web
+```
+
+默认监听 `http://localhost:8080`。可以用 `ASTER_WEB_PORT` 和 `ASTER_SESSION` 覆盖端口和 session。
+`aster2web` 脚本默认使用 `8081`，方便和本地调试页面保持一致。
+Web 左侧提供会话新建、切换、重命名、归档；右侧只展示 token/context 状态。
+
+启动 Telegram Bot：
+
+```bash
+export DEEPSEEK_API_KEY=你的 key
+export TELEGRAM_BOT_TOKEN=你的 bot token
+export TELEGRAM_ALLOWED_CHAT_IDS=你的chatId
+mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
+```
+
+或：
+
+```bash
+./aster2im
+```
+
+如果变量写在 `.env`，可以直接使用上面的脚本；手动运行 Maven 时先执行 `set -a; . ./.env; set +a`。
+`aster2im` 支持把 `.env` 里的 `OWNER_ID` 当作默认 `TELEGRAM_ALLOWED_CHAT_IDS` 使用。
+Telegram 当前使用 long polling，不需要公网 webhook。`TELEGRAM_ALLOWED_CHAT_IDS` 必填，用逗号分隔多个 chatId。
+每个 Telegram chat 会映射到一个 Aster session，当前映射保存在 `workspace/im/telegram-sessions.json`。
 
 也可以用通用 OpenAI-compatible 配置覆盖：
 

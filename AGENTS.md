@@ -171,7 +171,10 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 
 - SessionStore 保存完整原始消息，不保存压缩后的“临时上下文”。
 - 压缩只影响本轮发给 LLM 的 request messages。
-- JSONL 是当前持久化格式。
+- JSONL 是当前对话历史持久化格式，文件名就是稳定的 sessionId。
+- `workspace/sessions/index.json` 只保存 session 元信息：displayName、createdAt、updatedAt、archived。
+- 新 sessionId 使用 `sess_yyyyMMdd_HHmmss_uid` 形式；displayName 只用于 UI 展示，重命名不能改 JSONL 文件名。
+- 删除会话必须做软删除：把 `archived` 置为 true，不删除 JSONL 审计文件。
 - 新增会话能力时不要破坏已有 session replay。
 
 ## App 能力层
@@ -290,16 +293,25 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 
 ## UI 规则
 
-当前 UI 是 Lanterna TUI，放在 `ui/tui/`。
+当前 UI 包括 Lanterna TUI、JDK HttpServer Web Chat 和 Telegram IM。
+
+目录：
+
+- `ui/tui/`：终端界面。
+- `ui/web/`：Web Chat、SSE 事件桥接和静态资源服务。
+- `ui/im/telegram/`：Telegram Bot long polling 入口。
 
 规则：
 
 - TUI 只消费 `AgentEventEnvelope`，不要直接侵入 AgentLoop。
+- Web 对话输入只通过 `AgentRuntime.submit/steer/stop`，session CRUD 通过 `SessionIndex` 管理元信息，通过 `JsonlSessionStore` 读取历史。
+- Web 静态资源放在 `src/main/resources/web/`，不要引入前端构建链路。
+- Telegram 只通过 `AgentRuntime.submit/stop` 输入，通过 `TelegramAgentEventHandler` 消费 `AgentEventEnvelope` 输出。
+- Telegram 必须使用 `TELEGRAM_ALLOWED_CHAT_IDS` 白名单；chat 到 session 的当前映射保存在 `workspace/im/telegram-sessions.json`。
 - 输出采用 Markdown-ish 渲染，支持标题、列表、表格、代码块、引用、分割线等基础格式。
 - 终端渲染对 emoji 兼容性有限，默认不要依赖 emoji 表达语义。
 - `/` 命令保持克制，新增命令前先确认是否真的必要。
 - 斜杠命令放在 `ui/tui/command/`，实现 `SlashCommand` 并注册到 `SlashCommandRegistry`；不要继续在 `AgentTuiWindow` 里堆 if/switch。
-- Web UI 后续应复用同一套 event handler 思路，不另起一套 Agent 逻辑。
 
 ## 代码风格
 
@@ -354,7 +366,8 @@ mvn test
 ```text
 workspace/
 ├── mcp.json.example
-├── sessions/
+├── sessions/                       # index.json + *.jsonl
+├── im/                             # Telegram chat-session 映射
 ├── tasks/
 ├── skills/
 ├── artifacts/tool-results/
@@ -373,7 +386,9 @@ workspace/
 4. 外部可观察状态：发布 `AgentEvent`，由 UI/Web/日志消费。
 5. 工具能力：四个底座工具放 `app/tool/builtin/`；其他工具通过 RuntimeExtension 注册到 `ToolRegistry`。
 6. TUI 斜杠命令：放 `ui/tui/command/`，不要塞回 `AgentTuiWindow`。
-7. 具体业务能力：放 `app/` 对应子包，并通过 RuntimeExtension 接入。
-8. 展示变化：放 `ui/`，消费事件，不改 AgentLoop。
+7. Web 展示和 HTTP 输入：放 `ui/web/`，复用 `AgentRuntime` 和 `AgentEventHandler`。
+8. IM 展示和输入：放 `ui/im/`，复用 `AgentRuntime` 和 `AgentEventHandler`。
+9. 具体业务能力：放 `app/` 对应子包，并通过 RuntimeExtension 接入。
+10. 展示变化：放 `ui/`，消费事件，不改 AgentLoop。
 
 如果不确定，优先保持核心链路不变，把新逻辑做成 app 层能力，通过 Hook/Event/Tool 接入。

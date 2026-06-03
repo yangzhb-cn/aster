@@ -22,6 +22,8 @@ public final class WorkspacePaths {
     public static final Path BACKGROUND_TASK_RUNS = TASKS.resolve("runs.jsonl");
     public static final Path ARTIFACTS = ROOT.resolve("artifacts");
     public static final Path TOOL_RESULTS = ARTIFACTS.resolve("tool-results");
+    public static final Path IM = ROOT.resolve("im");
+    public static final Path TELEGRAM_SESSION_MAP = IM.resolve("telegram-sessions.json");
 
     private WorkspacePaths() {
     }
@@ -37,5 +39,6 @@ public final class WorkspacePaths {
         Files.createDirectories(TASKS);
         Files.createDirectories(ARTIFACTS);
         Files.createDirectories(TOOL_RESULTS);
+        Files.createDirectories(IM);
     }
 }

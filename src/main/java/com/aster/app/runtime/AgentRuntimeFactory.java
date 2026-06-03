@@ -37,6 +37,7 @@ import com.aster.app.prompt.PromptPaths;
 import com.aster.core.session.BootstrappedSessionStore;
 import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionCatalog;
+import com.aster.core.session.SessionIndex;
 import com.aster.core.session.SessionStore;
 import com.aster.app.skill.SkillRepository;
 import com.aster.core.tool.LocalToolExecutor;
@@ -96,6 +97,8 @@ public class AgentRuntimeFactory {
         WorkspacePaths.ensureDirectories();
 
         ObjectMapper objectMapper = new ObjectMapper();
+        // sessionId 是 JSONL 文件名；displayName 只保存在 index.json，默认沿用 id。
+        new SessionIndex(objectMapper, WorkspacePaths.SESSIONS).ensure(sessionName, sessionName);
         PromptLoader promptLoader = new PromptLoader();
         String systemPrompt = promptLoader.load(PromptPaths.SYSTEM);
         String contextSummaryPrompt = promptLoader.load(PromptPaths.CONTEXT_SUMMARY);

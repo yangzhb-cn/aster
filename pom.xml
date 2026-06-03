@@ -16,6 +16,7 @@
         <okhttp.version>4.12.0</okhttp.version>
         <lanterna.version>3.1.2</lanterna.version>
         <junit.version>5.10.3</junit.version>
+        <exec.mainClass>com.aster.ui.tui.TuiMain</exec.mainClass>
     </properties>
 
     <dependencies>
@@ -61,7 +62,7 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.3.0</version>
                 <configuration>
-                    <mainClass>com.aster.ui.tui.TuiMain</mainClass>
+                    <mainClass>${exec.mainClass}</mainClass>
                 </configuration>
             </plugin>
         </plugins>

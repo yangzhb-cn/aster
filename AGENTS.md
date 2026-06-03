@@ -186,6 +186,7 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 当前默认扩展：
 
 - `SkillToolExtension`：注册 `load_skill` 工具。
+- `DeveloperToolExtension`：注册 `ls`、`glob`、`grep`、`subagent`、`web_fetch`、`web_search`。
 - `McpToolExtension`：读取 `workspace/mcp.json` 并注册 MCP tools。
 - `SteerExtension`：注册运行中引导 Hook。
 - `SystemReminderExtension`：注册请求前 `<system-reminder>` 注入 Hook。
@@ -214,6 +215,26 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 新增工具默认走 RuntimeExtension；只有确实属于 Agent 宿主底座能力时，才考虑放入 `app/tool/builtin/`。
 
 路径类工具当前教学版不做复杂权限系统。后续若要做权限，走 `BEFORE_TOOL_CALL` Hook 或独立审批能力，不要在工具里散落临时判断。
+
+### 开发者扩展工具
+
+开发者扩展工具放在 `app/tool/developer/`，由 `DeveloperToolExtension` 通过 RuntimeExtension 注册。
+
+当前工具：
+
+- `ls`
+- `glob`
+- `grep`
+- `subagent`
+- `web_fetch`
+- `web_search`
+
+规则：
+
+- 不要把这些工具放进 `BuiltinTools`；`BuiltinTools` 只保留 `read/write/bash/edit` 四个底座工具。
+- 每个工具一个类，实现 `DeveloperTool`，共享逻辑放 `AbstractDeveloperTool`。
+- `subagent` 可以创建内存版子 Agent，但子 Agent 不再注册 `subagent`，避免递归调用自身。
+- `web_search` 使用 Tavily，需要 `TAVILY_API_KEY`；没有 key 时返回工具错误，不访问真实网络。
 
 ### 工具结果外部卸载
 

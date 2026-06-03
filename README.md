@@ -56,6 +56,7 @@ src/main/java/com/aster/
 │   ├── runtime/            AgentRuntimeFactory / AgentRunCoordinator，把 core + app + llm 装配起来
 │   ├── extension/          RuntimeExtension，把可选 Tool / Hook / EventHandler 注册进运行时
 │   ├── tool/builtin/       read / write / bash / edit 四个固定底座工具
+│   ├── tool/developer/     ls / glob / grep / subagent / web_fetch / web_search 扩展工具
 │   ├── tool/result/        大工具结果 JSONL 外部卸载
 │   ├── mcp/                MCP client/server/tool adapter
 │   ├── skill/              Skill 扫描、索引、加载
@@ -76,7 +77,7 @@ src/main/java/com/aster/
 TuiMain / WebMain / TelegramMain
   -> AgentRuntimeFactory
      -> BuiltinTools 注册 read/write/bash/edit
-     -> RuntimeExtensionRegistry 注册 load_skill、MCP、system-reminder、长期记忆抽取、工具结果卸载、steer
+     -> RuntimeExtensionRegistry 注册 load_skill、开发者工具、MCP、system-reminder、长期记忆抽取、工具结果卸载、steer
   -> AgentRunCoordinator
      -> 空闲输入立即执行
      -> 运行中普通输入进入 follow-up 队列
@@ -109,6 +110,7 @@ TuiMain / WebMain / TelegramMain
 
 RuntimeExtension：
   SkillToolExtension      -> 注册 load_skill
+  DeveloperToolExtension  -> 注册 ls/glob/grep/subagent/web_fetch/web_search
   McpToolExtension        -> 加载 workspace/mcp.json 并注册 MCP tools
   SteerExtension          -> 注册运行中引导 Hook
   SystemReminderExtension -> 注册请求前 <system-reminder> 注入 Hook
@@ -260,4 +262,4 @@ mvn -q exec:java
 mvn test
 ```
 
-当前测试覆盖 AgentLoop、上下文压缩、DeepSeek/OpenAI-compatible parser、MCP、本地 MCP Server、内置工具、Skill、Session、后台任务、长期记忆、Prompt 和 TUI Markdown 渲染。
+当前测试覆盖 AgentLoop、上下文压缩、DeepSeek/OpenAI-compatible parser、MCP、本地 MCP Server、内置工具、开发者扩展工具、Skill、Session、后台任务、长期记忆、Prompt 和 TUI Markdown 渲染。

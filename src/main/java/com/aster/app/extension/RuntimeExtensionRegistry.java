@@ -26,6 +26,7 @@ public class RuntimeExtensionRegistry {
     public static RuntimeExtensionRegistry defaults() {
         return new RuntimeExtensionRegistry(List.of(
                 new SkillToolExtension(),
+                new DeveloperToolExtension(),
                 new McpToolExtension(),
                 new SteerExtension(),
                 new SystemReminderExtension(),

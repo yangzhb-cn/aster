@@ -49,7 +49,7 @@ public class WebSearchTool extends AbstractDeveloperTool {
     public Tool definition() {
         return Tool.local(
                 "web_search",
-                "WEBSEARCH",
+                "WebSearch",
                 "使用 Tavily 搜索网页并返回可引用的链接和摘要。需要 TAVILY_API_KEY。",
                 objectSchema(
                         Map.of(

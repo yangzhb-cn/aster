@@ -30,7 +30,7 @@ public class WebFetchTool extends AbstractDeveloperTool {
     public Tool definition() {
         return Tool.local(
                 "web_fetch",
-                "WEBFETCH",
+                "WebFetch",
                 "获取指定 URL 的网页内容，返回简化后的文本片段。已有具体 URL 时使用。",
                 objectSchema(
                         Map.of(

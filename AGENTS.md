@@ -187,6 +187,7 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 
 - `SkillToolExtension`：注册 `load_skill` 工具。
 - `DeveloperToolExtension`：注册 `ls`、`glob`、`grep`、`subagent`、`web_fetch`、`web_search`。
+- `BackgroundTaskToolExtension`：注册 `background_task` 后台任务管理工具。
 - `McpToolExtension`：读取 `workspace/mcp.json` 并注册 MCP tools。
 - `SteerExtension`：注册运行中引导 Hook。
 - `SystemReminderExtension`：注册请求前 `<system-reminder>` 注入 Hook。
@@ -235,6 +236,21 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 - 每个工具一个类，实现 `DeveloperTool`，共享逻辑放 `AbstractDeveloperTool`。
 - `subagent` 可以创建内存版子 Agent，但子 Agent 不再注册 `subagent`，避免递归调用自身。
 - `web_search` 使用 Tavily，需要 `TAVILY_API_KEY`；没有 key 时返回工具错误，不访问真实网络。
+
+### 后台任务工具
+
+后台任务管理工具放在 `app/tool/background/`，由 `BackgroundTaskToolExtension` 通过 RuntimeExtension 注册。
+
+当前工具：
+
+- `background_task`
+
+规则：
+
+- 工具只调用 `BackgroundTaskManager`，不要直接调用 `BackgroundTaskScheduler` 或 `BackgroundTaskExecutor`。
+- `background_task` 只管理任务定义：创建 immediate/delay/interval、列出任务、取消任务。
+- 真正执行什么由 `TaskAction.type` 对应的 `BackgroundTaskHandler` 决定。
+- 新增一种后台动作时，先新增 `BackgroundTaskHandler`，再让 `background_task` 创建对应 `TaskAction`。
 
 ### 工具结果外部卸载
 

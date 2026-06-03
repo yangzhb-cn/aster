@@ -32,7 +32,7 @@ public class GlobTool extends AbstractDeveloperTool {
     public Tool definition() {
         return Tool.local(
                 "glob",
-                "GLOB",
+                "Glob",
                 "按 glob pattern 查找文件，适合根据文件名或扩展名定位代码文件。",
                 objectSchema(
                         Map.of(

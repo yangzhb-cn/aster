@@ -27,6 +27,7 @@ public class RuntimeExtensionRegistry {
         return new RuntimeExtensionRegistry(List.of(
                 new SkillToolExtension(),
                 new DeveloperToolExtension(),
+                new BackgroundTaskToolExtension(),
                 new McpToolExtension(),
                 new SteerExtension(),
                 new SystemReminderExtension(),

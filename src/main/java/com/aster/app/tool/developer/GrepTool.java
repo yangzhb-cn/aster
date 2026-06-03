@@ -37,7 +37,7 @@ public class GrepTool extends AbstractDeveloperTool {
     public Tool definition() {
         return Tool.local(
                 "grep",
-                "GREP",
+                "Grep",
                 "用正则表达式搜索文件内容，最多返回 200 条 file:line 匹配。",
                 objectSchema(
                         Map.of(

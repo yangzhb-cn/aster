@@ -62,7 +62,7 @@ public class SubagentTool extends AbstractDeveloperTool {
     public Tool definition() {
         return Tool.local(
                 "subagent",
-                "SUBAGENT",
+                "SubAgent",
                 """
                         启动一个无状态子 Agent 执行独立任务。适合开放式搜索、代码定位或需要多步工具调用的研究任务。
                         子 Agent 的结果只返回给当前 Agent，用户不会直接看到；最终仍需要由当前 Agent 总结给用户。

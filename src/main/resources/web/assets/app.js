@@ -6,6 +6,7 @@ const state = {
   tools: new Map(),
   currentAssistant: null,
   currentReasoning: null,
+  teamMembers: new Map(),
   approvals: new Map(),
 };
 const TOOL_PREVIEW_CHAR_LIMIT = 1200;
@@ -196,6 +197,7 @@ function addMessage(role, text = "") {
 
 function displayRole(role) {
   if (role === "assistant" || role === "system") return "Aster";
+  if (role === "team") return "TEAM";
   if (role === "thinking") return "Thinking";
   if (role === "user") return "USER";
   if (role === "error") return "ERROR";
@@ -206,6 +208,19 @@ function updateMessage(message, text) {
   message.text = text;
   message.node.querySelector(".message-body").innerHTML = renderMarkdown(text);
   scrollToBottom();
+}
+
+function ensureTeamMemberMessage(payload = {}, initialText = "") {
+  const taskId = payload.taskId || "";
+  const role = payload.role || "member";
+  const key = `${taskId}:${role}`;
+  let block = state.teamMembers.get(key);
+  if (!block) {
+    block = addMessage("team", initialText);
+    block.node.querySelector(".message-header").textContent = `TEAM ${role}${taskId ? `(${taskId})` : ""}`;
+    state.teamMembers.set(key, block);
+  }
+  return block;
 }
 
 function scrollToBottom() {
@@ -403,11 +418,15 @@ function formatToolArguments(argumentsJson) {
 
 function formatToolTitle(toolName, argumentsJson) {
   const args = parseToolArguments(argumentsJson);
-  if (toolName === "bash") return `$ ${stringArg(args, "command", argumentsJson)}`;
-  if (toolName === "read") return `read ${stringArg(args, "path", argumentsJson)}`;
-  if (toolName === "write") return `write ${stringArg(args, "path", argumentsJson)}`;
-  if (toolName === "edit") return `edit ${stringArg(args, "path", argumentsJson)}`;
-  if (toolName === "load_skill") return `load_skill ${stringArg(args, "name", argumentsJson)}`;
+  const normalized = String(toolName || "");
+  const dot = normalized.lastIndexOf(".");
+  const prefix = dot > 0 ? `${normalized.slice(0, dot)}.` : "";
+  const baseName = dot > 0 ? normalized.slice(dot + 1) : normalized;
+  if (baseName === "bash") return `${prefix}$ ${stringArg(args, "command", argumentsJson)}`;
+  if (baseName === "read") return `${prefix}read ${stringArg(args, "path", argumentsJson)}`;
+  if (baseName === "write") return `${prefix}write ${stringArg(args, "path", argumentsJson)}`;
+  if (baseName === "edit") return `${prefix}edit ${stringArg(args, "path", argumentsJson)}`;
+  if (baseName === "load_skill") return `${prefix}load_skill ${stringArg(args, "name", argumentsJson)}`;
   return `${toolName || "tool"} ${argumentsJson || ""}`.trim();
 }
 
@@ -747,6 +766,7 @@ function handleAgentEvent(event) {
     state.currentReasoning = null;
     state.tools.clear();
     state.approvals.clear();
+    state.teamMembers.clear();
     state.busy = true;
     return;
   }
@@ -784,6 +804,38 @@ function handleAgentEvent(event) {
     } else {
       addMessage("system", `工具审批${payload.approved ? "通过" : "拒绝"}：${payload.toolName || ""}`);
     }
+    return;
+  }
+  if (type === "TeamRunStarted") {
+    state.teamMembers.clear();
+    addMessage("system", `Agent Team 开始：${payload.task || ""}\nmode=${payload.mode || "explore"}`);
+    state.busy = true;
+    return;
+  }
+  if (type === "TeamMemberStarted") {
+    ensureTeamMemberMessage(payload, payload.description || "");
+    return;
+  }
+  if (type === "TeamMemberToken") {
+    const block = ensureTeamMemberMessage(payload, "");
+    updateMessage(block, block.text + (payload.text || ""));
+    return;
+  }
+  if (type === "TeamMemberFinished") {
+    const stateText = payload.success ? "完成" : "失败";
+    addMessage(
+      "system",
+      `Team 成员${stateText}：${payload.taskId || ""} ${payload.role || ""} · ${payload.elapsedMillis || 0}ms\n${previewText(payload.text || "").text}`
+    );
+    return;
+  }
+  if (type === "TeamRunFinished") {
+    state.busy = false;
+    addMessage(
+      payload.success ? "system" : "error",
+      `Agent Team ${payload.success ? "完成" : "失败"} · ${payload.elapsedMillis || 0}ms\n${payload.summary || ""}`
+    );
+    refreshStatus();
     return;
   }
   if (type === "ToolCallStart") {

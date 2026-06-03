@@ -27,6 +27,11 @@ public sealed interface AgentEvent permits
         AgentEvent.ReasoningToken,
         AgentEvent.ToolApprovalRequested,
         AgentEvent.ToolApprovalResolved,
+        AgentEvent.TeamRunStarted,
+        AgentEvent.TeamMemberStarted,
+        AgentEvent.TeamMemberToken,
+        AgentEvent.TeamMemberFinished,
+        AgentEvent.TeamRunFinished,
         AgentEvent.ToolCallStart,
         AgentEvent.ToolCallDone,
         AgentEvent.UsageReported,
@@ -177,6 +182,42 @@ public sealed interface AgentEvent permits
             boolean approved,
             String reason
     ) implements AgentEvent {
+    }
+
+    /**
+     * Agent Team 探索任务开始。
+     */
+    record TeamRunStarted(String task, String mode) implements AgentEvent {
+    }
+
+    /**
+     * Agent Team 中的一个成员开始运行。
+     */
+    record TeamMemberStarted(String taskId, String role, String description) implements AgentEvent {
+    }
+
+    /**
+     * Agent Team 成员的流式正文 token。
+     */
+    record TeamMemberToken(String taskId, String role, String text) implements AgentEvent {
+    }
+
+    /**
+     * Agent Team 中的一个成员运行结束。
+     */
+    record TeamMemberFinished(
+            String taskId,
+            String role,
+            boolean success,
+            String text,
+            long elapsedMillis
+    ) implements AgentEvent {
+    }
+
+    /**
+     * Agent Team 探索任务结束。
+     */
+    record TeamRunFinished(boolean success, String summary, long elapsedMillis) implements AgentEvent {
     }
 
     /**

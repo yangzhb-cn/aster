@@ -4,6 +4,8 @@ import com.aster.core.agent.AgentLoop;
 import com.aster.app.background.BackgroundTaskManager;
 import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.hitl.model.ToolApprovalRequest;
+import com.aster.app.team.AgentTeamRunner;
+import com.aster.core.event.model.AgentEvent;
 import com.aster.llm.model.OpenAiCompatibleProvider;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.core.tool.ParallelToolExecutor;
@@ -11,6 +13,9 @@ import com.aster.core.tool.ParallelToolExecutor;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 /**
  * Agent 运行时对象。
@@ -21,6 +26,8 @@ import java.util.Objects;
 public class AgentRuntime implements AutoCloseable {
     private final AgentLoop agentLoop;
     private final AgentRunCoordinator runCoordinator;
+    private final AgentTeamRunner agentTeamRunner;
+    private final AgentEventPublisher eventPublisher;
     private final BackgroundTaskManager backgroundTaskManager;
     private final ToolApprovalManager toolApprovalManager;
     private final ParallelToolExecutor parallelToolExecutor;
@@ -28,10 +35,17 @@ public class AgentRuntime implements AutoCloseable {
     private final OpenAiCompatibleProvider provider;
     private final String sessionName;
     private final int skillCount;
+    private final ExecutorService teamExecutor = Executors.newSingleThreadExecutor();
+    private final Object teamLock = new Object();
+
+    private boolean teamBusy;
+    private Future<?> currentTeam;
 
     public AgentRuntime(
             AgentLoop agentLoop,
             AgentRunCoordinator runCoordinator,
+            AgentTeamRunner agentTeamRunner,
+            AgentEventPublisher eventPublisher,
             BackgroundTaskManager backgroundTaskManager,
             ToolApprovalManager toolApprovalManager,
             ParallelToolExecutor parallelToolExecutor,
@@ -42,6 +56,8 @@ public class AgentRuntime implements AutoCloseable {
     ) {
         this.agentLoop = Objects.requireNonNull(agentLoop);
         this.runCoordinator = Objects.requireNonNull(runCoordinator);
+        this.agentTeamRunner = Objects.requireNonNull(agentTeamRunner);
+        this.eventPublisher = Objects.requireNonNull(eventPublisher);
         this.backgroundTaskManager = Objects.requireNonNull(backgroundTaskManager);
         this.toolApprovalManager = Objects.requireNonNull(toolApprovalManager);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
@@ -62,7 +78,27 @@ public class AgentRuntime implements AutoCloseable {
      * 提交用户输入。运行中提交会进入 follow-up 队列。
      */
     public void submit(String userInput) {
+        if (teamBusy()) {
+            throw new IllegalStateException("Agent Team 正在运行，结束后再提交普通消息。");
+        }
         runCoordinator.submit(userInput);
+    }
+
+    /**
+     * 启动一次固定 DAG 的 Agent Team 探索。
+     */
+    public void submitTeam(String task) {
+        String input = requireText(task, "task");
+        synchronized (teamLock) {
+            if (teamBusy) {
+                throw new IllegalStateException("Agent Team 正在运行。");
+            }
+            if (runCoordinator.isBusy()) {
+                throw new IllegalStateException("Agent 正在运行，结束后再启动 /team。");
+            }
+            teamBusy = true;
+            currentTeam = teamExecutor.submit(() -> runTeam(input));
+        }
     }
 
     /**
@@ -78,7 +114,8 @@ public class AgentRuntime implements AutoCloseable {
     public boolean stop() {
         boolean stopped = runCoordinator.stop();
         boolean canceledApprovals = toolApprovalManager.cancelAll("用户请求停止");
-        return stopped || canceledApprovals;
+        boolean stoppedTeam = stopTeam();
+        return stopped || canceledApprovals || stoppedTeam;
     }
 
     /**
@@ -120,7 +157,7 @@ public class AgentRuntime implements AutoCloseable {
      * 判断当前是否有正在执行或等待执行的输入。
      */
     public boolean isBusy() {
-        return runCoordinator.isBusy();
+        return runCoordinator.isBusy() || teamBusy();
     }
 
     /**
@@ -164,9 +201,48 @@ public class AgentRuntime implements AutoCloseable {
     @Override
     public void close() {
         toolApprovalManager.cancelAll("runtime closing");
+        teamExecutor.shutdownNow();
         runCoordinator.close();
         backgroundTaskManager.close();
         parallelToolExecutor.close();
         mcpToolExecutor.close();
+    }
+
+    private void runTeam(String task) {
+        eventPublisher.beginRun();
+        try {
+            agentTeamRunner.run(task);
+        } finally {
+            synchronized (teamLock) {
+                teamBusy = false;
+                currentTeam = null;
+            }
+        }
+    }
+
+    private boolean stopTeam() {
+        synchronized (teamLock) {
+            if (!teamBusy || currentTeam == null) {
+                return false;
+            }
+            currentTeam.cancel(true);
+            teamBusy = false;
+            currentTeam = null;
+        }
+        eventPublisher.publish(new AgentEvent.RunStopped("Agent Team 已请求停止。"));
+        return true;
+    }
+
+    private boolean teamBusy() {
+        synchronized (teamLock) {
+            return teamBusy;
+        }
+    }
+
+    private String requireText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " is required");
+        }
+        return value.trim();
     }
 }

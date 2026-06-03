@@ -7,5 +7,5 @@ package com.aster.ui.tui.model;
  * 这样很难展示“思考、工具、正文”这些不同语义。
  * 现在每一种展示内容都有自己的 block 类型，TUI 只负责按类型绘制。</p>
  */
-public sealed interface UiBlock permits UserBlock, AssistantBlock, ReasoningBlock, ToolBlock, SystemBlock, ErrorBlock {
+public sealed interface UiBlock permits UserBlock, AssistantBlock, ReasoningBlock, ToolBlock, SystemBlock, ErrorBlock, TeamMemberBlock {
 }

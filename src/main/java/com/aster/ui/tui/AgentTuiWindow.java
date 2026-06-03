@@ -22,6 +22,7 @@ import com.aster.ui.tui.model.AssistantBlock;
 import com.aster.ui.tui.model.ErrorBlock;
 import com.aster.ui.tui.model.ReasoningBlock;
 import com.aster.ui.tui.model.SystemBlock;
+import com.aster.ui.tui.model.TeamMemberBlock;
 import com.aster.ui.tui.model.ToolBlock;
 import com.aster.ui.tui.model.ToolStatus;
 import com.aster.ui.tui.model.UiBlock;
@@ -257,6 +258,63 @@ public class AgentTuiWindow implements AutoCloseable {
     }
 
     /**
+     * 显示 Agent Team 开始事件。
+     */
+    public void showTeamRunStarted(String task, String mode) {
+        enqueue(() -> {
+            addBlock(new SystemBlock("Agent Team 开始：" + task + "\nmode=" + mode));
+            status = "agent team running";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Agent Team 成员开始事件。
+     */
+    public void showTeamMemberStarted(String taskId, String role, String description) {
+        enqueue(() -> {
+            addBlock(new SystemBlock("Team 成员开始：" + taskId + " " + role + "\n" + description));
+            status = "team member running: " + role;
+            dirty = true;
+        });
+    }
+
+    /**
+     * 追加 Agent Team 成员的流式正文。
+     */
+    public void appendTeamMemberToken(String taskId, String role, String token) {
+        enqueue(() -> {
+            appendToTeamMemberBlock(taskId, role, token);
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Agent Team 成员完成事件。
+     */
+    public void showTeamMemberFinished(String taskId, String role, boolean success, String text, long elapsedMillis) {
+        enqueue(() -> {
+            String state = success ? "完成" : "失败";
+            addBlock(new SystemBlock("Team 成员" + state + "：" + taskId + " " + role
+                    + " · " + elapsedMillis + "ms\n" + truncateForSystem(text)));
+            status = "team member " + (success ? "done: " : "failed: ") + role;
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 Agent Team 完成事件。
+     */
+    public void showTeamRunFinished(boolean success, String summary, long elapsedMillis) {
+        enqueue(() -> {
+            addBlock(new SystemBlock("Agent Team " + (success ? "完成" : "失败")
+                    + " · " + elapsedMillis + "ms\n" + summary));
+            status = success ? "team done" : "team failed";
+            dirty = true;
+        });
+    }
+
+    /**
      * 更新底部预算行，不把 usage 当作一条对话消息插入历史区。
      */
     public void showUsage(TokenUsage usage, int maxContextTokens) {
@@ -357,6 +415,14 @@ public class AgentTuiWindow implements AutoCloseable {
                 approvalId,
                 approvalId
         ).stripTrailing();
+    }
+
+    private String truncateForSystem(String text) {
+        String value = text == null ? "" : text;
+        int maxChars = 2_000;
+        return value.length() <= maxChars
+                ? value
+                : value.substring(0, maxChars) + "\n... 已截断 " + value.length() + " 字符";
     }
 
     private String previewApprovalArguments(String argumentsJson) {
@@ -850,6 +916,11 @@ public class AgentTuiWindow implements AutoCloseable {
             appendToolLines(lines, tool, width);
             return;
         }
+        if (block instanceof TeamMemberBlock member) {
+            lines.add(new RenderedLine("team " + member.role() + "(" + member.taskId() + "):", MUTED, BG, new SGR[]{SGR.BOLD}));
+            appendMarkdownLines(lines, member.text(), width);
+            return;
+        }
         if (block instanceof SystemBlock system) {
             appendTextLines(lines, "system: " + system.text(), width, MUTED, BG);
             return;
@@ -888,12 +959,19 @@ public class AgentTuiWindow implements AutoCloseable {
 
     private String formatToolHeader(ToolBlock tool) {
         Map<String, Object> arguments = parseToolArguments(tool.argumentsJson());
-        return switch (tool.toolName()) {
-            case "bash" -> "$ " + stringArg(arguments, "command", tool.argumentsJson());
-            case "read" -> "read " + stringArg(arguments, "path", tool.argumentsJson());
-            case "write" -> "write " + stringArg(arguments, "path", tool.argumentsJson());
-            case "edit" -> "edit " + stringArg(arguments, "path", tool.argumentsJson());
-            case "load_skill" -> "load_skill " + stringArg(arguments, "name", tool.argumentsJson());
+        String prefix = "";
+        String normalizedToolName = tool.toolName();
+        int dot = normalizedToolName == null ? -1 : normalizedToolName.lastIndexOf('.');
+        if (dot > 0 && dot < normalizedToolName.length() - 1) {
+            prefix = normalizedToolName.substring(0, dot) + ".";
+            normalizedToolName = normalizedToolName.substring(dot + 1);
+        }
+        return switch (normalizedToolName) {
+            case "bash" -> prefix + "$ " + stringArg(arguments, "command", tool.argumentsJson());
+            case "read" -> prefix + "read " + stringArg(arguments, "path", tool.argumentsJson());
+            case "write" -> prefix + "write " + stringArg(arguments, "path", tool.argumentsJson());
+            case "edit" -> prefix + "edit " + stringArg(arguments, "path", tool.argumentsJson());
+            case "load_skill" -> prefix + "load_skill " + stringArg(arguments, "name", tool.argumentsJson());
             default -> tool.toolName() + " " + nullToEmpty(tool.argumentsJson());
         };
     }
@@ -1049,6 +1127,30 @@ public class AgentTuiWindow implements AutoCloseable {
             addBlock(reasoning);
         }
         reasoning.append(token);
+    }
+
+    private void appendToTeamMemberBlock(String taskId, String role, String token) {
+        if (token == null || token.isEmpty()) {
+            return;
+        }
+        TeamMemberBlock member = findTeamMemberBlock(taskId, role);
+        if (member == null) {
+            member = new TeamMemberBlock(taskId, role);
+            addBlock(member);
+        }
+        member.append(token);
+    }
+
+    private TeamMemberBlock findTeamMemberBlock(String taskId, String role) {
+        for (int i = blocks.size() - 1; i >= 0; i--) {
+            UiBlock block = blocks.get(i);
+            if (block instanceof TeamMemberBlock member
+                    && Objects.equals(member.taskId(), taskId)
+                    && Objects.equals(member.role(), role)) {
+                return member;
+            }
+        }
+        return null;
     }
 
     private ToolBlock findToolBlock(String toolCallId) {

@@ -36,7 +36,7 @@ import java.util.Objects;
  * 子 Agent 可以使用基础工具和开发者检索/Web 工具，但不会再次拥有 subagent 工具。</p>
  */
 public class SubagentTool extends AbstractDeveloperTool {
-    private static final int MAX_TOOL_ROUNDS = 12;
+    private static final int MAX_TOOL_ROUNDS = 100;
     private static final int MAX_OUTPUT_CHARS = 6_000;
 
     private final ObjectMapper objectMapper;

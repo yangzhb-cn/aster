@@ -52,6 +52,10 @@ import com.aster.app.tool.builtin.BuiltinTools;
 import com.aster.app.todo.JsonTodoStore;
 import com.aster.app.todo.TodoScanTaskHandler;
 import com.aster.app.todo.TodoStore;
+import com.aster.app.team.AgentTeamRunner;
+import com.aster.app.team.TeamAgentFactory;
+import com.aster.app.team.TeamTaskExecutor;
+import com.aster.app.team.model.TeamPromptSet;
 import okhttp3.OkHttpClient;
 
 import java.io.IOException;
@@ -75,7 +79,7 @@ public class AgentRuntimeFactory {
      * <p>这里不是聊天 session 的总轮数，而是一次 run() 里
      * “LLM -> tool_calls -> tool results -> LLM”的最大循环次数。</p>
      */
-    private static final int MAX_TOOL_ROUNDS = 50;
+    private static final int MAX_TOOL_ROUNDS = 100;
 
     /**
      * 使用默认配置创建 Agent 运行时。
@@ -113,6 +117,11 @@ public class AgentRuntimeFactory {
         String contextSummaryPrompt = promptLoader.load(PromptPaths.CONTEXT_SUMMARY);
         String longTermMemorySystemPrompt = promptLoader.load(PromptPaths.LONG_TERM_MEMORY_SYSTEM);
         String memoryExtractionPrompt = promptLoader.load(PromptPaths.MEMORY_EXTRACTION);
+        TeamPromptSet teamPromptSet = new TeamPromptSet(
+                promptLoader.load(PromptPaths.TEAM_PLANNER_SYSTEM),
+                promptLoader.load(PromptPaths.TEAM_CODE_RESEARCHER_SYSTEM),
+                promptLoader.load(PromptPaths.TEAM_RISK_REVIEWER_SYSTEM)
+        );
 
         OkHttpClient httpClient = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofSeconds(30))
@@ -124,6 +133,7 @@ public class AgentRuntimeFactory {
         LocalToolExecutor localToolExecutor = new LocalToolExecutor(objectMapper);
         McpToolExecutor mcpToolExecutor = new McpToolExecutor();
         ToolRegistry toolRegistry = new ToolRegistry(localToolExecutor, mcpToolExecutor);
+        AgentEventPublisher eventPublisher = new AgentEventPublisher();
 
         SkillRepository skillRepository = SkillRepository.scan(WorkspacePaths.SKILLS);
         // read/write/bash/edit 是固定底座工具；load_skill、MCP 等能力走 RuntimeExtension。
@@ -133,7 +143,7 @@ public class AgentRuntimeFactory {
         TodoStore todoStore = new JsonTodoStore(objectMapper, WorkspacePaths.TODO_FILE);
 
         List<Message> bootstrapMessages = new ArrayList<>();
-        // 基础 system prompt 来自 jar 内置 resources/prompts/system.md。
+        // 基础 system prompt 来自 jar 内置 resources/prompts/agent/system.md。
         bootstrapMessages.add(Message.system(systemPrompt));
 
         SessionStore sessionStore = new BootstrappedSessionStore(
@@ -187,6 +197,7 @@ public class AgentRuntimeFactory {
         eventHandlers.add(eventHandler);
         eventHandlers.addAll(extensionRegistry.eventHandlers(extensionContext));
         AgentEventBus eventBus = new AgentEventBus(sessionName, eventHandlers);
+        eventPublisher.attach(eventBus);
         toolApprovalManager.attachEventBus(eventBus);
         ContextPipeline contextPipeline = new ContextPipeline(
                 sessionStore,
@@ -209,10 +220,26 @@ public class AgentRuntimeFactory {
                 MAX_TOOL_ROUNDS
         );
         AgentRunCoordinator runCoordinator = new AgentRunCoordinator(agentLoop, eventBus);
+        AgentTeamRunner agentTeamRunner = new AgentTeamRunner(
+                eventPublisher,
+                new TeamTaskExecutor(
+                        new TeamAgentFactory(
+                                Path.of("."),
+                                objectMapper,
+                                httpClient,
+                                provider,
+                                streamingChatClient,
+                                teamPromptSet
+                        ),
+                        eventPublisher
+                )
+        );
 
         return new AgentRuntime(
                 agentLoop,
                 runCoordinator,
+                agentTeamRunner,
+                eventPublisher,
                 backgroundTaskManager,
                 toolApprovalManager,
                 parallelToolExecutor,

@@ -74,6 +74,27 @@ public class TelegramAgentEventHandler implements AgentEventHandler {
             sender.sendMessage(chatId, "工具调用" + status + "：" + tool.toolName() + " · " + tool.elapsedMillis() + "ms" + preview);
             return;
         }
+        if (event instanceof AgentEvent.TeamRunStarted team) {
+            sender.sendMessage(chatId, "Agent Team 开始：" + team.task());
+            return;
+        }
+        if (event instanceof AgentEvent.TeamMemberStarted member) {
+            sender.sendMessage(chatId, "Team 成员开始：" + member.taskId() + " " + member.role());
+            return;
+        }
+        if (event instanceof AgentEvent.TeamMemberFinished member) {
+            String status = member.success() ? "完成" : "失败";
+            sender.sendMessage(chatId, "Team 成员" + status + "：" + member.taskId()
+                    + " " + member.role()
+                    + " · " + member.elapsedMillis() + "ms\n"
+                    + preview(member.text()));
+            return;
+        }
+        if (event instanceof AgentEvent.TeamRunFinished team) {
+            sender.sendMessage(chatId, "Agent Team " + (team.success() ? "完成" : "失败")
+                    + " · " + team.elapsedMillis() + "ms\n" + preview(team.summary()));
+            return;
+        }
         if (event instanceof AgentEvent.RunFailed failed) {
             finalSent = true;
             sender.sendMessage(chatId, "执行失败：" + failed.errorMessage());

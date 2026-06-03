@@ -94,6 +94,27 @@ public final class WebAgentEventMapper {
             payload.put("toolName", value.toolName());
             payload.put("approved", value.approved());
             payload.put("reason", value.reason());
+        } else if (event instanceof AgentEvent.TeamRunStarted value) {
+            payload.put("task", value.task());
+            payload.put("mode", value.mode());
+        } else if (event instanceof AgentEvent.TeamMemberStarted value) {
+            payload.put("taskId", value.taskId());
+            payload.put("role", value.role());
+            payload.put("description", value.description());
+        } else if (event instanceof AgentEvent.TeamMemberToken value) {
+            payload.put("taskId", value.taskId());
+            payload.put("role", value.role());
+            payload.put("text", value.text());
+        } else if (event instanceof AgentEvent.TeamMemberFinished value) {
+            payload.put("taskId", value.taskId());
+            payload.put("role", value.role());
+            payload.put("success", value.success());
+            payload.put("text", value.text());
+            payload.put("elapsedMillis", value.elapsedMillis());
+        } else if (event instanceof AgentEvent.TeamRunFinished value) {
+            payload.put("success", value.success());
+            payload.put("summary", value.summary());
+            payload.put("elapsedMillis", value.elapsedMillis());
         } else if (event instanceof AgentEvent.ToolCallStart value) {
             payload.put("toolCallId", value.toolCallId());
             payload.put("toolName", value.toolName());

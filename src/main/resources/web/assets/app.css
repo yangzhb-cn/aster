@@ -358,6 +358,7 @@ textarea:focus {
 
 .message.assistant,
 .message.system,
+.message.team,
 .message.thinking,
 .message.tool,
 .message.approval,
@@ -406,6 +407,13 @@ textarea:focus {
   border-left-color: var(--warn);
   background: #fff7ed;
   color: var(--muted);
+}
+
+.message.team .message-body {
+  border-color: var(--line-strong);
+  border-left-color: var(--accent-strong);
+  background: #f8faf7;
+  color: var(--text);
 }
 
 .message.thinking .message-body {

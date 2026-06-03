@@ -85,12 +85,14 @@ public class TelegramUpdatePoller implements AutoCloseable {
                     直接发送文本即可对话。
                     /session 查看当前会话
                     /new 新建会话
+                    /team <任务> 启动只读 Agent Team 探索
                     /stop 停止当前任务
                     /approve [id] 批准工具，省略 id 表示全部批准
                     /deny [id] [reason] 拒绝工具，省略 id 表示全部拒绝
                     """.stripTrailing());
             case "/session" -> runtimeManager.showSession(message);
             case "/new" -> runtimeManager.newSession(message);
+            case "/team" -> runtimeManager.submitTeam(message, commandArgument(text));
             case "/stop" -> runtimeManager.stop(message);
             case "/approve" -> runtimeManager.approve(message, commandArgument(text));
             case "/deny" -> {

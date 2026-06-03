@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-Aster 是一个教学版 Java Agent MVP，用来演示 AgentLoop、流式 LLM、上下文压缩、工具调用、HITL 工具审批、MCP、Skill、Session 持久化、长期记忆、后台任务和 TUI/Web/IM 的最小可运行架构。
+Aster 是一个教学版 Java Agent MVP，用来演示 AgentLoop、流式 LLM、上下文压缩、工具调用、HITL 工具审批、MCP、Skill、Session 持久化、长期记忆、后台任务、固定 DAG Agent Team 和 TUI/Web/IM 的最小可运行架构。
 
 它不是完整产品。做改动时优先保持结构清晰、代码少、教学可读，不要为了“以后可能需要”提前堆复杂抽象。
 
@@ -368,6 +368,28 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 - runtime 启动时会确保存在一个 `todo_scan` interval 后台任务，用来扫描 `workspace/todos/todos.json`。
 - 后续定时提醒、记忆抽取、索引构建等都应该作为后台任务 handler 扩展。
 
+### Plan / Agent Team
+
+`app/plan/` 是可复用 DAG 执行内核，当前供 `/team` 使用，后续 `/plan` 也应复用这里，不要另写一套依赖调度器。
+
+当前核心类：
+
+- `ExecutionPlan`：保存原始目标和 `PlanTask` 列表。
+- `PlanTask`：保存 id、description、type、dependencies、status、result。
+- `PlanRunner`：根据 ready tasks 并行执行 DAG；写类任务可通过 `writeLocked()` 串行。
+
+`app/team/` 是固定 DAG 的探索型 Agent Team。
+
+当前规则：
+
+- `/team <任务>` 由 TUI/Web/Telegram 命令触发，不注册成 LLM 可见工具。
+- 第一版固定 DAG 是 `planner -> code_researcher + risk_reviewer`。
+- Team 子 Agent 只做探索，不写主 session，不修改文件。
+- Team 子 Agent 只注册 `read`、`ls`、`glob`、`grep`、`web_fetch`、`web_search`。
+- 不要在 Team 子 Agent 里注册 `write`、`edit`、`bash`、`todo`、`background_task`、`subagent` 或未来的 `agent_team`，避免并发修改和递归代理。
+- Team 运行情况通过 `AgentEvent` 发给 TUI/Web/Telegram，不要让 UI 直接读 Team 内部对象。
+- 后续做 `/plan` 时，可以新增 PlannerAgent 生成动态 `ExecutionPlan`，但仍应走 `PlanRunner`。
+
 ## UI 规则
 
 当前 UI 包括 Lanterna TUI、JDK HttpServer Web Chat 和 Telegram IM。
@@ -382,6 +404,7 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 
 - TUI 只消费 `AgentEventEnvelope`，不要直接侵入 AgentLoop。
 - Web 对话输入只通过 `AgentRuntime.submit/steer/stop`，session CRUD 通过 `SessionIndex` 管理元信息，通过 `JsonlSessionStore` 读取历史。
+- `/team` 走 `AgentRuntime.submitTeam`，不写入普通用户消息，不占用主 AgentLoop 的工具协议。
 - Web 静态资源放在 `src/main/resources/web/`，不要引入前端构建链路。
 - Telegram 只通过 `AgentRuntime.submit/stop/approve/deny` 输入，通过 `TelegramAgentEventHandler` 消费 `AgentEventEnvelope` 输出。
 - Telegram 必须使用 `TELEGRAM_ALLOWED_CHAT_IDS` 白名单；chat 到 session 的当前映射保存在 `workspace/im/telegram-sessions.json`。
@@ -433,6 +456,7 @@ mvn test
 - Session JSONL
 - 后台任务
 - 长期记忆
+- 固定 DAG Agent Team
 - Prompt
 - TUI Markdown 渲染
 
@@ -465,7 +489,8 @@ workspace/
 6. TUI 斜杠命令：放 `ui/tui/command/`，不要塞回 `AgentTuiWindow`。
 7. Web 展示和 HTTP 输入：放 `ui/web/`，复用 `AgentRuntime` 和 `AgentEventHandler`。
 8. IM 展示和输入：放 `ui/im/`，复用 `AgentRuntime` 和 `AgentEventHandler`。
-9. 具体业务能力：放 `app/` 对应子包，并通过 RuntimeExtension 接入。
-10. 展示变化：放 `ui/`，消费事件，不改 AgentLoop。
+9. DAG 计划和 Agent Team：DAG 内核放 `app/plan/`，Team 封装放 `app/team/`，触发入口放 UI 命令或 runtime。
+10. 具体业务能力：放 `app/` 对应子包，并通过 RuntimeExtension 或 runtime 接入。
+11. 展示变化：放 `ui/`，消费事件，不改 AgentLoop。
 
 如果不确定，优先保持核心链路不变，把新逻辑做成 app 层能力，通过 Hook/Event/Tool 接入。

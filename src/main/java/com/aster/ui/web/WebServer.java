@@ -138,7 +138,16 @@ public class WebServer implements AutoCloseable {
         }
 
         synchronized (runtimeLock) {
-            runtime.submit(text);
+            if (text.startsWith("/team")) {
+                String task = text.length() <= "/team".length() ? "" : text.substring("/team".length()).trim();
+                if (task.isBlank()) {
+                    sendJson(exchange, 400, Map.of("error", "用法：/team 要探索的问题"));
+                    return;
+                }
+                runtime.submitTeam(task);
+            } else {
+                runtime.submit(text);
+            }
             sessionIndex.touch(currentSessionId);
         }
         sendJson(exchange, 202, statusPayload());

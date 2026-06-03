@@ -47,6 +47,20 @@ public class TelegramRuntimeManager implements AutoCloseable {
     }
 
     /**
+     * 启动当前 chat 的 Agent Team 探索。
+     */
+    public synchronized void submitTeam(TelegramMessage message, String task) throws IOException {
+        if (task == null || task.isBlank()) {
+            sender.sendMessage(message.chat().id(), "用法：/team 要探索的问题");
+            return;
+        }
+        ChatRuntime chatRuntime = runtimeFor(message);
+        chatRuntime.runtime().submitTeam(task);
+        sessionIndex.touch(chatRuntime.sessionId());
+        sender.sendMessage(message.chat().id(), "Agent Team 探索已启动：" + task);
+    }
+
+    /**
      * 停止当前 chat 正在执行的 run。
      */
     public synchronized void stop(TelegramMessage message) throws IOException {

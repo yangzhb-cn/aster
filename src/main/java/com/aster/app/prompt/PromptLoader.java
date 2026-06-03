@@ -14,7 +14,7 @@ public class PromptLoader {
     /**
      * 读取一个 classpath 资源。
      *
-     * <p>resourcePath 应该类似 {@code /prompts/system.md}。
+     * <p>resourcePath 应该类似 {@code /prompts/agent/system.md}。
      * 不要传 {@code src/main/resources/...}，因为 jar 运行时没有源码目录。</p>
      */
     public String load(String resourcePath) throws IOException {

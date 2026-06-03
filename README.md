@@ -2,7 +2,7 @@
 
 Aster 是一个用于学习 Agent 架构的 Java 21 最小实现。
 
-项目重点不是做完整产品，而是把 Agent 的核心链路拆清楚：流式 LLM、AgentLoop、上下文压缩、工具调用、MCP 适配、Skill 加载、Session 持久化、Hook 扩展、后台任务、长期记忆、TUI、Web 和 IM 展示。
+项目重点不是做完整产品，而是把 Agent 的核心链路拆清楚：流式 LLM、AgentLoop、上下文压缩、工具调用、MCP 适配、Skill 加载、Session 持久化、Hook 扩展、后台任务、长期记忆、固定 DAG Agent Team、TUI、Web 和 IM 展示。
 
 ## 技术栈
 
@@ -61,13 +61,15 @@ src/main/java/com/aster/
 │   ├── tool/todo/          todo 便签待办工具
 │   ├── tool/result/        大工具结果 JSONL 外部卸载
 │   ├── hitl/               bash / write / edit 工具调用人工审批
+│   ├── plan/               可复用 DAG 执行内核，供 /team 和后续 /plan 使用
+│   ├── team/               固定 DAG Agent Team 探索能力
 │   ├── mcp/                MCP client/server/tool adapter
 │   ├── skill/              Skill 扫描、索引、加载
 │   ├── todo/               Web 便签待办存储和扫描 handler
 │   ├── memory/             长期记忆抽取、Markdown 存储、提醒段落渲染
 │   ├── background/         后台任务框架
 │   ├── notification/       后台任务通知出口
-│   └── prompt/             resources/prompts/*.md 加载
+│   └── prompt/             resources/prompts/ 分类目录加载
 │
 └── ui/
     ├── tui/                Lanterna 终端 UI，command/ 注册斜杠命令
@@ -87,6 +89,7 @@ TuiMain / WebMain / TelegramMain
      -> 运行中普通输入进入 follow-up 队列
      -> /steer 写入当前 run 控制信号
      -> /stop 请求当前 run 在安全点停止
+     -> /team 通过固定 DAG 启动只读 Agent Team 探索
   -> AgentLoop
      -> SessionStore 记录用户输入
      -> ContextPipeline 构造本轮 LLM 上下文
@@ -128,6 +131,7 @@ RuntimeExtension：
 SlashCommand：
   /exit
   /session ...
+  /team ...
   /steer ...
   /stop
   /approve [id]
@@ -156,6 +160,7 @@ ProviderStreamEvent
 - `AssistantToken`：assistant 正文流式增量。
 - `ReasoningToken`：DeepSeek `reasoning_content` 增量。
 - `ToolApprovalRequested` / `ToolApprovalResolved`：高危工具人工审批状态。
+- `TeamRunStarted` / `TeamMemberStarted` / `TeamMemberFinished` / `TeamRunFinished`：固定 DAG Agent Team 探索状态。
 - `ToolCallStart` / `ToolCallDone`：工具调用状态。
 - `UsageReported`：输入、缓存、输出 token 统计。
 - `ContextBuilt`：上下文压缩前后 token 估算。
@@ -218,6 +223,14 @@ Session 规则：
 - Web 可以新增、勾选完成和归档待办；Agent 可以通过 `todo` 工具读写同一份清单。
 - 第一版 `todo_scan` 只做 dueAt 到期提醒并标记完成，不启动后台 Agent 自动执行复杂任务。
 
+Agent Team 规则：
+
+- `/team <任务>` 从 TUI、Web 或 Telegram 触发，不作为 LLM 工具暴露。
+- 第一版只做只读探索，固定 DAG 是 `planner -> code_researcher + risk_reviewer`。
+- Team 子 Agent 使用内存 session，不写入主 session 原始历史。
+- 子 Agent 只注册 `read`、`ls`、`glob`、`grep`、`web_fetch`、`web_search`，不注册 `write`、`edit`、`bash`、`todo`、`background_task` 或递归子 Agent。
+- `app/plan` 是后续 `/plan` 可以复用的 DAG 内核；当前 `/team` 不使用 LLM 动态生成计划。
+
 ## 运行
 
 默认使用 DeepSeek `deepseek-v4-flash`，走 OpenAI-compatible 协议。
@@ -249,6 +262,7 @@ mvn -q -Dexec.mainClass=com.aster.ui.web.WebMain exec:java
 默认监听 `http://localhost:8080`。可以用 `ASTER_WEB_PORT` 和 `ASTER_SESSION` 覆盖端口和 session。
 `aster2web` 脚本默认使用 `8081`，方便和本地调试页面保持一致。
 Web 左侧提供会话新建、切换、重命名、归档；右侧只展示 token/context 状态。
+Web 输入框可以直接输入 `/team <任务>` 启动固定 DAG Agent Team 探索。
 
 启动 Telegram Bot：
 
@@ -270,6 +284,7 @@ mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
 Telegram 当前使用 long polling，不需要公网 webhook。`TELEGRAM_ALLOWED_CHAT_IDS` 必填，用逗号分隔多个 chatId。
 每个 Telegram chat 会映射到一个 Aster session，当前映射保存在 `workspace/im/telegram-sessions.json`。
 如果需要调整定时任务扫描频率，可以在 `.env` 写 `SCHEDULE_INTERVAL_SECONDS=10`。
+Telegram 支持 `/team <任务>` 启动同一套只读 Agent Team 探索。
 
 也可以用通用 OpenAI-compatible 配置覆盖：
 
@@ -287,4 +302,4 @@ mvn -q exec:java
 mvn test
 ```
 
-当前测试覆盖 AgentLoop、上下文压缩、DeepSeek/OpenAI-compatible parser、MCP、本地 MCP Server、内置工具、开发者扩展工具、后台任务工具、Telegram IM、Skill、Session、后台任务、长期记忆、Prompt 和 TUI Markdown 渲染。
+当前测试覆盖 AgentLoop、上下文压缩、DeepSeek/OpenAI-compatible parser、MCP、本地 MCP Server、内置工具、开发者扩展工具、固定 DAG Agent Team、后台任务工具、Telegram IM、Skill、Session、后台任务、长期记忆、Prompt 和 TUI Markdown 渲染。

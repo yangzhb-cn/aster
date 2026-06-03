@@ -74,6 +74,32 @@ public class TuiAgentEventHandler implements AgentEventHandler {
             );
             return;
         }
+        if (event instanceof AgentEvent.TeamRunStarted team) {
+            window.showTeamRunStarted(team.task(), team.mode());
+            return;
+        }
+        if (event instanceof AgentEvent.TeamMemberStarted member) {
+            window.showTeamMemberStarted(member.taskId(), member.role(), member.description());
+            return;
+        }
+        if (event instanceof AgentEvent.TeamMemberToken token) {
+            window.appendTeamMemberToken(token.taskId(), token.role(), token.text());
+            return;
+        }
+        if (event instanceof AgentEvent.TeamMemberFinished member) {
+            window.showTeamMemberFinished(
+                    member.taskId(),
+                    member.role(),
+                    member.success(),
+                    member.text(),
+                    member.elapsedMillis()
+            );
+            return;
+        }
+        if (event instanceof AgentEvent.TeamRunFinished team) {
+            window.showTeamRunFinished(team.success(), team.summary(), team.elapsedMillis());
+            return;
+        }
         if (event instanceof AgentEvent.ToolCallStart toolCall) {
             window.showToolStart(toolCall.toolCallId(), toolCall.toolName(), toolCall.argumentsJson());
             return;

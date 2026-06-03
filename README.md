@@ -92,7 +92,7 @@ TuiMain / WebMain / TelegramMain
      -> ContextPipeline 构造本轮 LLM 上下文
         -> LoadSessionMessagesStage 读取完整 session 历史
         -> ContextCompressionStage 压缩旧 turn 并校验工具协议
-     -> HookRegistry.BEFORE_LLM_REQUEST 临时注入 Skill 索引 / 旧对话摘要 / 长期记忆 / steer 引导
+     -> HookRegistry.BEFORE_LLM_REQUEST 临时注入当前时间 / Skill 索引 / 旧对话摘要 / 长期记忆 / steer 引导
      -> StreamingChatClient 发起 SSE 请求
      -> OpenAiCompatibleStreamParser 转成 ProviderStreamEvent
      -> AgentLoop 转成 AgentEvent
@@ -121,7 +121,7 @@ RuntimeExtension：
   McpToolExtension        -> 加载 workspace/mcp.json 并注册 MCP tools
   ToolApprovalExtension   -> 注册 bash/write/edit 工具审批 Hook
   SteerExtension          -> 注册运行中引导 Hook
-  SystemReminderExtension -> 注册请求前 <system-reminder> 注入 Hook
+  SystemReminderExtension -> 注册请求前当前时间 + <system-reminder> 注入 Hook
   MemoryExtension         -> 注册长期记忆抽取 Hook
   ToolResultExtension     -> 注册大工具结果卸载 Hook
 
@@ -168,7 +168,7 @@ Hook 是“在某个主流程点插入扩展逻辑”，用于改写、阻断或
 
 | HookPoint | 当前用途 |
 |---|---|
-| `BEFORE_LLM_REQUEST` | 把 Skill 索引、旧对话摘要和长期记忆临时注入最后一条 user 消息开头的 `<system-reminder>` 块。 |
+| `BEFORE_LLM_REQUEST` | 把当前时间、Skill 索引、旧对话摘要和长期记忆临时注入最后一条 user 消息开头的 `<system-reminder>` 块。 |
 | `BEFORE_TOOL_CALL` | `ToolApprovalExtension` 对 `bash`、`write`、`edit` 做人工审批。 |
 | `BEFORE_TOOL_RESULT_APPEND` | 大工具结果卸载到 `workspace/artifacts/tool-results/*.jsonl`。 |
 | `AFTER_RUN` | 每轮对话结束后提交长期记忆抽取后台任务。 |

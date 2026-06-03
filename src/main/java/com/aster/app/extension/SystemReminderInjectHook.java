@@ -7,6 +7,8 @@ import com.aster.core.hook.HookHandler;
 import com.aster.llm.model.Message;
 
 import java.io.IOException;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -14,11 +16,13 @@ import java.util.Objects;
 /**
  * LLM 请求前的系统提醒注入 Hook。
  *
- * <p>它把 Skill 索引、旧对话摘要和长期记忆合并成一个
+ * <p>它把当前时间、Skill 索引、旧对话摘要和长期记忆合并成一个
  * {@code <system-reminder>} 块，临时拼到最后一条 user 消息开头。
  * 这些内容只参与本次模型请求，不写入 SessionStore。</p>
  */
 public class SystemReminderInjectHook implements HookHandler<BeforeLlmRequestContext, BeforeLlmRequestContext> {
+    private static final DateTimeFormatter LOCAL_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss XXX");
+
     private final String skillIndex;
     private final MarkdownMemoryStore memoryStore;
     private final MemoryPromptRenderer memoryPromptRenderer;
@@ -63,6 +67,7 @@ public class SystemReminderInjectHook implements HookHandler<BeforeLlmRequestCon
      */
     private String renderReminder(BeforeLlmRequestContext context) throws IOException {
         List<String> sections = new ArrayList<>();
+        sections.add(renderRuntimeInfo());
         if (!skillIndex.isBlank()) {
             sections.add(skillIndex);
         }
@@ -88,6 +93,30 @@ public class SystemReminderInjectHook implements HookHandler<BeforeLlmRequestCon
             return "";
         }
         return "<system-reminder>\n" + String.join("\n\n", sections) + "\n</system-reminder>";
+    }
+
+    /**
+     * 渲染每轮请求都需要的动态时间信息。
+     */
+    private String renderRuntimeInfo() {
+        ZonedDateTime now = ZonedDateTime.now();
+        return """
+                ## 当前运行信息
+
+                以下是宿主程序发送本轮请求前注入的动态信息，不是用户的新请求：
+
+                - 当前日期：%s
+                - 当前时间：%s
+                - 当前时区：%s
+                - 当前 UTC 时间：%s
+
+                解释“今天”“明天”“昨天”“几分钟后”等相对时间时，以这里为准。
+                """.formatted(
+                now.toLocalDate(),
+                LOCAL_TIME_FORMATTER.format(now),
+                now.getZone(),
+                now.toInstant()
+        ).strip();
     }
 
     /**

@@ -811,6 +811,9 @@ class AgentLoopTest {
         Message requestUserMessage = requestMessages.getLast();
         assertEquals("user", requestUserMessage.role());
         assertTrue(requestUserMessage.content().startsWith("<system-reminder>"));
+        assertTrue(requestUserMessage.content().contains("## 当前运行信息"));
+        assertTrue(requestUserMessage.content().contains("当前时间"));
+        assertTrue(requestUserMessage.content().contains("当前时区"));
         assertTrue(requestUserMessage.content().contains("当前可用 Skills"));
         assertTrue(requestUserMessage.content().contains("demo"));
         assertTrue(requestUserMessage.content().contains("## 旧对话摘要"));

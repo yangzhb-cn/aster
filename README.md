@@ -1,8 +1,8 @@
 # Aster
 
-Aster 是一个用于学习 Agent 架构的 Java 21 最小实现。
+Aster 是 Agent MVP，用来从 0-1 实现 Agent 主循环、流式 LLM、工具调用、上下文压缩、Session 持久化、HITL 审批、后台任务、TUI/Web/Telegram 入口，以及动态 DAG Plan。
 
-项目重点不是做完整产品，而是把 Agent 的核心链路拆清楚：流式 LLM、AgentLoop、上下文压缩、工具调用、MCP 适配、Skill 加载、Session 持久化、Hook 扩展、后台任务、长期记忆、动态 DAG Plan、固定 DAG Agent Team、TUI、Web 和 IM 展示。
+详细架构和开发规则见 [AGENTS.md](./AGENTS.md)。
 
 ## 技术栈
 
@@ -13,7 +13,7 @@ Aster 是一个用于学习 Agent 架构的 Java 21 最小实现。
 - Lanterna
 - JUnit 5 + MockWebServer
 
-## 分层依赖
+## 核心分层
 
 ```text
 ui
@@ -25,321 +25,112 @@ core
 llm
 ```
 
-规则很简单：
+- `llm`：OpenAI-compatible SSE 适配。
+- `core`：AgentLoop、Event、Hook、Stage、Context、Session、Tool 抽象。
+- `app`：内置工具、扩展工具、MCP、Skill、长期记忆、后台任务、Plan/Team、运行时装配。
+- `ui`：TUI、Web Chat、Telegram IM。
 
-- `llm` 只负责模型 API 适配，不知道 AgentLoop、Tool、TUI。
-- `core` 只放 Agent 主流程和抽象契约，不反向依赖 `app`。
-- `app` 放具体能力实现，例如内置工具、MCP、Skill、长期记忆、后台任务。
-- `ui` 只做表现层，通过事件消费 Agent 输出。
+## 主要能力
 
-## 包结构
+- 流式 AgentLoop：`LLM -> tool_calls -> tool results -> LLM`。
+- 工具：`read/write/bash/edit/load_skill`，以及 `ls/glob/grep/subagent/web_fetch/web_search/todo/background_task`。
+- HITL：`bash/write/edit` 执行前需要人工审批。
+- 上下文：保留最近对话，旧对话压缩后注入 `<system-reminder>`。
+- Session：`workspace/sessions/*.jsonl` 持久化完整原始历史。
+- Web/TUI/IM：共用 `AgentRuntime` 和 `AgentEvent`。
+- `/team`：固定 DAG 的只读并行探索。
+- `/plan`：动态生成 DAG，用户 `/start` 后按依赖并发执行。
 
-```text
-src/main/java/com/aster/
-├── llm/                    模型 API 适配层
-│   ├── StreamingChatClient
-│   ├── OpenAiCompatibleChatClient
-│   ├── OpenAiCompatibleStreamParser
-│   ├── DeepSeekProvider
-│   └── model/              ChatRequest / Message / ToolCall / ProviderStreamEvent / TokenUsage
-│
-├── core/                   Agent 核心生命周期
-│   ├── agent/              AgentLoop / AssistantMessageBuilder / run 控制信号
-│   ├── event/              AgentEventBus / AgentEventHandler / AgentEventEnvelope
-│   ├── hook/               HookPoint / HookHandler / HookRegistry / AgentHookPoints
-│   ├── stage/              Stage / StagePipeline / 内置必经流程
-│   ├── context/            ContextBuilder / ContextPipeline / ToolProtocolValidator
-│   ├── session/            SessionStore / JsonlSessionStore / SessionReplayer / SessionIndex
-│   └── tool/               ToolHandler / ToolExecutor / ToolRegistry / ParallelToolExecutor
-│
-├── app/                    具体能力实现和运行时装配
-│   ├── runtime/            AgentRuntimeFactory / AgentRunCoordinator，把 core + app + llm 装配起来
-│   ├── extension/          RuntimeExtension，把可选 Tool / Hook / EventHandler 注册进运行时
-│   ├── tool/builtin/       read / write / bash / edit 四个固定底座工具
-│   ├── tool/developer/     ls / glob / grep / subagent / web_fetch / web_search 扩展工具
-│   ├── tool/background/    background_task 后台任务管理工具
-│   ├── tool/todo/          todo 便签待办工具
-│   ├── tool/result/        大工具结果 JSONL 外部卸载
-│   ├── hitl/               bash / write / edit 工具调用人工审批
-│   ├── plan/               动态 /plan 和固定 /team 复用的 DAG 执行内核
-│   ├── team/               固定 DAG Agent Team 探索能力
-│   ├── mcp/                MCP client/server/tool adapter
-│   ├── skill/              Skill 扫描、索引、加载
-│   ├── todo/               Web 便签待办存储和扫描 handler
-│   ├── memory/             长期记忆抽取、Markdown 存储、提醒段落渲染
-│   ├── background/         后台任务框架
-│   ├── notification/       后台任务通知出口
-│   └── prompt/             resources/prompts/ 分类目录加载
-│
-└── ui/
-    ├── tui/                Lanterna 终端 UI，command/ 注册斜杠命令
-    ├── web/                JDK HttpServer + SSE Web Chat
-    └── im/telegram/        Telegram Bot long polling 入口
-```
+## 启动
 
-## 主流程
-
-```text
-TuiMain / WebMain / TelegramMain
-  -> AgentRuntimeFactory
-     -> BuiltinTools 注册 read/write/bash/edit
-     -> RuntimeExtensionRegistry 注册 load_skill、开发者工具、后台任务工具、todo、MCP、工具审批、system-reminder、长期记忆抽取、工具结果卸载、steer
-  -> AgentRunCoordinator
-     -> 空闲输入立即执行
-     -> 运行中普通输入进入 follow-up 队列
-     -> /steer 写入当前 run 控制信号
-     -> /stop 请求当前 run 在安全点停止
-     -> /team 通过固定 DAG 启动只读 Agent Team 探索
-     -> /plan 生成动态 DAG，/start 确认后按依赖执行
-  -> AgentLoop
-     -> SessionStore 记录用户输入
-     -> ContextPipeline 构造本轮 LLM 上下文
-        -> LoadSessionMessagesStage 读取完整 session 历史
-        -> ContextCompressionStage 压缩旧 turn 并校验工具协议
-     -> HookRegistry.BEFORE_LLM_REQUEST 临时注入当前时间 / Skill 索引 / 旧对话摘要 / 长期记忆 / steer 引导
-     -> StreamingChatClient 发起 SSE 请求
-     -> OpenAiCompatibleStreamParser 转成 ProviderStreamEvent
-     -> AgentLoop 转成 AgentEvent
-     -> TuiAgentEventHandler / WebAgentEventHandler 流式刷新界面
-     -> TelegramAgentEventHandler 合并最终回答后发回 Telegram
-     -> HookRegistry.BEFORE_TOOL_CALL 对 bash/write/edit 做人工审批
-     -> ParallelToolExecutor 并行执行多个 tool_call
-     -> HookRegistry.BEFORE_TOOL_RESULT_APPEND 卸载大工具结果
-     -> SessionStore 写回 assistant/tool 消息
-     -> HookRegistry.AFTER_RUN 提交后台记忆抽取任务
-```
-
-## 扩展注册
-
-新增能力优先通过注册进入现有系统，而不是修改 AgentLoop：
-
-```text
-固定底座工具：
-  read / write / bash / edit
-
-RuntimeExtension：
-  SkillToolExtension      -> 注册 load_skill
-  DeveloperToolExtension  -> 注册 ls/glob/grep/subagent/web_fetch/web_search
-  BackgroundTaskToolExtension -> 注册 background_task
-  TodoToolExtension       -> 注册 todo
-  McpToolExtension        -> 加载 workspace/mcp.json 并注册 MCP tools
-  ToolApprovalExtension   -> 注册 bash/write/edit 工具审批 Hook
-  SteerExtension          -> 注册运行中引导 Hook
-  SystemReminderExtension -> 注册请求前当前时间 + <system-reminder> 注入 Hook
-  MemoryExtension         -> 注册长期记忆抽取 Hook
-  ToolResultExtension     -> 注册大工具结果卸载 Hook
-
-SlashCommand：
-  /exit
-  /session ...
-  /team ...
-  /plan ...
-  /start
-  /steer ...
-  /stop
-  /approve [id]
-  /deny [id] [reason]
-```
-
-事件定义仍属于 `core/event`，扩展可以增加 `AgentEventHandler` 监听事件，但不替代核心事件协议。
-
-## Event / Hook / Stage
-
-### Event
-
-Event 是“发生了什么”，用于 UI、Web SSE、日志、审计。
-
-```text
-ProviderStreamEvent
-  -> AgentLoop
-  -> AgentEvent
-  -> AgentEventBus
-  -> AgentEventEnvelope
-  -> TUI / Web / Log
-```
-
-当前关键事件包括：
-
-- `AssistantToken`：assistant 正文流式增量。
-- `ReasoningToken`：DeepSeek `reasoning_content` 增量。
-- `ToolApprovalRequested` / `ToolApprovalResolved`：高危工具人工审批状态。
-- `TeamRunStarted` / `TeamMemberStarted` / `TeamMemberFinished` / `TeamRunFinished`：固定 DAG Agent Team 探索状态；最终回答仍由主 Agent 整理输出。
-- `PlanDraftStarted` / `PlanProposed` / `PlanExecutionStarted` / `PlanTaskStarted` / `PlanTaskFinished` / `PlanExecutionFinished`：动态 `/plan` 草案和 DAG 执行状态。
-- `ToolCallStart` / `ToolCallDone`：工具调用状态。
-- `UsageReported`：输入、缓存、输出 token 统计。
-- `ContextBuilt`：上下文压缩前后 token 估算。
-- `RunQueued` / `SteerReceived` / `StopRequested` / `RunStopped`：运行中控制状态通知。
-- `Done`：一次用户请求结束。
-
-### Hook
-
-Hook 是“在某个主流程点插入扩展逻辑”，用于改写、阻断或追加动作。
-
-| HookPoint | 当前用途 |
-|---|---|
-| `BEFORE_LLM_REQUEST` | 把当前时间、Skill 索引、旧对话摘要和长期记忆临时注入最后一条 user 消息开头的 `<system-reminder>` 块。 |
-| `BEFORE_TOOL_CALL` | `ToolApprovalExtension` 对 `bash`、`write`、`edit` 做人工审批。 |
-| `BEFORE_TOOL_RESULT_APPEND` | 大工具结果卸载到 `workspace/artifacts/tool-results/*.jsonl`。 |
-| `AFTER_RUN` | 每轮对话结束后提交长期记忆抽取后台任务。 |
-
-### Stage
-
-Stage 是 Agent 主流程必经步骤，不靠外部注册决定是否执行。
-
-| Stage | 当前用途 |
-|---|---|
-| `LoadSessionMessagesStage` | 从 session 读取完整历史。 |
-| `ContextCompressionStage` | 按 user turn 压缩旧对话，保留当前 turn 和它之前最近 3 个已完成 turn，并校验 tool_call/tool_result 协议。 |
-| `ContextPipeline` | 串起上下文相关 Stage，产出本轮请求 LLM 的 `ContextBuildResult`。 |
-
-## Workspace
-
-运行时数据默认写到当前项目的 `workspace/`：
-
-```text
-workspace/
-├── mcp.json.example
-├── sessions/                         session index.json + *.jsonl
-├── im/                               Telegram chat-session 映射
-├── tasks/                            后台任务 JSONL
-├── todos/                            Web 便签待办 JSON
-├── skills/                           本地 Skill 目录
-├── artifacts/tool-results/           大工具结果 JSONL
-└── memory/                           长期记忆 Markdown
-```
-
-Session 规则：
-
-- `workspace/sessions/<sessionId>.jsonl` 保存完整原始事件历史。
-- `workspace/sessions/index.json` 保存 `displayName`、创建/更新时间和 `archived` 状态。
-- 新 sessionId 采用 `sess_yyyyMMdd_HHmmss_uid` 形式；displayName 只用于 UI 展示。
-- 删除会话只把索引里的 `archived` 置为 `true`，不删除 JSONL 审计文件。
-
-后台任务规则：
-
-- `workspace/tasks/tasks.jsonl` 保存任务定义，`workspace/tasks/runs.jsonl` 保存每次执行记录。
-- `BackgroundTaskScheduler` 默认每 10 秒扫描一次任务清单和运行记录；可用 `SCHEDULE_INTERVAL_SECONDS` 覆盖。
-- 当前可执行的后台动作是 `reminder`、`todo_scan` 和 `memory_extract`，没有 `noop` 任务类型。
-
-便签待办规则：
-
-- `workspace/todos/todos.json` 保存 Web 右栏和 Agent `todo` 工具共用的当前清单。
-- Web 可以新增、勾选完成和归档待办；Agent 可以通过 `todo` 工具读写同一份清单。
-- 第一版 `todo_scan` 只做 dueAt 到期提醒并标记完成，不启动后台 Agent 自动执行复杂任务。
-
-Agent Team 规则：
-
-- `/team <任务>` 从 TUI、Web 或 Telegram 触发，不作为 LLM 工具暴露。
-- 第一版只做只读探索，固定 DAG 是 `planner -> 3 个 code_researcher + 2 个 risk_reviewer 并行探索`，Team 子 Agent 总并发上限是 5。
-- Team 子 Agent 使用内存 session，不写入主 session 原始历史。
-- 子 Agent 只注册 `read`、`ls`、`glob`、`grep`、`web_fetch`、`web_search`，不注册 `write`、`edit`、`bash`、`todo`、`background_task` 或递归子 Agent。
-- Team 子 Agent 的工具调用事件不转发到 UI，避免探索阶段刷出大量工具块。
-- Team 完成后把完整探索材料交回主 Agent，由主 Agent 整理最终回答。
-
-Plan 规则：
-
-- `/plan <任务>` 从 TUI、Web 或 Telegram 触发，先由 `PlanPlannerAgent` 生成动态 JSON DAG。
-- Java 侧会校验 task id、依赖存在性和循环依赖；校验通过后展示 DAG，等待用户输入 `/start`。
-- `/start` 使用 `PlanRunner` 按 ready 节点解依赖并发执行，写类/命令类节点通过 `writeLocked()` 串行。
-- `/plan <新任务>` 会替换待执行草案；`/plan cancel` 取消当前草案或运行中的 Plan。
-- Plan 节点使用临时内存 session 子 Agent，但复用当前 runtime 的工具和 Hook，所以 `bash`、`write`、`edit` 仍走 HITL 审批。
-- Plan 执行完成后把完整执行材料交回主 Agent，由主 Agent 整理最终回答。
-
-## 运行
-
-默认使用 DeepSeek `deepseek-v4-flash`，走 OpenAI-compatible 协议。
-
-第一次运行可以先复制环境变量示例：
+先复制环境变量示例：
 
 ```bash
 cp .env.example .env
 ```
 
-然后编辑 `.env`，至少填入 `DEEPSEEK_API_KEY`。项目根目录的 `aster2tui`、`aster2web`、`aster2im` 脚本都会自动加载 `.env`。
+编辑 `.env`，至少填写：
 
 ```bash
-export DEEPSEEK_API_KEY=你的 key
-mvn -q exec:java
+DEEPSEEK_API_KEY=你的 key
 ```
 
-也可以直接使用项目根目录的启动脚本。脚本会自动读取 `.env`：
+启动 TUI：
 
 ```bash
 ./aster2tui
 ```
 
-启动 Web Chat：
-
-```bash
-export DEEPSEEK_API_KEY=你的 key
-mvn -q -Dexec.mainClass=com.aster.ui.web.WebMain exec:java
-```
-
-或：
+启动 Web：
 
 ```bash
 ./aster2web
 ```
 
-默认监听 `http://localhost:8080`。可以用 `ASTER_WEB_PORT` 和 `ASTER_SESSION` 覆盖端口和 session。
-`aster2web` 脚本默认使用 `8081`，方便和本地调试页面保持一致。
-Web 左侧提供会话新建、切换、重命名、归档；右侧只展示 token/context 状态。
-Web 输入框可以直接输入 `/team <任务>` 启动固定 DAG Agent Team 探索，也可以输入 `/plan <任务>` 生成动态 DAG，确认后用 `/start` 执行。
+默认打开：`http://localhost:8081`
 
-启动 Telegram Bot：
-
-```bash
-export DEEPSEEK_API_KEY=你的 key
-export TELEGRAM_BOT_TOKEN=你的 bot token
-export TELEGRAM_ALLOWED_CHAT_IDS=你的chatId
-mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
-```
-
-或：
+启动 Telegram：
 
 ```bash
 ./aster2im
 ```
 
-如果变量写在 `.env`，可以直接使用上面的脚本；手动运行 Maven 时先执行 `set -a; . ./.env; set +a`。
-`aster2im` 支持把 `.env` 里的 `OWNER_ID` 当作默认 `TELEGRAM_ALLOWED_CHAT_IDS` 使用。
-Telegram 当前使用 long polling，不需要公网 webhook。`TELEGRAM_ALLOWED_CHAT_IDS` 必填，用逗号分隔多个 chatId。
-每个 Telegram chat 会映射到一个 Aster session，当前映射保存在 `workspace/im/telegram-sessions.json`。
-如果需要调整定时任务扫描频率，可以在 `.env` 写 `SCHEDULE_INTERVAL_SECONDS=10`。
-Telegram 支持 `/team <任务>` 启动同一套只读 Agent Team 探索。
-Telegram 也支持 `/plan <任务>`、`/start` 和 `/plan cancel`。
-
-常用环境变量：
-
-| 变量 | 用途 |
-| --- | --- |
-| `DEEPSEEK_API_KEY` | 默认 DeepSeek 模型 API Key。 |
-| `OPENAI_COMPATIBLE_PROVIDER` | 覆盖供应商名称，例如 `deepseek` 或自定义 provider。 |
-| `OPENAI_COMPATIBLE_BASE_URL` | 覆盖 OpenAI-compatible API base URL。 |
-| `OPENAI_COMPATIBLE_API_KEY` | 覆盖通用 OpenAI-compatible API Key，优先级高于 `DEEPSEEK_API_KEY`。 |
-| `OPENAI_COMPATIBLE_MODEL` | 覆盖模型名。 |
-| `ASTER_WEB_PORT` | Web Chat 监听端口，`aster2web` 默认使用 `8081`。 |
-| `ASTER_SESSION` | Web Chat 启动时绑定的 session 名称。 |
-| `TELEGRAM_BOT_TOKEN` | Telegram Bot token。 |
-| `TELEGRAM_ALLOWED_CHAT_IDS` | Telegram 允许访问的 chatId 白名单，多个用逗号分隔。 |
-| `OWNER_ID` | `aster2im` 的简化配置；未设置白名单时会作为 `TELEGRAM_ALLOWED_CHAT_IDS` 使用。 |
-| `TAVILY_API_KEY` | `web_search` 工具调用 Tavily 搜索时使用。 |
-| `SCHEDULE_INTERVAL_SECONDS` | 后台任务扫描间隔，单位秒，默认 `10`。 |
-
-也可以用通用 OpenAI-compatible 配置覆盖：
+Telegram 需要在 `.env` 里填写：
 
 ```bash
-export OPENAI_COMPATIBLE_PROVIDER=my-provider
-export OPENAI_COMPATIBLE_BASE_URL=https://example.com
-export OPENAI_COMPATIBLE_API_KEY=你的 key
-export OPENAI_COMPATIBLE_MODEL=my-model
-mvn -q exec:java
+TELEGRAM_BOT_TOKEN=你的 bot token
+TELEGRAM_ALLOWED_CHAT_IDS=你的 chatId
 ```
+
+也可以直接用 Maven：
+
+```bash
+mvn -q exec:java
+mvn -q -Dexec.mainClass=com.aster.ui.web.WebMain exec:java
+mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
+```
+
+## 常用环境变量
+
+- `DEEPSEEK_API_KEY`：默认模型 API Key。
+- `OPENAI_COMPATIBLE_*`：覆盖 provider、base URL、API Key、model。
+- `ASTER_WEB_PORT`：Web 端口，`aster2web` 默认 `8081`。
+- `ASTER_SESSION`：Web 启动 session。
+- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`：Telegram 配置。
+- `OWNER_ID`：`aster2im` 的简化 chatId 配置。
+- `TAVILY_API_KEY`：`web_search` 工具需要。
+- `SCHEDULE_INTERVAL_SECONDS`：后台任务扫描间隔，默认 `10`。
+
+## 斜杠命令
+
+- `/session ...`：会话 CRUD。
+- `/steer <message>`：运行中引导当前 Agent。
+- `/stop`：请求当前 run 停止。
+- `/team <任务>`：启动固定 DAG Agent Team 探索。
+- `/plan <任务>`：生成动态 DAG 草案。
+- `/start`：执行当前 Plan。
+- `/plan cancel`：取消当前 Plan。
+- `/approve [id]` / `/deny [id] [reason]`：处理工具审批；不带 id 表示处理全部。
+
+## Workspace
+
+运行时数据写入 `workspace/`：
+
+```text
+workspace/
+├── sessions/
+├── tasks/
+├── todos/
+├── skills/
+├── artifacts/tool-results/
+├── memory/
+└── im/
+```
+
+`workspace/` 和真实 `.env` 都不会提交。
 
 ## 测试
 
 ```bash
 mvn test
 ```
-
-当前测试覆盖 AgentLoop、上下文压缩、DeepSeek/OpenAI-compatible parser、MCP、本地 MCP Server、内置工具、开发者扩展工具、固定 DAG Agent Team、后台任务工具、Telegram IM、Skill、Session、后台任务、长期记忆、Prompt 和 TUI Markdown 渲染。

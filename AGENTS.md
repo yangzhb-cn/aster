@@ -2,6 +2,8 @@
 
 本文件是给后续 Codex / AI 编码 Agent 的项目规则。进入本仓库后，先读本文件，再读 `README.md` 和相关源码。
 
+`README.md` 只保留快速启动和能力概览；详细分层、边界和开发约束以本文件为准。
+
 ## 项目定位
 
 Aster 是一个教学版 Java Agent MVP，用来演示 AgentLoop、流式 LLM、上下文压缩、工具调用、HITL 工具审批、MCP、Skill、Session 持久化、长期记忆、后台任务、动态 DAG Plan、固定 DAG Agent Team 和 TUI/Web/IM 的最小可运行架构。
@@ -22,13 +24,35 @@ Aster 是一个教学版 Java Agent MVP，用来演示 AgentLoop、流式 LLM、
 ```bash
 mvn test
 mvn -q exec:java
+./aster2tui
+./aster2web
+./aster2im
 ```
 
-默认模型配置走 DeepSeek OpenAI-compatible 协议：
+本地配置从 `.env` 读取，先复制示例：
 
 ```bash
-export DEEPSEEK_API_KEY=你的 key
+cp .env.example .env
 ```
+
+默认模型配置走 DeepSeek OpenAI-compatible 协议，至少需要：
+
+```bash
+DEEPSEEK_API_KEY=你的 key
+```
+
+真实 `.env`、`workspace/` 和用户运行数据不要提交；`.env.example` 是可提交的示例文件。
+
+常用环境变量：
+
+- `DEEPSEEK_API_KEY`：默认 DeepSeek API Key。
+- `OPENAI_COMPATIBLE_PROVIDER` / `OPENAI_COMPATIBLE_BASE_URL` / `OPENAI_COMPATIBLE_API_KEY` / `OPENAI_COMPATIBLE_MODEL`：覆盖 OpenAI-compatible provider。
+- `ASTER_WEB_PORT`：Web 监听端口，`aster2web` 默认 8081。
+- `ASTER_SESSION`：Web 启动时绑定的 session 名称。
+- `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`：Telegram Bot 配置。
+- `OWNER_ID`：`aster2im` 兼容变量；未设置 `TELEGRAM_ALLOWED_CHAT_IDS` 时会被脚本转换为白名单。
+- `TAVILY_API_KEY`：`web_search` 工具使用。
+- `SCHEDULE_INTERVAL_SECONDS`：后台任务扫描周期，默认 10 秒。
 
 ## 当前分层
 
@@ -51,14 +75,14 @@ src/main/java/com/aster/
 ├── llm/        模型 API 适配层
 ├── core/       Agent 主流程和抽象契约
 ├── app/        具体能力实现和运行时装配
-└── ui/         表现层，目前是 TUI
+└── ui/         表现层，包括 TUI / Web / Telegram
 ```
 
 关键规则：
 
 - `llm` 不知道 AgentLoop、Tool、TUI。
 - `core` 不反向依赖 `app`，只能依赖 `llm` 和自己的抽象。
-- `app` 实现具体能力，例如内置工具、MCP、Skill、长期记忆、后台任务。
+- `app` 实现具体能力，例如内置工具、MCP、Skill、HITL、长期记忆、后台任务、Plan/Team。
 - `ui` 只消费事件和调用 runtime，不直接拼装核心能力。
 - 不再使用旧包名 `dev.agentmvp`，新代码统一放在 `com.aster` 下。
 
@@ -97,7 +121,7 @@ src/main/java/com/aster/
 
 ### `core/event`
 
-Event 表示“发生了什么”，用于 TUI、后续 Web SSE、日志、审计。
+Event 表示“发生了什么”，用于 TUI、Web SSE、Telegram、日志、审计。
 
 ```text
 ProviderStreamEvent
@@ -105,10 +129,10 @@ ProviderStreamEvent
   -> AgentEvent
   -> AgentEventBus
   -> AgentEventEnvelope
-  -> TUI / Web / Log
+  -> TUI / Web / Telegram / Log
 ```
 
-新增 UI、Web、日志时，实现 `AgentEventHandler`，不要改 AgentLoop 的展示逻辑。
+新增 UI、Web、IM 或日志时，实现 `AgentEventHandler`，不要改 AgentLoop 的展示逻辑。
 
 ### `core/hook`
 
@@ -215,6 +239,7 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 - `edit`
 
 这四个是固定底座工具，由 `BuiltinTools` 直接注册。不要把 `load_skill`、MCP 或后续新工具混回基础内置工具集合。
+注意：`LoadSkillTool` 类当前仍在 `app/tool/builtin/` 包内，这是历史包位置；它的注册入口已经是 `SkillToolExtension`，不属于 `BuiltinTools.registerAll()`。
 
 每个工具一个类，实现统一工具接口，最后统一注册到 `ToolRegistry`。不要把多个工具写进一个大类。
 新增工具默认走 RuntimeExtension；只有确实属于 Agent 宿主底座能力时，才考虑放入 `app/tool/builtin/`。
@@ -363,7 +388,7 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 规则：
 
 - 后台任务完成后不要打断当前主回答。
-- TUI 当前只更新底部状态栏。
+- 通知出口由 `NotificationSink` 决定：TUI 更新底部状态栏，Web 通过 SSE 推送 notification，Telegram 直接发送短消息。
 - 任务记录写入 `workspace/tasks/*.jsonl`，保留审计痕迹。
 - `BackgroundTaskScheduler` 按 `SCHEDULE_INTERVAL_SECONDS` 周期扫描任务清单和运行记录，默认 10 秒。
 - `immediate` 创建后会触发一次即时扫描；`delay` 到 `createdAt + delaySeconds` 后执行一次；`interval` 按上次完成时间加 `intervalSeconds` 重复执行。
@@ -419,7 +444,9 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 规则：
 
 - TUI 只消费 `AgentEventEnvelope`，不要直接侵入 AgentLoop。
-- Web 对话输入只通过 `AgentRuntime.submit/steer/stop`，session CRUD 通过 `SessionIndex` 管理元信息，通过 `JsonlSessionStore` 读取历史。
+- Web 对话输入走 `AgentRuntime.submit/steer/stop/submitTeam/submitPlan/startPlan/cancelPlan`，不要让 Web 直接碰 AgentLoop 或 DAG 内部对象。
+- Web session CRUD 通过 `SessionIndex` 管理元信息，通过 `JsonlSessionStore` 读取历史。
+- Web todo CRUD 通过 `TodoStore` 管理右栏便签清单，不直接改 JSON 文件。
 - `/team` 走 `AgentRuntime.submitTeam`，Team 完成后由 runtime 把完整探索材料作为内部请求交给主 Agent 整理。
 - `/plan` 走 `AgentRuntime.submitPlan/startPlan/cancelPlan`，不要让 UI 自己执行 DAG。
 - Web 静态资源放在 `src/main/resources/web/`，不要引入前端构建链路。
@@ -469,12 +496,18 @@ mvn test
 - DeepSeek / OpenAI-compatible parser
 - MCP client/server
 - 内置工具
+- 开发者扩展工具
+- HITL 工具审批
 - Skill
 - Session JSONL
 - 后台任务
+- 后台任务工具
+- 便签待办
 - 长期记忆
 - 动态 DAG Plan
 - 固定 DAG Agent Team
+- Web 事件映射
+- Telegram IM
 - Prompt
 - TUI Markdown 渲染
 
@@ -488,12 +521,15 @@ workspace/
 ├── sessions/                       # index.json + *.jsonl
 ├── im/                             # Telegram chat-session 映射
 ├── tasks/
+├── todos/
 ├── skills/
 ├── artifacts/tool-results/
+├── logs/
 └── memory/
 ```
 
-这些数据多数是本地运行产物，不要随意提交用户真实 session、任务记录、长期记忆或工具结果。
+这些数据多数是本地运行产物，不要随意提交用户真实 session、任务记录、长期记忆、待办、日志或工具结果。
+真实 `workspace/mcp.json` 也不提交；只保留 `workspace/mcp.json.example` 作为模板。
 
 ## 做新功能时的判断顺序
 

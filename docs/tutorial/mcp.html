@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a class="active" href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a class="active" href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -24,6 +24,62 @@
           <p class="eyebrow">Package · dev.agentmvp.mcp</p>
           <h1>mcp 包：把外部工具翻译成项目内部 Tool。</h1>
           <p class="lead">MCP 的协议细节被包在 `McpClient`、`McpToolAdapter`、`McpToolExecutor` 里。AgentLoop 只看见普通 `Tool`，不需要知道背后是本地 stdio 进程还是 HTTP JSON-RPC。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂 mcp 包</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>workspace/mcp.json
+  -> McpConfigLoader
+  -> McpClientFactory
+       -> StdioMcpTransport / HttpMcpTransport
+  -> McpClient
+       -> initialize
+       -> tools/list
+  -> McpToolAdapter
+  -> ToolRegistry
+  -> McpToolExecutor(tools/call)</code></pre>
+              <p>MCP 是外部协议，进入项目后统一变成内部 Tool。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>mcp/
+  McpClient.java             # JSON-RPC 客户端
+  McpToolLoader.java         # initialize + tools/list + register
+  McpToolAdapter.java        # MCP tool -> Tool
+  McpToolExecutor.java       # tools/call 执行
+  config/                    # mcp.json 加载和客户端工厂
+  transport/                 # stdio / HTTP 传输
+  server/                    # 教学版本地 MCP Server
+  model/                     # JsonRpcRequest/Response/Error</code></pre>
+              <p>client、transport、server、model 分开，方便只接入本地或远程 MCP。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>Factory -> McpConfigLoader: loadIfExists()
+Factory -> McpClientFactory: create(serverConfig)
+McpClient -> MCP Server: initialize
+McpClient -> MCP Server: tools/list
+McpToolLoader -> ToolRegistry: register(tool)
+LLM -> ToolRegistry: call MCP tool
+McpToolExecutor -> MCP Server: tools/call</code></pre>
+              <p>安装具体 MCP 时，只需要补本地 `workspace/mcp.json`。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>读取 mcp.json
+  -> 没有配置：跳过
+  -> 有配置：创建 transport
+  -> initialize
+  -> tools/list
+  -> 适配成内部 Tool
+  -> 注册 ToolRegistry
+  -> LLM 调用时发 tools/call</code></pre>
+              <p>AgentLoop 不碰 JSON-RPC，因此不会被 MCP 细节污染。</p>
+            </div>
+          </div>
         </section>
 
         <section class="section" id="config">
@@ -155,6 +211,7 @@ for (McpServerConfig serverConfig : mcpConfig.servers()) {
       <aside class="toc">
         <strong>本页导航</strong>
         <a href="#what">MCP 职责</a>
+        <a href="#diagrams">四张图</a>
         <a href="#config">外部配置</a>
         <a href="#config-shape">配置形状</a>
         <a href="#flow">接入流程</a>

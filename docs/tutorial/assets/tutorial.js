@@ -1,10 +1,34 @@
 // 教程页共享交互：测验、聊天演示、流程步骤和术语提示。
 document.addEventListener("DOMContentLoaded", () => {
+  initNavSearch();
   initQuiz();
   initChat();
   initFlow();
   initTerms();
 });
+
+function initNavSearch() {
+  const nav = document.querySelector(".nav-links");
+  if (!nav || document.querySelector(".nav-search")) {
+    return;
+  }
+
+  const search = document.createElement("input");
+  search.className = "nav-search";
+  search.type = "search";
+  search.placeholder = "Search";
+  search.setAttribute("aria-label", "搜索教程页面");
+  nav.before(search);
+
+  const links = Array.from(nav.querySelectorAll("a"));
+  search.addEventListener("input", () => {
+    const query = search.value.trim().toLowerCase();
+    links.forEach((link) => {
+      const text = link.textContent.trim().toLowerCase();
+      link.classList.toggle("nav-hidden", Boolean(query) && !text.includes(query));
+    });
+  });
+}
 
 function initQuiz() {
   document.querySelectorAll(".quiz").forEach((quiz) => {

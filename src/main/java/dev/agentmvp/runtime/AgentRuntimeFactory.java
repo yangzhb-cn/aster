@@ -2,7 +2,17 @@ package dev.agentmvp.runtime;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.agentmvp.agent.AgentEventHandler;
+import dev.agentmvp.agent.AgentEventBus;
 import dev.agentmvp.agent.AgentLoop;
+import dev.agentmvp.background.BackgroundTaskEventBus;
+import dev.agentmvp.background.BackgroundTaskExecutor;
+import dev.agentmvp.background.BackgroundTaskHandler;
+import dev.agentmvp.background.BackgroundTaskManager;
+import dev.agentmvp.background.BackgroundTaskNotificationHandler;
+import dev.agentmvp.background.BackgroundTaskScheduler;
+import dev.agentmvp.background.BackgroundTaskStore;
+import dev.agentmvp.background.JsonlBackgroundTaskStore;
+import dev.agentmvp.background.NoopTaskHandler;
 import dev.agentmvp.context.ContextBuilder;
 import dev.agentmvp.context.SimpleTokenEstimator;
 import dev.agentmvp.context.TranscriptSummarizer;
@@ -12,12 +22,18 @@ import dev.agentmvp.llm.OpenAiCompatibleProviderFactory;
 import dev.agentmvp.llm.StreamingChatClient;
 import dev.agentmvp.llm.model.Message;
 import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
+import dev.agentmvp.memory.MarkdownMemoryStore;
+import dev.agentmvp.memory.MemoryExtractionAgent;
+import dev.agentmvp.memory.MemoryExtractionSchedulingHandler;
+import dev.agentmvp.memory.MemoryExtractionTaskHandler;
+import dev.agentmvp.memory.MemoryPromptRenderer;
 import dev.agentmvp.mcp.McpToolLoader;
 import dev.agentmvp.mcp.config.McpClientFactory;
 import dev.agentmvp.mcp.config.McpConfigLoader;
 import dev.agentmvp.mcp.config.model.McpConfig;
 import dev.agentmvp.mcp.config.model.McpServerConfig;
 import dev.agentmvp.mcp.McpToolExecutor;
+import dev.agentmvp.notification.NotificationSink;
 import dev.agentmvp.prompt.PromptLoader;
 import dev.agentmvp.prompt.PromptPaths;
 import dev.agentmvp.session.BootstrappedSessionStore;
@@ -59,14 +75,22 @@ public class AgentRuntimeFactory {
      * 使用默认配置创建 Agent 运行时。
      */
     public AgentRuntime create(AgentEventHandler eventHandler) throws IOException {
-        return create(eventHandler, SessionCatalog.DEFAULT_SESSION);
+        return create(eventHandler, NotificationSink.noop(), SessionCatalog.DEFAULT_SESSION);
     }
 
     /**
      * 使用指定 session 创建 Agent 运行时。
      */
     public AgentRuntime create(AgentEventHandler eventHandler, String sessionName) throws IOException {
+        return create(eventHandler, NotificationSink.noop(), sessionName);
+    }
+
+    /**
+     * 使用指定 session 和通知出口创建 Agent 运行时。
+     */
+    public AgentRuntime create(AgentEventHandler eventHandler, NotificationSink notificationSink, String sessionName) throws IOException {
         Objects.requireNonNull(eventHandler);
+        Objects.requireNonNull(notificationSink);
         SessionCatalog.requireValidName(sessionName);
 
         OpenAiCompatibleProvider provider = OpenAiCompatibleProviderFactory.fromEnvWithDeepSeekDefaults();
@@ -79,6 +103,8 @@ public class AgentRuntimeFactory {
         PromptLoader promptLoader = new PromptLoader();
         String systemPrompt = promptLoader.load(PromptPaths.SYSTEM);
         String contextSummaryPrompt = promptLoader.load(PromptPaths.CONTEXT_SUMMARY);
+        String longTermMemorySystemPrompt = promptLoader.load(PromptPaths.LONG_TERM_MEMORY_SYSTEM);
+        String memoryExtractionPrompt = promptLoader.load(PromptPaths.MEMORY_EXTRACTION);
 
         OkHttpClient httpClient = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofSeconds(30))
@@ -96,6 +122,8 @@ public class AgentRuntimeFactory {
         BuiltinTools.registerAll(toolRegistry, Path.of("."), skillRepository);
         loadConfiguredMcpServers(objectMapper, httpClient, toolRegistry, mcpToolExecutor);
         ParallelToolExecutor parallelToolExecutor = ParallelToolExecutor.fixedPool(toolRegistry, 4);
+        MarkdownMemoryStore memoryStore = new MarkdownMemoryStore(WorkspacePaths.LONG_TERM_MEMORY);
+        MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer(longTermMemorySystemPrompt);
 
         List<Message> bootstrapMessages = new ArrayList<>();
         // 基础 system prompt 来自 jar 内置 resources/prompts/system.md。
@@ -110,6 +138,30 @@ public class AgentRuntimeFactory {
                 bootstrapMessages,
                 JsonlSessionStore.openNamed(objectMapper, WorkspacePaths.SESSIONS, sessionName)
         );
+        MemoryExtractionAgent memoryExtractionAgent = new MemoryExtractionAgent(
+                provider.defaultModel(),
+                sessionStore,
+                memoryStore,
+                streamingChatClient,
+                objectMapper,
+                memoryExtractionPrompt
+        );
+        BackgroundTaskManager backgroundTaskManager = createBackgroundTaskManager(
+                objectMapper,
+                notificationSink,
+                List.of(
+                        new NoopTaskHandler(),
+                        new MemoryExtractionTaskHandler(memoryExtractionAgent)
+                )
+        );
+        backgroundTaskManager.start();
+        AgentEventBus eventBus = new AgentEventBus(
+                sessionName,
+                List.of(
+                        eventHandler,
+                        new MemoryExtractionSchedulingHandler(backgroundTaskManager)
+                )
+        );
 
         AgentLoop agentLoop = new AgentLoop(
                 provider,
@@ -123,17 +175,50 @@ public class AgentRuntimeFactory {
                 toolRegistry,
                 parallelToolExecutor,
                 ToolResultOffloader.defaults(objectMapper, WorkspacePaths.TOOL_RESULTS),
-                eventHandler,
+                memoryStore,
+                memoryPromptRenderer,
+                eventBus,
                 MAX_TOOL_ROUNDS
         );
 
         return new AgentRuntime(
                 agentLoop,
+                backgroundTaskManager,
                 parallelToolExecutor,
                 mcpToolExecutor,
                 provider,
                 sessionName,
                 skillRepository.listMetadata().size()
+        );
+    }
+
+    /**
+     * 创建后台任务框架。
+     *
+     * <p>后台框架只负责调度、执行记录和事件通知。
+     * 具体动作由 handlers 决定，例如 noop 或长期记忆抽取。</p>
+     */
+    private BackgroundTaskManager createBackgroundTaskManager(
+            ObjectMapper objectMapper,
+            NotificationSink notificationSink,
+            List<BackgroundTaskHandler> handlers
+    ) throws IOException {
+        BackgroundTaskStore store = new JsonlBackgroundTaskStore(
+                objectMapper,
+                WorkspacePaths.BACKGROUND_TASKS,
+                WorkspacePaths.BACKGROUND_TASK_RUNS
+        );
+        BackgroundTaskEventBus eventBus = BackgroundTaskEventBus.single(
+                new BackgroundTaskNotificationHandler(notificationSink)
+        );
+        BackgroundTaskExecutor executor = new BackgroundTaskExecutor(
+                store,
+                handlers,
+                eventBus
+        );
+        return new BackgroundTaskManager(
+                store,
+                new BackgroundTaskScheduler(executor)
         );
     }
 

@@ -21,6 +21,7 @@
       <a href="llm.html">llm</a>
       <a href="mcp.html">mcp</a>
       <a href="session.html">session</a>
+      <a href="background.html">background</a>
       <a href="tui.html">tui</a>
       <a href="chat.html">chat</a>
     </nav>
@@ -30,7 +31,7 @@
     <section class="hero">
       <p class="eyebrow">Navigation · 当前进展版</p>
       <h1>从一次用户输入，读懂一个 Java Agent MVP。</h1>
-      <p>这份教程按 Java 顶层包拆分：一个包一个 HTML。每页都包含真实源码片段和中文解释，重点讲清楚当前项目已经完成的 AgentLoop、上下文压缩、MCP、内置工具、Skill 适配层、DeepSeek thinking 和 Lanterna TUI。</p>
+      <p>这份教程按 Java 顶层包拆分：一个包一个 HTML。每页都包含真实源码片段和中文解释，重点讲清楚当前项目已经完成的 AgentLoop、上下文压缩、MCP、内置工具、Skill 适配层、DeepSeek thinking、后台任务框架和 Lanterna TUI。</p>
       <p>说明：`model`、`builtin`、`server` 这类子包会并入所属顶层包页面讲解，避免导航页被纯数据模型页面冲散。</p>
     </section>
 
@@ -38,10 +39,70 @@
       <div class="panel">
         <h2>当前进展总览</h2>
         <div class="steps">
-          <div class="step"><b>1</b><p><strong>LLM 只走流式。</strong>项目通过 OpenAI-compatible SSE 接收模型增量，支持 DeepSeek `reasoning_content` 和流式 usage。</p></div>
+          <div class="step"><b>1</b><p><strong>LLM 只走流式。</strong>项目通过 OpenAI-compatible SSE 接收模型增量，先统一成 `ProviderStreamEvent`，再转成 `AgentEventEnvelope` 给 TUI、Web、Hook 使用。</p></div>
           <div class="step"><b>2</b><p><strong>工具支持并行。</strong>模型一次返回多个 tool_call 时，`ParallelToolExecutor` 会并发执行。</p></div>
           <div class="step"><b>3</b><p><strong>内置工具独立成类。</strong>`read`、`write`、`bash`、`edit` 都实现 `BuiltinTool`，最后统一注册进 `ToolRegistry`。</p></div>
-          <div class="step"><b>4</b><p><strong>TUI 是结构化展示层。</strong>`UiBlock` 区分用户、thinking、工具和正文，输入框下方展示 token usage 和上下文占比。</p></div>
+          <div class="step"><b>4</b><p><strong>后台任务先做框架。</strong>`BackgroundTaskManager` 统一管理任务，调度、执行、JSONL 记录、通知出口已经拆开。</p></div>
+          <div class="step"><b>5</b><p><strong>TUI 是结构化展示层。</strong>`UiBlock` 区分用户、thinking、工具和正文，输入框下方展示 token usage 和上下文占比。</p></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="hero" style="padding-top: 0">
+      <div class="panel">
+        <h2>全局架构图谱</h2>
+        <div class="diagram-grid">
+          <div class="diagram-card">
+            <h3>架构图</h3>
+            <pre><code>TuiMain
+  -> AgentRuntimeFactory
+       -> AgentLoop
+       -> ToolRegistry
+       -> ContextBuilder
+       -> JsonlSessionStore
+       -> BackgroundTaskManager
+       -> AgentEventBus
+            -> TUI / Web / Hook</code></pre>
+            <p>入口只装配运行时，核心能力都挂在 runtime 下。</p>
+          </div>
+          <div class="diagram-card">
+            <h3>文件结构图</h3>
+            <pre><code>src/main/java/dev/agentmvp/
+  agent/       # 主循环和 Agent 事件
+  llm/         # OpenAI-compatible 流式接入
+  context/     # 上下文压缩和协议校验
+  tool/        # 本地工具、MCP 工具统一层
+  mcp/         # JSON-RPC MCP 适配
+  session/     # JSONL 会话持久化
+  background/  # 后台任务框架
+  tui/         # Lanterna 终端界面</code></pre>
+            <p>一个顶层包对应一个教程页，model 子包跟随所属模块解释。</p>
+          </div>
+          <div class="diagram-card">
+            <h3>时序图</h3>
+            <pre><code>User -> TUI: 输入
+TUI -> AgentLoop: run(input)
+AgentLoop -> ContextBuilder: 构造上下文
+AgentLoop -> LLM: 流式请求
+LLM -> AgentLoop: ProviderStreamEvent
+AgentLoop -> ToolRegistry: 并行工具调用
+AgentLoop -> AgentEventBus: 统一事件
+AgentEventBus -> TUI: 渲染</code></pre>
+            <p>LLM 原始流先变成 ProviderStreamEvent，再进入 Agent 事件流。</p>
+          </div>
+          <div class="diagram-card">
+            <h3>流程图</h3>
+            <pre><code>启动
+  -> 加载 prompt / skills / mcp
+  -> 打开 session JSONL
+  -> 恢复后台任务
+  -> 等待用户输入
+  -> 每轮请求前构造上下文
+  -> 流式模型输出
+  -> 工具调用与结果回灌
+  -> 写入 session，刷新 TUI</code></pre>
+            <p>这是当前 MVP 的主干流程，后台任务和主对话通过事件/通知解耦。</p>
+          </div>
         </div>
       </div>
     </section>
@@ -50,15 +111,16 @@
       <h2>按包学习</h2>
       <div class="grid">
         <a class="card" href="entry.html"><span class="num">00</span><h2>入口包</h2><p>`TuiMain` 和 `AgentRuntimeFactory` 把供应商、工具、Skill、Session 和 AgentLoop 串成一个可跑的 TUI。</p></a>
-        <a class="card" href="agent.html"><span class="num">01</span><h2>agent</h2><p>主循环：用户输入、上下文构造、流式模型、工具执行、结果回灌。</p></a>
+        <a class="card" href="agent.html"><span class="num">01</span><h2>agent</h2><p>主循环：用户输入、上下文构造、流式模型、工具执行、结果回灌，并通过 EventBus 发出完整事件信封。</p></a>
         <a class="card" href="context.html"><span class="num">02</span><h2>context</h2><p>按 user turn 压缩上下文，避免切断 `tool_call` 和 `tool_result`。</p></a>
         <a class="card" href="tool.html"><span class="num">03</span><h2>tool</h2><p>统一工具层：本地工具、MCP 工具和内置工具都变成同一种 Tool。</p></a>
         <a class="card" href="skill.html"><span class="num">04</span><h2>skill</h2><p>Skill 渐进式加载：索引常驻，正文按需，references/scripts 复用 read/bash。</p></a>
-        <a class="card" href="llm.html"><span class="num">05</span><h2>llm</h2><p>DeepSeek 是默认例子，支持 thinking、reasoning_effort、reasoning_content 和 token usage。</p></a>
+        <a class="card" href="llm.html"><span class="num">05</span><h2>llm</h2><p>DeepSeek 是默认例子，OpenAI-compatible parser 会把 content、reasoning、tool_call、usage 转成 ProviderStreamEvent。</p></a>
         <a class="card" href="mcp.html"><span class="num">06</span><h2>mcp</h2><p>JSON-RPC、tools/list、tools/call，以及通过 workspace/mcp.json 接入本地 stdio/HTTP MCP。</p></a>
         <a class="card" href="session.html"><span class="num">07</span><h2>session</h2><p>JSONL 事件日志保存完整历史，支持恢复、分支和审计。</p></a>
-        <a class="card" href="tui.html"><span class="num">08</span><h2>tui</h2><p>结构化 UiBlock、Markdown 渲染、底部 usage 预算行、emoji fallback 和工具输出折叠。</p></a>
-        <a class="card" href="chat.html"><span class="num">09</span><h2>chat</h2><p>OpenAI 兼容消息协议：system、user、assistant、tool 的边界和字段。</p></a>
+        <a class="card" href="background.html"><span class="num">08</span><h2>background</h2><p>后台任务框架：调度、执行、JSONL 记录、事件通知和 TUI 状态栏提示。</p></a>
+        <a class="card" href="tui.html"><span class="num">09</span><h2>tui</h2><p>结构化 UiBlock、Markdown 渲染、底部 usage 预算行、emoji fallback 和工具输出折叠。</p></a>
+        <a class="card" href="chat.html"><span class="num">10</span><h2>chat</h2><p>OpenAI 兼容消息协议：system、user、assistant、tool 的边界和字段。</p></a>
       </div>
     </section>
 
@@ -66,7 +128,7 @@
       <div class="flow" data-steps='[
         {"node":"user","text":"用户在 TUI 输入问题。"},
         {"node":"agent","text":"AgentLoop 读取完整 session，并请 ContextBuilder 构造本轮上下文。"},
-        {"node":"llm","text":"StreamingChatClient 把请求发给 OpenAI-compatible LLM。"},
+        {"node":"llm","text":"StreamingChatClient 把请求发给 OpenAI-compatible LLM，并把流式响应转成 ProviderStreamEvent。"},
         {"node":"tool","text":"如果模型返回 tool_calls，工具层并行执行并写回 role=tool。"},
         {"node":"final","text":"模型基于工具结果继续生成最终回答。"}
       ]'>

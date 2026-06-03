@@ -2,7 +2,7 @@ package dev.agentmvp.llm;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.agentmvp.llm.model.ChatRequest;
-import dev.agentmvp.llm.model.ChatStreamChunk;
+import dev.agentmvp.llm.model.ProviderStreamEvent;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -27,12 +27,14 @@ public class OkHttpStreamingChatClient implements StreamingChatClient {
     private final ObjectMapper objectMapper;
     private final String endpoint;
     private final String apiKey;
+    private final OpenAiCompatibleStreamParser streamParser;
 
     public OkHttpStreamingChatClient(OkHttpClient httpClient, ObjectMapper objectMapper, String endpoint, String apiKey) {
         this.httpClient = Objects.requireNonNull(httpClient);
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.endpoint = Objects.requireNonNull(endpoint);
         this.apiKey = apiKey;
+        this.streamParser = new OpenAiCompatibleStreamParser(objectMapper);
     }
 
     /**
@@ -69,7 +71,7 @@ public class OkHttpStreamingChatClient implements StreamingChatClient {
     }
 
     /**
-     * 解析 OpenAI 兼容格式的 SSE 行。
+     * 读取 SSE 行，并交给 OpenAI-compatible parser 转成统一事件。
      */
     private void readSse(BufferedSource source, StreamHandler handler) throws IOException {
         while (true) {
@@ -85,12 +87,12 @@ public class OkHttpStreamingChatClient implements StreamingChatClient {
             }
 
             String data = line.substring("data:".length()).trim();
-            if ("[DONE]".equals(data)) {
-                handler.onDone();
-                return;
+            for (ProviderStreamEvent event : streamParser.parse(data)) {
+                handler.onEvent(event);
+                if (event instanceof ProviderStreamEvent.Done) {
+                    return;
+                }
             }
-
-            handler.onChunk(objectMapper.readValue(data, ChatStreamChunk.class));
         }
     }
 }

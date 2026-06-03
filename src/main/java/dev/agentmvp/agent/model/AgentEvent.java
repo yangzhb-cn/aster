@@ -5,10 +5,108 @@ import dev.agentmvp.llm.model.TokenUsage;
 /**
  * 流式 Agent 主循环发出的事件。
  *
- * <p>TUI 可以收到 token 事件就立即追加到输出区。
- * 以后如果加 Web SSE，也可以直接转发这些事件，不需要改 AgentLoop。</p>
+ * <p>事件本体只描述“发生了什么”。runId、sessionName、sequence、timestamp
+ * 这些统一元信息由 AgentEventBus 包装成 AgentEventEnvelope 时补齐。</p>
  */
-public sealed interface AgentEvent permits AgentEvent.AssistantToken, AgentEvent.ReasoningToken, AgentEvent.ToolCallStart, AgentEvent.ToolCallDone, AgentEvent.UsageReported, AgentEvent.Done {
+public sealed interface AgentEvent permits
+        AgentEvent.RunStarted,
+        AgentEvent.RunFinished,
+        AgentEvent.RunFailed,
+        AgentEvent.TurnStarted,
+        AgentEvent.TurnFinished,
+        AgentEvent.ContextBuilt,
+        AgentEvent.LlmRequestStarted,
+        AgentEvent.LlmRequestFinished,
+        AgentEvent.MessageStarted,
+        AgentEvent.MessageFinished,
+        AgentEvent.AssistantToken,
+        AgentEvent.ReasoningToken,
+        AgentEvent.ToolCallStart,
+        AgentEvent.ToolCallDone,
+        AgentEvent.UsageReported,
+        AgentEvent.Done {
+    /**
+     * 一次用户输入开始执行。
+     *
+     * <p>后续 Web SSE 或 hook 可以用它创建一条新的运行记录。</p>
+     */
+    record RunStarted(String userInput) implements AgentEvent {
+    }
+
+    /**
+     * 一次用户输入成功结束。
+     */
+    record RunFinished(String finalText) implements AgentEvent {
+    }
+
+    /**
+     * 一次用户输入异常结束。
+     */
+    record RunFailed(String errorMessage) implements AgentEvent {
+    }
+
+    /**
+     * 一轮 LLM 请求开始。
+     *
+     * <p>一次 run 里可能有多轮：第一轮模型可能要求工具，
+     * 工具结果写回后还会进入下一轮 LLM 请求。</p>
+     */
+    record TurnStarted(int round) implements AgentEvent {
+    }
+
+    /**
+     * 一轮 LLM 请求结束。
+     *
+     * <p>reason 使用简单字符串，教学版先不引入额外枚举。
+     * 当前常见值是 final、tool_calls。</p>
+     */
+    record TurnFinished(int round, String reason) implements AgentEvent {
+    }
+
+    /**
+     * 上下文构造完成。
+     *
+     * <p>这让 TUI、Web、Hook 都能观察本轮是否触发压缩，以及压缩前后 token 估算。</p>
+     */
+    record ContextBuilt(
+            boolean compressed,
+            int beforeTokens,
+            int afterTokens,
+            int maxContextTokens
+    ) implements AgentEvent {
+    }
+
+    /**
+     * LLM 请求即将发出。
+     */
+    record LlmRequestStarted(
+            int round,
+            String model,
+            int messageCount,
+            int toolCount
+    ) implements AgentEvent {
+    }
+
+    /**
+     * LLM 请求已经结束。
+     */
+    record LlmRequestFinished(int round) implements AgentEvent {
+    }
+
+    /**
+     * 一条消息开始产生。
+     *
+     * <p>role 可以是 user、assistant。tool 消息当前由 ToolCallDone 表达。</p>
+     */
+    record MessageStarted(int round, String role) implements AgentEvent {
+    }
+
+    /**
+     * 一条消息已经完成。
+     */
+    record MessageFinished(int round, String role, boolean hasToolCalls) implements AgentEvent {
+    }
+
     /**
      * assistant 正文的流式 token。
      */

@@ -2,6 +2,7 @@ package dev.agentmvp.tui;
 
 import dev.agentmvp.agent.AgentEventHandler;
 import dev.agentmvp.agent.model.AgentEvent;
+import dev.agentmvp.agent.model.AgentEventEnvelope;
 
 import java.util.Objects;
 
@@ -22,7 +23,8 @@ public class TuiAgentEventHandler implements AgentEventHandler {
      * 处理一次 Agent 事件。
      */
     @Override
-    public void onEvent(AgentEvent event) {
+    public void onEvent(AgentEventEnvelope envelope) {
+        AgentEvent event = envelope.event();
         if (event instanceof AgentEvent.AssistantToken token) {
             window.appendAssistantToken(token.text());
             return;

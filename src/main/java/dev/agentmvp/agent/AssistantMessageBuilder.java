@@ -1,8 +1,8 @@
 package dev.agentmvp.agent;
 
 import dev.agentmvp.llm.model.Message;
+import dev.agentmvp.llm.model.ProviderStreamEvent;
 import dev.agentmvp.llm.model.ToolCall;
-import dev.agentmvp.llm.model.ChatStreamChunk;
 import dev.agentmvp.llm.model.ToolCallDelta;
 
 import java.util.Comparator;
@@ -22,27 +22,19 @@ public class AssistantMessageBuilder {
     private final Map<Integer, ToolCallBuilder> toolCalls = new TreeMap<>();
 
     /**
-     * 把一片流式片段合并到正在构造的 assistant 消息里。
+     * 把一条统一供应商流式事件合并到正在构造的 assistant 消息里。
      */
-    public void append(ChatStreamChunk chunk) {
-        if (chunk.choices() == null) {
+    public void append(ProviderStreamEvent event) {
+        if (event instanceof ProviderStreamEvent.TextDelta delta) {
+            content.append(delta.text());
             return;
         }
-
-        for (ChatStreamChunk.Choice choice : chunk.choices()) {
-            ChatStreamChunk.ChatDelta delta = choice.delta();
-            if (delta == null) {
-                continue;
-            }
-
-            if (delta.content() != null) {
-                content.append(delta.content());
-            }
-            if (delta.reasoningContent() != null) {
-                reasoningContent.append(delta.reasoningContent());
-            }
-
-            appendToolCallDeltas(delta);
+        if (event instanceof ProviderStreamEvent.ReasoningDelta delta) {
+            reasoningContent.append(delta.text());
+            return;
+        }
+        if (event instanceof ProviderStreamEvent.ToolCallDeltaPart delta) {
+            appendToolCallDelta(delta.delta());
         }
     }
 
@@ -67,16 +59,10 @@ public class AssistantMessageBuilder {
         return Message.assistant(content.toString(), reasoningText);
     }
 
-    private void appendToolCallDeltas(ChatStreamChunk.ChatDelta delta) {
-        if (delta.toolCalls() == null) {
-            return;
-        }
-
-        for (ToolCallDelta part : delta.toolCalls()) {
-            toolCalls
-                    .computeIfAbsent(part.index(), ignored -> new ToolCallBuilder())
-                    .append(part);
-        }
+    private void appendToolCallDelta(ToolCallDelta part) {
+        toolCalls
+                .computeIfAbsent(part.index(), ignored -> new ToolCallBuilder())
+                .append(part);
     }
 
     private static class ToolCallBuilder {

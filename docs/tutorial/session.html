@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a class="active" href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a class="active" href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -24,6 +24,62 @@
           <p class="eyebrow">Package · dev.agentmvp.session</p>
           <h1>session 包：用 JSONL 事件日志保存事实来源。</h1>
           <p class="lead">SessionStore 不再只是内存 messages。当前运行时把历史写入 `workspace/sessions/default.jsonl`，通过事件回放恢复当前分支的完整消息，再交给 ContextBuilder 构造模型上下文。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂 session 包</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>AgentLoop
+  -> BootstrappedSessionStore
+       -> system/bootstrap messages
+       -> JsonlSessionStore
+            -> workspace/sessions/*.jsonl
+            -> SessionEvent
+            -> SessionReplayer
+                 -> branch replay
+                 -> messages for ContextBuilder</code></pre>
+              <p>session 保存完整事实，压缩发生在 context 层。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>session/
+  SessionStore.java          # 会话存储接口
+  JsonlSessionStore.java     # 追加写 JSONL
+  BootstrappedSessionStore.java # 叠加 system prompt
+  SessionCatalog.java        # 会话列表和名称校验
+  SessionReplayer.java       # 从事件恢复消息
+  model/
+    SessionEvent.java        # message_appended/branch_created
+    SessionBranch.java       # 分支信息
+    SessionReplayResult.java # 回放结果</code></pre>
+              <p>分支不复制整份历史，只记录父分支和 forkSeq。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>TUI -> SessionCatalog: /session new
+Factory -> JsonlSessionStore: openNamed(name)
+AgentLoop -> SessionStore: append(user)
+AgentLoop -> SessionStore: append(assistant/tool)
+ContextBuilder -> SessionStore: loadMessages()
+SessionStore -> SessionReplayer: replay(branch)
+SessionReplayer -> ContextBuilder: messages</code></pre>
+              <p>恢复会话时先回放 JSONL，再交给上下文构造。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>打开会话
+  -> 读取 session JSONL
+  -> 回放当前 branch
+  -> 叠加 bootstrap system
+  -> AgentLoop 追加新消息
+  -> 写入 message_appended
+  -> 需要分支时记录 branch_created
+  -> 后续可审计 prevHash/hash</code></pre>
+              <p>JSONL 是 append-only，便于回溯、恢复、审计。</p>
+            </div>
+          </div>
         </section>
 
         <section class="section" id="model">
@@ -125,12 +181,13 @@ public synchronized void append(Message message) throws IOException {
 
         <nav class="footer-nav">
           <a class="button secondary" href="mcp.html">上一包：mcp</a>
-          <a class="button" href="tui.html">下一包：tui</a>
+          <a class="button" href="background.html">下一包：background</a>
         </nav>
       </article>
       <aside class="toc">
         <strong>本页导航</strong>
         <a href="#what">保存事实</a>
+        <a href="#diagrams">四张图</a>
         <a href="#model">三层分工</a>
         <a href="#code">源码对照</a>
         <a href="#replay">分支回放</a>

@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a class="active" href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a class="active" href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -24,6 +24,63 @@
           <p class="eyebrow">Package · dev.agentmvp.agent</p>
           <h1>agent 包：主循环是 Agent 的心跳。</h1>
           <p class="lead">把 <span class="term" data-tip="LLM 是大语言模型，比如 DeepSeek、Kimi、GPT 一类服务。">LLM</span> 想成远程同事，`AgentLoop` 就是项目经理：给它上下文，接收回复，发现它要工具就安排工具，拿到结果再让它继续。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂 agent 包</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>AgentLoop
+  -> ContextBuilder
+  -> StreamingChatClient
+       -> ProviderStreamEvent
+  -> AssistantMessageBuilder
+  -> ParallelToolExecutor
+  -> SessionStore
+  -> AgentEventBus
+       -> AgentEventEnvelope
+       -> TUI / Web / Hook</code></pre>
+              <p>AgentLoop 是主流程，EventBus 是对外事件出口。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>agent/
+  AgentLoop.java              # 主循环
+  AssistantMessageBuilder.java # 拼接流式 assistant/tool_calls
+  AgentEventBus.java          # 事件信封和分发
+  AgentEventHandler.java      # TUI/Web/Hook 统一接口
+  model/
+    AgentEvent.java           # Agent 事件类型
+    AgentEventEnvelope.java   # 带元信息的事件信封
+    AgentEventMeta.java       # runId/session/sequence</code></pre>
+              <p>事件模型放在 model 子包，主包保留主循环和总线。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>User -> AgentLoop: run(input)
+AgentLoop -> SessionStore: append(user)
+AgentLoop -> ContextBuilder: build(messages)
+AgentLoop -> LLM: stream(request)
+LLM -> AgentLoop: ProviderStreamEvent
+AgentLoop -> ToolExecutor: executeAll(toolCalls)
+AgentLoop -> SessionStore: append(assistant/tool)
+AgentLoop -> EventBus: AgentEvent</code></pre>
+              <p>每个关键动作都能转成事件，方便 TUI、Web 和审计复用。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>收到用户输入
+  -> 写入 session
+  -> 发布 turn_start
+  -> 构造上下文
+  -> 发起流式 LLM
+  -> 收集正文 / thinking / tool_call
+  -> 有工具则执行并回灌
+  -> 无工具则结束本轮</code></pre>
+              <p>事件流不是附属日志，而是后续 Web、Hook、扩展的统一协议。</p>
+            </div>
+          </div>
         </section>
 
         <section class="section" id="chat">
@@ -65,6 +122,44 @@ ChatRequest request = ChatRequest.streaming(
           </div>
         </section>
 
+        <section class="section" id="events">
+          <h2>源码对照：AgentLoop 发出完整事件流</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">AgentLoop.java</span>
+              <pre><code>publish(new AgentEvent.TurnStarted(roundNumber));
+
+ContextBuildResult context = contextBuilder.build(sessionStore.loadMessages());
+publish(new AgentEvent.ContextBuilt(
+        context.compressed(),
+        context.beforeTokens(),
+        context.afterTokens(),
+        context.maxContextTokens()
+));
+
+publish(new AgentEvent.LlmRequestStarted(
+        roundNumber,
+        model,
+        context.messages().size(),
+        tools.size()
+));
+
+private void publish(AgentEvent event) {
+    eventBus.publish(event);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">AgentLoop 只发布“发生了什么”，不关心谁来消费。</p>
+              <p class="note-line">LLM 层先把供应商原始流转换成 ProviderStreamEvent，AgentLoop 再转换成 AgentEvent。</p>
+              <p class="note-line">run、turn、context、LLM request、message、tool、usage 都会变成 AgentEvent。</p>
+              <p class="note-line">AgentEventBus 会把事件包装成 AgentEventEnvelope，补上 runId、sessionName、sequence、timestamp。</p>
+              <p class="note-line">TUI、Web SSE、Hook、日志都实现 AgentEventHandler，复用同一条事件流。</p>
+              <p class="note-line">这样新增出口时不用改 AgentLoop，只新增一个 handler 并注册到 EventBus。</p>
+            </div>
+          </div>
+        </section>
+
         <section class="section" id="tools">
           <h2>源码对照：工具结果怎么回灌</h2>
           <div class="translation">
@@ -78,7 +173,7 @@ for (int i = 0; i &lt; results.size(); i++) {
     String compactText = toolResultOffloader.compact(result);
 
     sessionStore.append(Message.tool(result.toolCallId(), compactText));
-    eventHandler.onEvent(new AgentEvent.ToolCallDone(
+    publish(new AgentEvent.ToolCallDone(
             result.toolCallId(),
             call.function().name(),
             compactText,
@@ -118,8 +213,10 @@ for (int i = 0; i &lt; results.size(); i++) {
       <aside class="toc">
         <strong>本页导航</strong>
         <a href="#what">主循环职责</a>
+        <a href="#diagrams">四张图</a>
         <a href="#chat">组件群聊</a>
         <a href="#code">请求构造</a>
+        <a href="#events">事件流</a>
         <a href="#tools">工具回灌</a>
         <a href="#quiz">场景题</a>
       </aside>

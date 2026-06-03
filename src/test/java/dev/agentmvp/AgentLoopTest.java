@@ -2,16 +2,24 @@ package dev.agentmvp;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
-import dev.agentmvp.agent.AgentEventHandler;
+import dev.agentmvp.agent.AgentEventBus;
 import dev.agentmvp.agent.AgentLoop;
 import dev.agentmvp.agent.model.AgentEvent;
+import dev.agentmvp.agent.model.AgentEventEnvelope;
 import dev.agentmvp.context.ContextBuilder;
 import dev.agentmvp.context.SimpleTokenEstimator;
 import dev.agentmvp.context.TranscriptSummarizer;
 import dev.agentmvp.context.model.ContextOptions;
 import dev.agentmvp.llm.StreamingChatClient;
-import dev.agentmvp.llm.model.ChatStreamChunk;
+import dev.agentmvp.llm.model.Message;
+import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
+import dev.agentmvp.llm.model.ProviderStreamEvent;
+import dev.agentmvp.llm.model.TokenUsage;
 import dev.agentmvp.llm.model.ToolCallDelta;
+import dev.agentmvp.memory.MarkdownMemoryStore;
+import dev.agentmvp.memory.MemoryPromptRenderer;
+import dev.agentmvp.memory.model.MemoryCandidate;
+import dev.agentmvp.memory.model.MemoryType;
 import dev.agentmvp.mcp.McpToolExecutor;
 import dev.agentmvp.session.InMemorySessionStore;
 import dev.agentmvp.tool.LocalToolExecutor;
@@ -39,7 +47,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * AgentLoop 的主链路测试。
  *
- * <p>这里用假的流式 LLM 模拟 SSE 片段，验证流式文本、流式 tool_call
+ * <p>这里用假的流式 LLM 模拟 ProviderStreamEvent，验证流式文本、流式 tool_call
  * 和工具结果回灌能串起来，不依赖真实模型 API。</p>
  */
 class AgentLoopTest {
@@ -70,14 +78,14 @@ class AgentLoopTest {
                 (call, arguments) -> ToolResult.text(call.id(), "echo:" + arguments.get("text"))
         );
 
-        Queue<List<ChatStreamChunk>> scriptedStreams = new ArrayDeque<>(List.of(
+        Queue<List<ProviderStreamEvent>> scriptedStreams = new ArrayDeque<>(List.of(
                 List.of(
-                        toolCallChunk(0, "call_1", "echo", "{\"text\":"),
-                        toolCallChunk(0, null, null, "\"hello\"}")
+                        toolCallEvent(0, "call_1", "echo", "{\"text\":"),
+                        toolCallEvent(0, null, null, "\"hello\"}")
                 ),
                 List.of(
-                        textChunk("do"),
-                        textChunk("ne")
+                        textEvent("do"),
+                        textEvent("ne")
                 )
         ));
         List<Integer> requestMessageCounts = new ArrayList<>();
@@ -85,8 +93,8 @@ class AgentLoopTest {
 
         StreamingChatClient fakeStreamingLlm = (request, handler) -> {
             requestMessageCounts.add(request.messages().size());
-            for (ChatStreamChunk chunk : scriptedStreams.remove()) {
-                handler.onChunk(chunk);
+            for (ProviderStreamEvent event : scriptedStreams.remove()) {
+                handler.onEvent(event);
             }
             handler.onDone();
         };
@@ -102,7 +110,7 @@ class AgentLoopTest {
                 fakeStreamingLlm,
                 toolRegistry,
                 new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
-                events::add,
+                eventBus(events),
                 4
         );
 
@@ -143,14 +151,14 @@ class AgentLoopTest {
                 (call, arguments) -> ToolResult.text(call.id(), largeText)
         );
 
-        Queue<List<ChatStreamChunk>> scriptedStreams = new ArrayDeque<>(List.of(
-                List.of(toolCallChunk(0, "call_large", "large_echo", "{}")),
-                List.of(textChunk("done"))
+        Queue<List<ProviderStreamEvent>> scriptedStreams = new ArrayDeque<>(List.of(
+                List.of(toolCallEvent(0, "call_large", "large_echo", "{}")),
+                List.of(textEvent("done"))
         ));
 
         StreamingChatClient fakeStreamingLlm = (request, handler) -> {
-            for (ChatStreamChunk chunk : scriptedStreams.remove()) {
-                handler.onChunk(chunk);
+            for (ProviderStreamEvent event : scriptedStreams.remove()) {
+                handler.onEvent(event);
             }
             handler.onDone();
         };
@@ -167,7 +175,7 @@ class AgentLoopTest {
                 toolRegistry,
                 new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
                 new ToolResultOffloader(objectMapper, tempDir, 30, 20),
-                AgentEventHandler.noop(),
+                AgentEventBus.noop("test"),
                 4
         );
 
@@ -198,10 +206,10 @@ class AgentLoopTest {
     }
 
     /**
-     * 验证 DeepSeek reasoning_content 会进入事件流，并保存到 assistant message。
+     * 验证 AgentLoop 会发出完整的事件流骨架，方便后续 Web SSE、Hook、扩展系统复用。
      */
     @Test
-    void streamsReasoningContentSeparatelyFromAssistantText() throws Exception {
+    void emitsLifecycleContextAndMessageBoundaryEvents() throws Exception {
         ObjectMapper objectMapper = new ObjectMapper();
         InMemorySessionStore sessionStore = new InMemorySessionStore();
         ToolRegistry toolRegistry = new ToolRegistry(
@@ -211,8 +219,7 @@ class AgentLoopTest {
         List<AgentEvent> events = new ArrayList<>();
 
         StreamingChatClient fakeStreamingLlm = (request, handler) -> {
-            handler.onChunk(reasoningChunk("先分析问题。"));
-            handler.onChunk(textChunk("最终回答"));
+            handler.onEvent(textEvent("answer"));
             handler.onDone();
         };
 
@@ -227,7 +234,140 @@ class AgentLoopTest {
                 fakeStreamingLlm,
                 toolRegistry,
                 new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
-                events::add,
+                eventBus(events),
+                4
+        );
+
+        assertEquals("answer", loop.run("hello"));
+
+        assertEquals(List.of(
+                "RunStarted",
+                "MessageStarted",
+                "MessageFinished",
+                "TurnStarted",
+                "ContextBuilt",
+                "LlmRequestStarted",
+                "MessageStarted",
+                "AssistantToken",
+                "LlmRequestFinished",
+                "MessageFinished",
+                "TurnFinished",
+                "Done",
+                "RunFinished"
+        ), events.stream().map(event -> event.getClass().getSimpleName()).toList());
+
+        AgentEvent.ContextBuilt contextBuilt = (AgentEvent.ContextBuilt) events.get(4);
+        assertEquals(false, contextBuilt.compressed());
+        assertEquals(128_000, contextBuilt.maxContextTokens());
+
+        AgentEvent.LlmRequestStarted requestStarted = (AgentEvent.LlmRequestStarted) events.get(5);
+        assertEquals(1, requestStarted.round());
+        assertEquals("fake-model", requestStarted.model());
+        assertEquals(1, requestStarted.messageCount());
+        assertEquals(0, requestStarted.toolCount());
+
+        AgentEvent.TurnFinished turnFinished = (AgentEvent.TurnFinished) events.get(10);
+        assertEquals(1, turnFinished.round());
+        assertEquals("final", turnFinished.reason());
+    }
+
+    /**
+     * 验证 EventBus 会给事件补充统一 metadata。
+     */
+    @Test
+    void wrapsEventsWithMetadataEnvelope() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        ToolRegistry toolRegistry = new ToolRegistry(
+                new LocalToolExecutor(objectMapper),
+                new McpToolExecutor()
+        );
+        List<AgentEventEnvelope> envelopes = new ArrayList<>();
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            handler.onEvent(textEvent("answer"));
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                "fake-model",
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                AgentEventBus.single("metadata-session", envelopes::add),
+                4
+        );
+
+        assertEquals("answer", loop.run("hello"));
+
+        assertTrue(envelopes.size() > 5);
+        String runId = envelopes.get(0).meta().runId();
+        for (int i = 0; i < envelopes.size(); i++) {
+            AgentEventEnvelope envelope = envelopes.get(i);
+            assertEquals("metadata-session", envelope.meta().sessionName());
+            assertEquals(runId, envelope.meta().runId());
+            assertEquals(i + 1L, envelope.meta().sequence());
+            assertTrue(envelope.meta().eventId() != null && !envelope.meta().eventId().isBlank());
+            assertTrue(envelope.meta().timestamp() != null);
+        }
+    }
+
+    /**
+     * 验证同一条事件信封可以同时分发给多个出口。
+     */
+    @Test
+    void dispatchesSameEnvelopeToMultipleHandlers() {
+        List<AgentEventEnvelope> tuiEvents = new ArrayList<>();
+        List<AgentEventEnvelope> webEvents = new ArrayList<>();
+        AgentEventBus eventBus = new AgentEventBus("multi-session", List.of(tuiEvents::add, webEvents::add));
+
+        eventBus.beginRun();
+        eventBus.publish(new AgentEvent.RunStarted("hello"));
+
+        assertEquals(1, tuiEvents.size());
+        assertEquals(1, webEvents.size());
+        assertTrue(tuiEvents.get(0) == webEvents.get(0));
+        assertEquals("multi-session", tuiEvents.get(0).meta().sessionName());
+        assertEquals(1L, tuiEvents.get(0).meta().sequence());
+    }
+
+    /**
+     * 验证 DeepSeek reasoning_content 会进入事件流，并保存到 assistant message。
+     */
+    @Test
+    void streamsReasoningContentSeparatelyFromAssistantText() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        ToolRegistry toolRegistry = new ToolRegistry(
+                new LocalToolExecutor(objectMapper),
+                new McpToolExecutor()
+        );
+        List<AgentEvent> events = new ArrayList<>();
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            handler.onEvent(reasoningEvent("先分析问题。"));
+            handler.onEvent(textEvent("最终回答"));
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                "fake-model",
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                eventBus(events),
                 4
         );
 
@@ -252,7 +392,7 @@ class AgentLoopTest {
         );
 
         StreamingChatClient fakeStreamingLlm = (request, handler) -> {
-            handler.onChunk(reasoningChunk("只有思考，没有可见正文。"));
+            handler.onEvent(reasoningEvent("只有思考，没有可见正文。"));
             handler.onDone();
         };
 
@@ -267,7 +407,7 @@ class AgentLoopTest {
                 fakeStreamingLlm,
                 toolRegistry,
                 new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
-                AgentEventHandler.noop(),
+                AgentEventBus.noop("test"),
                 4
         );
 
@@ -292,7 +432,7 @@ class AgentLoopTest {
             assertTrue(request.tools() == null || request.tools().isEmpty());
             assertEquals(null, request.toolChoice());
             assertEquals(Boolean.TRUE, request.stream());
-            handler.onChunk(textChunk("plain answer"));
+            handler.onEvent(textEvent("plain answer"));
             handler.onDone();
         };
 
@@ -307,7 +447,7 @@ class AgentLoopTest {
                 fakeStreamingLlm,
                 toolRegistry,
                 new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
-                AgentEventHandler.noop(),
+                AgentEventBus.noop("test"),
                 4
         );
 
@@ -328,8 +468,8 @@ class AgentLoopTest {
         List<AgentEvent> events = new ArrayList<>();
 
         StreamingChatClient fakeStreamingLlm = (request, handler) -> {
-            handler.onChunk(textChunk("answer"));
-            handler.onChunk(usageChunk(120, 30, 70, 20, 150));
+            handler.onEvent(textEvent("answer"));
+            handler.onEvent(usageEvent(120, 30, 70, 20, 150));
             handler.onDone();
         };
 
@@ -344,7 +484,7 @@ class AgentLoopTest {
                 fakeStreamingLlm,
                 toolRegistry,
                 new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
-                events::add,
+                eventBus(events),
                 4
         );
 
@@ -366,70 +506,112 @@ class AgentLoopTest {
     }
 
     /**
-     * 构造一片文本 SSE 片段。
+     * 验证每轮请求前会读取 Markdown 长期记忆，并作为 system message 注入模型请求。
      */
-    private static ChatStreamChunk textChunk(String text) {
-        return new ChatStreamChunk(List.of(
-                new ChatStreamChunk.Choice(
-                        new ChatStreamChunk.ChatDelta("assistant", text, null, null),
-                        null
-                )
-        ), null);
+    @Test
+    void injectsMarkdownLongTermMemoryBeforeEachLlmRequest() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        ToolRegistry toolRegistry = new ToolRegistry(
+                new LocalToolExecutor(objectMapper),
+                new McpToolExecutor()
+        );
+        MarkdownMemoryStore memoryStore = new MarkdownMemoryStore(tempDir.resolve("memory.md"));
+        memoryStore.appendCandidates(List.of(new MemoryCandidate(
+                MemoryType.BEHAVIOR_PREFERENCE,
+                "用户要求代码注释使用中文。",
+                "用户明确说：中文注释，以后也是"
+        )));
+        MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer("长期记忆注入：\n{{memory}}");
+        List<List<Message>> capturedRequests = new ArrayList<>();
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            capturedRequests.add(request.messages());
+            handler.onEvent(textEvent("answer"));
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                new OpenAiCompatibleProvider("fake", "http://localhost", "test-key", "fake-model"),
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                ToolResultOffloader.inlineOnly(),
+                memoryStore,
+                memoryPromptRenderer,
+                AgentEventBus.noop("test"),
+                4
+        );
+
+        assertEquals("answer", loop.run("你好"));
+
+        List<Message> requestMessages = capturedRequests.getFirst();
+        assertEquals("system", requestMessages.getFirst().role());
+        assertTrue(requestMessages.getFirst().content().contains("长期记忆注入"));
+        assertTrue(requestMessages.getFirst().content().contains("用户要求代码注释使用中文"));
+        assertEquals("user", requestMessages.get(1).role());
     }
 
     /**
-     * 构造一片 reasoning_content SSE 片段。
+     * 构造一条正文增量事件。
      */
-    private static ChatStreamChunk reasoningChunk(String text) {
-        return new ChatStreamChunk(List.of(
-                new ChatStreamChunk.Choice(
-                        new ChatStreamChunk.ChatDelta("assistant", null, text, null),
-                        null
-                )
-        ), null);
+    private static ProviderStreamEvent textEvent(String text) {
+        return new ProviderStreamEvent.TextDelta(text);
     }
 
     /**
-     * 构造一片 tool_call SSE 片段，用来模拟参数被分段返回的情况。
+     * 构造一条 reasoning_content 增量事件。
      */
-    private static ChatStreamChunk toolCallChunk(int index, String id, String name, String arguments) {
-        return new ChatStreamChunk(List.of(
-                new ChatStreamChunk.Choice(
-                        new ChatStreamChunk.ChatDelta(
-                                "assistant",
-                                null,
-                                null,
-                                List.of(new ToolCallDelta(
-                                        index,
-                                        id,
-                                        id == null ? null : "function",
-                                        new ToolCallDelta.FunctionDelta(name, arguments)
-                                ))
-                        ),
-                        null
-                )
-        ), null);
+    private static ProviderStreamEvent reasoningEvent(String text) {
+        return new ProviderStreamEvent.ReasoningDelta(text);
     }
 
     /**
-     * 构造一片只包含 usage 的 SSE 片段。
+     * 构造一条工具调用增量事件，用来模拟参数被分段返回的情况。
      */
-    private static ChatStreamChunk usageChunk(
+    private static ProviderStreamEvent toolCallEvent(int index, String id, String name, String arguments) {
+        return new ProviderStreamEvent.ToolCallDeltaPart(new ToolCallDelta(
+                index,
+                id,
+                id == null ? null : "function",
+                new ToolCallDelta.FunctionDelta(name, arguments)
+        ));
+    }
+
+    /**
+     * 构造一条 usage 事件。
+     */
+    private static ProviderStreamEvent usageEvent(
             int promptTokens,
             int promptCacheHitTokens,
             int promptCacheMissTokens,
             int completionTokens,
             int totalTokens
     ) {
-        return new ChatStreamChunk(
-                List.of(),
-                new ChatStreamChunk.Usage(
-                        promptTokens,
-                        completionTokens,
-                        totalTokens,
-                        promptCacheHitTokens,
-                        promptCacheMissTokens
-                )
-        );
+        int inputTokens = promptCacheHitTokens + promptCacheMissTokens;
+        if (inputTokens == 0) {
+            inputTokens = promptTokens;
+        }
+        int finalTotalTokens = totalTokens;
+        if (promptCacheHitTokens + promptCacheMissTokens > 0 || totalTokens == 0) {
+            finalTotalTokens = inputTokens + completionTokens;
+        }
+        return new ProviderStreamEvent.UsageDelta(new TokenUsage(
+                inputTokens,
+                promptCacheHitTokens,
+                promptCacheMissTokens,
+                completionTokens,
+                finalTotalTokens
+        ));
+    }
+
+    private static AgentEventBus eventBus(List<AgentEvent> events) {
+        return AgentEventBus.single("test", envelope -> events.add(envelope.event()));
     }
 }

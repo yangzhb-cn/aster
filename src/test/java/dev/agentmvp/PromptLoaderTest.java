@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  */
 class PromptLoaderTest {
     /**
-     * 验证 jar classpath 里的两个 Markdown prompt 都能读取。
+     * 验证 jar classpath 里的 Markdown prompt 都能读取。
      */
     @Test
     void loadsBuiltinMarkdownPromptsFromClasspath() throws Exception {
@@ -20,11 +20,16 @@ class PromptLoaderTest {
 
         String systemPrompt = loader.load(PromptPaths.SYSTEM);
         String summaryPrompt = loader.load(PromptPaths.CONTEXT_SUMMARY);
+        String memorySystemPrompt = loader.load(PromptPaths.LONG_TERM_MEMORY_SYSTEM);
+        String memoryExtractionPrompt = loader.load(PromptPaths.MEMORY_EXTRACTION);
 
         assertTrue(systemPrompt.contains("Agent System Prompt"));
         assertTrue(systemPrompt.contains("Skill 使用"));
         assertTrue(summaryPrompt.contains("Context Summary Prompt"));
         assertTrue(summaryPrompt.contains("工具协议安全"));
+        assertTrue(memorySystemPrompt.contains("{{memory}}"));
+        assertTrue(memoryExtractionPrompt.contains("USER_PROFILE"));
+        assertTrue(memoryExtractionPrompt.contains("BEHAVIOR_PREFERENCE"));
     }
 
     /**

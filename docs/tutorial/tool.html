@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a class="active" href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a class="active" href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -25,6 +25,64 @@
           <h1>tool 包：所有工具先变成同一种语言。</h1>
           <p class="lead">Tool 层像一个转接板。本地 Java 工具、MCP 远端工具、Skill 加载工具，最终都对 AgentLoop 呈现成 `Tool`、`ToolCall`、`ToolResult`。</p>
           <p class="lead">当前版本里，`ToolResult` 还会带成功失败和耗时，TUI 可以把工具调用渲染成可折叠的工具块。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂 tool 包</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>AgentLoop
+  -> ParallelToolExecutor
+       -> ToolRegistry
+            -> LocalToolExecutor
+                 -> BuiltinTool
+            -> McpToolExecutor
+                 -> McpClient
+       -> ToolResult
+  -> ToolResultOffloader
+  -> role=tool 消息</code></pre>
+              <p>AgentLoop 只面对统一工具层，不区分本地工具还是 MCP 工具。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>tool/
+  ToolRegistry.java          # 工具注册和执行路由
+  ParallelToolExecutor.java  # 多 tool_call 并行执行
+  LocalToolExecutor.java     # 本地 handler 调度
+  builtin/
+    ReadTool.java            # 读取文件
+    WriteTool.java           # 写文件
+    BashTool.java            # 执行命令
+    EditTool.java            # 精确替换
+    LoadSkillTool.java       # 加载 Skill 全文
+  result/
+    ToolResultOffloader.java # 大结果写 JSONL</code></pre>
+              <p>每个内置工具单独成类，最后统一注册到 ToolRegistry。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>LLM -> AgentLoop: tool_calls[]
+AgentLoop -> ParallelToolExecutor: executeAll()
+ParallelToolExecutor -> ToolRegistry: execute(call)
+ToolRegistry -> Local/MCP Executor: route
+Executor -> ToolResult: result
+AgentLoop -> Offloader: compact(result)
+AgentLoop -> SessionStore: append(role=tool)</code></pre>
+              <p>多个工具调用可以并行执行，但写回时仍按原顺序配对。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>模型返回 tool_call
+  -> 找到 tool name
+  -> 按 ToolSource 路由
+  -> 执行工具并记录耗时
+  -> 大输出写入 JSONL
+  -> 压缩文本写入 role=tool
+  -> 发布 ToolCallDone 事件</code></pre>
+              <p>结果卸载只缩短上下文，不改变 tool_call_id 配对。</p>
+            </div>
+          </div>
         </section>
 
         <section class="section" id="cards">
@@ -121,6 +179,31 @@ return localExecutor.execute(tool, call);</code></pre>
           </div>
         </section>
 
+        <section class="section" id="offload">
+          <h2>源码对照：大工具结果卸载成 JSONL</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">ToolResultOffloader.java</span>
+              <pre><code>public String compact(ToolResult result) throws IOException {
+    String renderedText = result.renderText();
+    if (renderedText.length() &lt;= maxInlineChars || outputDirectory == null) {
+        return renderedText;
+    }
+
+    StoredFile storedFile = store(result, renderedText);
+    return renderCompactMessage(result, renderedText, storedFile);
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">小结果直接内联进 `role=tool`。</p>
+              <p class="note-line">大结果写入 `workspace/artifacts/tool-results/*.jsonl`。</p>
+              <p class="note-line">tool 消息里只保留 `jsonlPath`、`recordId` 和预览，避免上下文被大输出撑爆。</p>
+              <p class="note-line">这一步不改变 tool_call_id，所以不会破坏工具协议配对。</p>
+            </div>
+          </div>
+        </section>
+
         <section class="section" id="quiz">
           <div class="quiz" data-answer="b" data-right="对。新增工具应该实现 BuiltinTool，再通过 BuiltinTools 进入 ToolRegistry。" data-wrong="不对。直接改 AgentLoop 或绕过 ToolRegistry 会让工具体系变散。">
             <h2>场景题</h2>
@@ -141,11 +224,13 @@ return localExecutor.execute(tool, call);</code></pre>
       <aside class="toc">
         <strong>本页导航</strong>
         <a href="#what">统一工具层</a>
+        <a href="#diagrams">四张图</a>
         <a href="#cards">内置工具</a>
         <a href="#registry">注册入口</a>
         <a href="#builtin">工具类结构</a>
         <a href="#route">执行路由</a>
         <a href="#result">结果元信息</a>
+        <a href="#offload">结果卸载</a>
         <a href="#quiz">场景题</a>
       </aside>
     </div>

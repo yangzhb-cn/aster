@@ -14,7 +14,7 @@
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
       <a class="active" href="entry.html">入口</a>
-      <a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -25,6 +25,56 @@
           <p class="eyebrow">Package · dev.agentmvp</p>
           <h1>入口包：TUI 负责界面，RuntimeFactory 负责装配。</h1>
           <p class="lead">当前项目不再保留 CLI。`TuiMain` 只启动 Lanterna 终端界面，真正的模型、工具、Skill、Session 和 AgentLoop 都由 `AgentRuntimeFactory` 组装。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂入口层</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>TuiMain
+  -> DefaultTerminalFactory
+  -> AgentTuiWindow
+  -> TuiAgentEventHandler
+  -> AgentRuntimeFactory
+       -> AgentRuntime
+            -> AgentLoop
+            -> BackgroundTaskManager</code></pre>
+              <p>入口层只创建界面和 runtime，不写模型请求或工具逻辑。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>tui/
+  TuiMain.java              # 终端入口
+  AgentTuiWindow.java       # Lanterna 界面和输入循环
+  TuiAgentEventHandler.java # AgentEvent -> UI
+runtime/
+  AgentRuntimeFactory.java  # 装配 LLM、工具、上下文、session
+  AgentRuntime.java         # 对入口暴露的运行时对象</code></pre>
+              <p>TUI 负责交互，runtime 负责把模块组装成可运行对象。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>main -> Lanterna: createScreen()
+main -> AgentTuiWindow: new
+main -> AgentRuntimeFactory: create(handler)
+Factory -> AgentEventBus: register TUI handler
+Factory -> BackgroundTaskManager: start()
+main -> window: run()</code></pre>
+              <p>后台任务在 runtime 创建时恢复，之后 TUI 进入输入循环。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>启动 TuiMain
+  -> 创建终端 Screen
+  -> 创建窗口
+  -> 创建 AgentRuntime
+  -> 绑定 runtime 到窗口
+  -> 进入 TUI 主循环
+  -> 用户输入后调用 AgentLoop</code></pre>
+              <p>以后做 Web 入口时，只替换入口和事件 handler，继续复用 runtime。</p>
+            </div>
+          </div>
         </section>
 
         <section class="section" id="flow">
@@ -67,7 +117,7 @@ window.run();</code></pre>
               <span class="label">中文解释</span>
               <p class="note-line">入口层只创建屏幕和窗口，不直接写 Agent 主循环。</p>
               <p class="note-line">`setForceTextTerminal(true)` 避免 Lanterna 在某些环境里弹出 SwingTerminalFrame。</p>
-              <p class="note-line">`AgentRuntimeFactory` 返回完整运行时，TUI 只负责把事件渲染到界面。</p>
+              <p class="note-line">`AgentRuntimeFactory` 会把 TUI handler 注册到 AgentEventBus，TUI 只负责把事件信封渲染到界面。</p>
               <p class="note-line">这种拆法让 Web、TUI、未来其他入口都能复用同一套 AgentRuntime。</p>
             </div>
           </div>
@@ -103,6 +153,7 @@ window.run();</code></pre>
       <aside class="toc">
         <strong>本页导航</strong>
         <a href="#what">入口职责</a>
+        <a href="#diagrams">四张图</a>
         <a href="#flow">启动流程</a>
         <a href="#code">源码对照</a>
         <a href="#quiz">场景题</a>

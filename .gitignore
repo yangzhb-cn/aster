@@ -16,8 +16,10 @@ replay_pid*
 mcp.json
 workspace/mcp.json
 workspace/sessions/*.jsonl
+workspace/tasks/*.jsonl
 workspace/memory/**
 !workspace/memory/.gitkeep
+!workspace/tasks/.gitkeep
 
 # IDE 文件
 .idea/

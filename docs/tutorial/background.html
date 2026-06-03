@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>background 包 · 后台任务框架</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;700;800&family=DM+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/tutorial.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
+    <nav class="nav-links">
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a class="active" href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+    </nav>
+  </header>
+
+  <main class="page">
+    <div class="layout">
+      <article>
+        <section class="section" id="what">
+          <p class="eyebrow">Package · dev.agentmvp.background</p>
+          <h1>background 包：先把后台任务框架搭起来。</h1>
+          <p class="lead">后台任务不应该挤进当前对话主线程。当前实现提供统一入口、JSONL 持久化、调度器、执行器、事件总线和通知出口，并已经接入 `memory_extract`：每轮主对话完成后，通过事件监听触发后台长期记忆抽取。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂 background 包</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>AgentRuntime
+  -> BackgroundTaskManager
+       -> JsonlBackgroundTaskStore
+       -> BackgroundTaskScheduler
+            -> BackgroundTaskExecutor
+                 -> BackgroundTaskHandler
+                 -> BackgroundTaskEventBus
+                      -> BackgroundTaskNotificationHandler
+                           -> NotificationSink
+                                -> TUI 状态栏</code></pre>
+              <p>Manager 是外部入口，Scheduler 管时间，Executor 管执行和记录，EventBus 管通知出口。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>background/
+  BackgroundTaskManager.java        # 后台任务统一入口
+  BackgroundTaskScheduler.java      # immediate/delay/interval 调度
+  BackgroundTaskExecutor.java       # 执行 handler，写 TaskRun
+  BackgroundTaskStore.java          # 持久化接口
+  JsonlBackgroundTaskStore.java     # tasks.jsonl / runs.jsonl
+  BackgroundTaskEventBus.java       # 后台事件分发
+  BackgroundTaskNotificationHandler.java # 事件转通知
+  NoopTaskHandler.java              # 教学版占位任务
+memory/
+  MemoryExtractionTaskHandler.java  # 长期记忆抽取任务
+  MemoryExtractionSchedulingHandler.java # RunFinished Hook
+  model/                            # Task、Trigger、Action、Run</code></pre>
+              <p>模型类放在 `model` 子包，主包只保留执行框架。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>用户/工具 -> Manager: create(task)
+Manager -> Store: saveTask(task)
+Manager -> Scheduler: schedule(task)
+Scheduler -> Executor: execute(task)
+Executor -> Handler: handle(task)
+Executor -> Store: appendRun(run)
+Executor -> EventBus: TaskCompleted/TaskFailed
+EventBus -> NotificationSink: 更新外部出口</code></pre>
+              <p>任务完成时不打断当前对话，只把结果写入 runs.jsonl 并通知状态栏。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>启动 runtime
+  -> 读取 workspace/tasks/tasks.jsonl
+  -> 恢复 enabled 任务
+  -> 到点触发
+  -> 找到支持 action 的 handler
+  -> 写入 workspace/tasks/runs.jsonl
+  -> 发布后台任务事件
+  -> TUI 底部显示完成/失败计数</code></pre>
+              <p>这个流程给长期记忆、定时通知、异步索引等任务复用。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="manager">
+          <h2>源码对照：后台任务统一入口</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">BackgroundTaskManager.java</span>
+              <pre><code>public BackgroundTask create(BackgroundTask task) throws IOException {
+    store.saveTask(task);
+    scheduler.schedule(task);
+    return task;
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">外部只找 Manager，不直接操作 store 或 scheduler。</p>
+              <p class="note-line">先保存任务定义，再注册调度，重启后还能从 JSONL 恢复。</p>
+              <p class="note-line">以后工具层想创建后台任务，也应该调用这个入口。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="scheduler">
+          <h2>源码对照：调度器只关心什么时候跑</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">BackgroundTaskScheduler.java</span>
+              <pre><code>ScheduledFuture&lt;?&gt; future = switch (type) {
+    case "immediate" -> scheduler.schedule(() -> executor.execute(task), 0, TimeUnit.SECONDS);
+    case "delay" -> scheduler.schedule(() -> executor.execute(task), delaySeconds, TimeUnit.SECONDS);
+    case "interval" -> scheduleInterval(task);
+    default -> throw new IllegalArgumentException("Unsupported background task trigger: " + type);
+};</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">教学版先用 `ScheduledExecutorService`，足够表达立即、延迟和间隔任务。</p>
+              <p class="note-line">Scheduler 不知道任务内容是什么，只负责在合适的时间调用 Executor。</p>
+              <p class="note-line">以后要支持 cron，可以替换或增强这一层。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="executor">
+          <h2>源码对照：执行器写记录并发事件</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">BackgroundTaskExecutor.java</span>
+              <pre><code>BackgroundTaskHandler handler = findHandler(task);
+String message = handler.handle(task);
+TaskRun run = TaskRun.success(task, startedAt, Instant.now().toString(), message);
+store.appendRun(run);
+eventBus.publish(new BackgroundTaskEvent.TaskCompleted(run));</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">Executor 不写具体业务逻辑，只按 action 找对应 handler。</p>
+              <p class="note-line">每次运行都会写 `workspace/tasks/runs.jsonl`，方便审计和回溯。</p>
+              <p class="note-line">完成或失败都会发布事件，外部可以接 TUI、Web、Hook。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="notify">
+          <h2>源码对照：策略 B，只更新底部状态栏</h2>
+          <div class="translation">
+            <div class="code-pane">
+              <span class="label">TuiNotificationSink.java</span>
+              <pre><code>@Override
+public void backgroundTaskCompleted(TaskRun run) {
+    window.showBackgroundTaskCompleted(run.taskName());
+}</code></pre>
+            </div>
+            <div class="explain-pane">
+              <span class="label">中文解释</span>
+              <p class="note-line">后台任务完成时不插入对话历史，避免打断当前主对话。</p>
+              <p class="note-line">TUI 只在底部状态栏显示完成/失败计数。</p>
+              <p class="note-line">真正的任务记录已经写入 JSONL；用户想看细节时，再问 Agent 或后续加命令查看。</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" id="quiz">
+          <div class="quiz" data-answer="b" data-right="对。后台任务框架只关心调度、执行、记录和通知，具体业务放到 handler。" data-wrong="不对。把具体记忆或提醒逻辑写进 Scheduler/Executor，会让框架很快变乱。">
+            <h2>场景题</h2>
+            <p>当前要加“每轮结束后提取长期记忆”，最合适的做法是什么？</p>
+            <button class="quiz-option" data-value="a">把记忆提取逻辑写进 BackgroundTaskScheduler。</button>
+            <button class="quiz-option" data-value="b">新增 MemoryTaskHandler，实现 BackgroundTaskHandler。</button>
+            <button class="quiz-option" data-value="c">让 TUI 自己调用 LLM 做记忆提取。</button>
+            <div class="quiz-actions"><button data-check-quiz>检查答案</button></div>
+            <div class="quiz-feedback"></div>
+          </div>
+        </section>
+
+        <nav class="footer-nav">
+          <a class="button secondary" href="session.html">上一包：session</a>
+          <a class="button" href="tui.html">下一包：tui</a>
+        </nav>
+      </article>
+      <aside class="toc">
+        <strong>本页导航</strong>
+        <a href="#what">后台任务目标</a>
+        <a href="#diagrams">四张图</a>
+        <a href="#manager">统一入口</a>
+        <a href="#scheduler">调度器</a>
+        <a href="#executor">执行器</a>
+        <a href="#notify">通知出口</a>
+        <a href="#quiz">场景题</a>
+      </aside>
+    </div>
+  </main>
+  <script src="assets/tutorial.js"></script>
+</body>
+</html>

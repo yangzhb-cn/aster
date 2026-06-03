@@ -7,14 +7,17 @@ import dev.agentmvp.llm.DeepSeekModels;
 import dev.agentmvp.llm.DeepSeekProvider;
 import dev.agentmvp.llm.OpenAiCompatibleChatClient;
 import dev.agentmvp.llm.OpenAiCompatibleProviderDefinition;
+import dev.agentmvp.llm.OpenAiCompatibleStreamParser;
 import dev.agentmvp.llm.model.ChatRequest;
 import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
+import dev.agentmvp.llm.model.ProviderStreamEvent;
 import okhttp3.OkHttpClient;
 import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -52,6 +55,8 @@ class DeepSeekProviderTest {
                     "high"
             );
 
+            List<ProviderStreamEvent> events = new ArrayList<>();
+
             OpenAiCompatibleChatClient.create(
                     new OkHttpClient(),
                     objectMapper,
@@ -63,8 +68,7 @@ class DeepSeekProviderTest {
                     null,
                     provider.thinkingEnabled(),
                     provider.reasoningEffort()
-            ), chunk -> {
-            });
+            ), events::add);
 
             RecordedRequest recorded = server.takeRequest();
             JsonNode body = objectMapper.readTree(recorded.getBody().readUtf8());
@@ -78,7 +82,58 @@ class DeepSeekProviderTest {
             assertEquals("high", body.path("reasoning_effort").asText());
             assertEquals("user", body.path("messages").get(0).path("role").asText());
             assertEquals("hello", body.path("messages").get(0).path("content").asText());
+            assertEquals("ok", ((ProviderStreamEvent.TextDelta) events.get(0)).text());
+            assertEquals(ProviderStreamEvent.Done.class, events.get(1).getClass());
         }
+    }
+
+    /**
+     * 验证 OpenAI-compatible parser 会把原始 choices/delta 转成统一 ProviderStreamEvent。
+     */
+    @Test
+    void parsesOpenAiCompatibleStreamDataIntoProviderEvents() throws Exception {
+        OpenAiCompatibleStreamParser parser = new OpenAiCompatibleStreamParser(new ObjectMapper());
+
+        List<ProviderStreamEvent> events = parser.parse("""
+                {
+                  "choices": [
+                    {
+                      "delta": {
+                        "role": "assistant",
+                        "content": "答案",
+                        "reasoning_content": "思考",
+                        "tool_calls": [
+                          {
+                            "index": 0,
+                            "id": "call_1",
+                            "type": "function",
+                            "function": {
+                              "name": "read",
+                              "arguments": "{\\"path\\":"
+                            }
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "usage": {
+                    "prompt_tokens": 100,
+                    "completion_tokens": 20,
+                    "total_tokens": 120,
+                    "prompt_cache_hit_tokens": 30,
+                    "prompt_cache_miss_tokens": 70
+                  }
+                }
+                """);
+
+        assertEquals("答案", ((ProviderStreamEvent.TextDelta) events.get(0)).text());
+        assertEquals("思考", ((ProviderStreamEvent.ReasoningDelta) events.get(1)).text());
+        ProviderStreamEvent.ToolCallDeltaPart toolCall = (ProviderStreamEvent.ToolCallDeltaPart) events.get(2);
+        assertEquals("call_1", toolCall.delta().id());
+        assertEquals("read", toolCall.delta().function().name());
+        ProviderStreamEvent.UsageDelta usage = (ProviderStreamEvent.UsageDelta) events.get(3);
+        assertEquals(100, usage.usage().inputTokens());
+        assertEquals(20, usage.usage().outputTokens());
     }
 
     /**

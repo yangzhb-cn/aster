@@ -1,6 +1,7 @@
 package dev.agentmvp.runtime;
 
 import dev.agentmvp.agent.AgentLoop;
+import dev.agentmvp.background.BackgroundTaskManager;
 import dev.agentmvp.llm.model.OpenAiCompatibleProvider;
 import dev.agentmvp.mcp.McpToolExecutor;
 import dev.agentmvp.tool.ParallelToolExecutor;
@@ -16,6 +17,7 @@ import java.util.Objects;
  */
 public class AgentRuntime implements AutoCloseable {
     private final AgentLoop agentLoop;
+    private final BackgroundTaskManager backgroundTaskManager;
     private final ParallelToolExecutor parallelToolExecutor;
     private final McpToolExecutor mcpToolExecutor;
     private final OpenAiCompatibleProvider provider;
@@ -24,6 +26,7 @@ public class AgentRuntime implements AutoCloseable {
 
     public AgentRuntime(
             AgentLoop agentLoop,
+            BackgroundTaskManager backgroundTaskManager,
             ParallelToolExecutor parallelToolExecutor,
             McpToolExecutor mcpToolExecutor,
             OpenAiCompatibleProvider provider,
@@ -31,6 +34,7 @@ public class AgentRuntime implements AutoCloseable {
             int skillCount
     ) {
         this.agentLoop = Objects.requireNonNull(agentLoop);
+        this.backgroundTaskManager = Objects.requireNonNull(backgroundTaskManager);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
         this.mcpToolExecutor = Objects.requireNonNull(mcpToolExecutor);
         this.provider = Objects.requireNonNull(provider);
@@ -43,6 +47,13 @@ public class AgentRuntime implements AutoCloseable {
      */
     public String run(String userInput) throws IOException {
         return agentLoop.run(userInput);
+    }
+
+    /**
+     * 后台任务管理器。
+     */
+    public BackgroundTaskManager backgroundTaskManager() {
+        return backgroundTaskManager;
     }
 
     /**
@@ -71,6 +82,7 @@ public class AgentRuntime implements AutoCloseable {
      */
     @Override
     public void close() {
+        backgroundTaskManager.close();
         parallelToolExecutor.close();
         mcpToolExecutor.close();
     }

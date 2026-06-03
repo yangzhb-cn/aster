@@ -9,6 +9,8 @@ package dev.agentmvp.prompt;
 public final class PromptPaths {
     public static final String SYSTEM = "/prompts/system.md";
     public static final String CONTEXT_SUMMARY = "/prompts/context-summary.md";
+    public static final String LONG_TERM_MEMORY_SYSTEM = "/prompts/long-term-memory-system.md";
+    public static final String MEMORY_EXTRACTION = "/prompts/memory-extraction.md";
 
     private PromptPaths() {
     }

@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a class="active" href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a href="skill.html">skill</a><a class="active" href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -23,7 +23,64 @@
         <section class="section" id="what">
           <p class="eyebrow">Package · dev.agentmvp.llm</p>
           <h1>llm 包：只保留流式模型调用。</h1>
-          <p class="lead">当前项目没有非流式路径。`OkHttpStreamingChatClient` 负责把 `ChatRequest` 变成 HTTP 请求，再逐行解析 <span class="term" data-tip="SSE 是 Server-Sent Events，服务端可以一小段一小段把数据推给客户端，常用于流式模型输出。">SSE</span>。DeepSeek V4 默认打开 thinking mode，并请求服务端在流式末尾返回真实 token usage。</p>
+          <p class="lead">当前项目没有非流式路径。`OkHttpStreamingChatClient` 负责把 `ChatRequest` 变成 HTTP 请求，再把每行 <span class="term" data-tip="SSE 是 Server-Sent Events，服务端可以一小段一小段把数据推给客户端，常用于流式模型输出。">SSE</span> 交给 `OpenAiCompatibleStreamParser`，统一输出 `ProviderStreamEvent`。DeepSeek V4 默认打开 thinking mode，并请求服务端在流式末尾返回真实 token usage。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂 llm 包</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>OpenAiCompatibleProvider
+  -> OpenAiCompatibleChatClient
+       -> OkHttpStreamingChatClient
+            -> OpenAiCompatibleStreamParser
+                 -> ProviderStreamEvent
+                      -> TextDelta
+                      -> ReasoningDelta
+                      -> ToolCallDeltaPart
+                      -> UsageDelta
+                      -> Done</code></pre>
+              <p>ProviderStreamEvent 是供应商流和 AgentLoop 之间的统一边界。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>llm/
+  OpenAiCompatibleProviderFactory.java # 从环境变量构造 provider
+  DeepSeekProvider.java                # DeepSeek 默认配置
+  OkHttpStreamingChatClient.java       # HTTP SSE 客户端
+  OpenAiCompatibleStreamParser.java    # raw JSON -> ProviderStreamEvent
+  model/
+    ChatRequest.java                   # 请求体
+    Message.java                       # chat message 协议
+    ProviderStreamEvent.java           # 统一流式事件
+    TokenUsage.java                    # usage 和缓存 token</code></pre>
+              <p>接入新 OpenAI-compatible 供应商时，优先新增 provider definition。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>AgentLoop -> StreamingChatClient: stream(request)
+Client -> LLM: POST /chat/completions
+LLM -> Client: data: {...}
+Client -> Parser: parse(data)
+Parser -> Client: ProviderStreamEvent
+Client -> AgentLoop: handler.onEvent(event)
+AgentLoop -> EventBus: AgentEvent</code></pre>
+              <p>Client 只读 SSE，Parser 负责理解兼容协议字段。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>构造 ChatRequest
+  -> 加入 stream=true
+  -> DeepSeek 可带 thinking 字段
+  -> POST SSE 请求
+  -> 逐行读取 data
+  -> 解析 content/reasoning/tool_call/usage
+  -> 输出 ProviderStreamEvent
+  -> [DONE] 结束</code></pre>
+              <p>usage 是独立事件，不拼进 assistant 正文。</p>
+            </div>
+          </div>
         </section>
 
         <section class="section" id="provider">
@@ -102,44 +159,47 @@ if (apiKey != null &amp;&amp; !apiKey.isBlank()) {
         </section>
 
         <section class="section" id="sse">
-          <h2>源码对照：解析 SSE 行</h2>
+          <h2>源码对照：SSE 行转统一事件</h2>
           <div class="translation">
             <div class="code-pane">
               <span class="label">OkHttpStreamingChatClient.java</span>
               <pre><code>String data = line.substring("data:".length()).trim();
-if ("[DONE]".equals(data)) {
-    handler.onDone();
-    return;
-}
-
-handler.onChunk(objectMapper.readValue(data, ChatStreamChunk.class));</code></pre>
+for (ProviderStreamEvent event : streamParser.parse(data)) {
+    handler.onEvent(event);
+    if (event instanceof ProviderStreamEvent.Done) {
+        return;
+    }
+}</code></pre>
             </div>
             <div class="explain-pane">
               <span class="label">中文解释</span>
               <p class="note-line">每行 `data:` 后面是一个 JSON 增量。</p>
-              <p class="note-line">`[DONE]` 表示模型这轮输出结束。</p>
-              <p class="note-line">普通增量会反序列化成 `ChatStreamChunk`，再交给 AgentLoop 拼完整消息。</p>
+              <p class="note-line">OkHttp 客户端只负责读行，不把 OpenAI 原始结构泄漏给 AgentLoop。</p>
+              <p class="note-line">`OpenAiCompatibleStreamParser` 把 raw JSON 转成 ProviderStreamEvent。</p>
+              <p class="note-line">`[DONE]` 会转成 `ProviderStreamEvent.Done`，表示模型这轮输出结束。</p>
             </div>
           </div>
         </section>
 
         <section class="section" id="reasoning">
-          <h2>源码对照：reasoning_content 不是普通正文</h2>
+          <h2>源码对照：ProviderStreamEvent 到 AgentEvent</h2>
           <div class="translation">
             <div class="code-pane">
               <span class="label">AgentLoop.java</span>
-              <pre><code>if (delta.content() != null) {
-    eventHandler.onEvent(new AgentEvent.AssistantToken(delta.content()));
+              <pre><code>if (event instanceof ProviderStreamEvent.TextDelta delta) {
+    publish(new AgentEvent.AssistantToken(delta.text()));
 }
-if (delta.reasoningContent() != null) {
-    eventHandler.onEvent(new AgentEvent.ReasoningToken(delta.reasoningContent()));
+if (event instanceof ProviderStreamEvent.ReasoningDelta delta) {
+    publish(new AgentEvent.ReasoningToken(delta.text()));
 }</code></pre>
             </div>
             <div class="explain-pane">
               <span class="label">中文解释</span>
-              <p class="note-line">`delta.content` 是 assistant 最终正文。</p>
-              <p class="note-line">`delta.reasoning_content` 是 DeepSeek thinking 返回的可展示思考内容。</p>
-              <p class="note-line">两者分成不同事件，TUI 才能把 thinking 和正文分开显示。</p>
+              <p class="note-line">ProviderStreamEvent 是 LLM 接入层的统一输出。</p>
+              <p class="note-line">AgentEvent 是 Agent 主循环对 TUI、Web、Hook 暴露的事件协议。</p>
+              <p class="note-line">DeepSeek 的 `reasoning_content` 先变成 `ReasoningDelta`，再变成 `ReasoningToken`。</p>
+              <p class="note-line">两层事件分开后，新增供应商时只改 parser，不改 AgentLoop 的主逻辑。</p>
+              <p class="note-line">TUI 才能把 thinking 和正文分开显示，Web SSE 也能直接转发同一批事件。</p>
             </div>
           </div>
         </section>
@@ -149,13 +209,9 @@ if (delta.reasoningContent() != null) {
           <div class="translation">
             <div class="code-pane">
               <span class="label">AgentLoop.java</span>
-              <pre><code>private void emitUsageEvent(ChatStreamChunk chunk, int maxContextTokens) {
-    if (chunk.usage() == null) {
-        return;
-    }
-
-    eventHandler.onEvent(new AgentEvent.UsageReported(
-            TokenUsage.from(chunk.usage()),
+              <pre><code>if (event instanceof ProviderStreamEvent.UsageDelta usage) {
+    publish(new AgentEvent.UsageReported(
+            usage.usage(),
             maxContextTokens
     ));
 }</code></pre>
@@ -166,6 +222,7 @@ if (delta.reasoningContent() != null) {
               <p class="note-line">`prompt_tokens` 是输入 token，`completion_tokens` 是输出 token。</p>
               <p class="note-line">DeepSeek 还会给 `prompt_cache_hit_tokens` 和 `prompt_cache_miss_tokens`，input 会优先按 cache + miss 计算。</p>
               <p class="note-line">AgentLoop 把它转成 `UsageReported` 事件，并附带最大上下文窗口。</p>
+              <p class="note-line">EventBus 会给 usage 事件补 metadata，方便后续 Web 或审计日志按 run/sequence 关联。</p>
               <p class="note-line">TUI 不把 usage 插入历史区，而是更新输入框下面的预算行。</p>
             </div>
           </div>
@@ -191,6 +248,7 @@ if (delta.reasoningContent() != null) {
       <aside class="toc">
         <strong>本页导航</strong>
         <a href="#what">流式客户端</a>
+        <a href="#diagrams">四张图</a>
         <a href="#provider">Provider</a>
         <a href="#stream">请求构造</a>
         <a href="#thinking">Thinking 请求</a>

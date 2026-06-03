@@ -93,6 +93,9 @@ public class AgentTuiWindow implements AutoCloseable {
     private int lastMaxScrollOffset;
     private TokenUsage lastUsage;
     private int lastMaxContextTokens;
+    private int backgroundCompletedCount;
+    private int backgroundFailedCount;
+    private String latestBackgroundTaskName = "";
     private int selectedSlashCommandIndex;
     private boolean closed;
     private boolean dirty = true;
@@ -111,7 +114,11 @@ public class AgentTuiWindow implements AutoCloseable {
 
     private void replaceRuntime(String sessionName, boolean clearBlocks) throws IOException {
         AgentRuntime oldRuntime = runtime;
-        AgentRuntime newRuntime = runtimeFactory.create(new TuiAgentEventHandler(this), sessionName);
+        AgentRuntime newRuntime = runtimeFactory.create(
+                new TuiAgentEventHandler(this),
+                new TuiNotificationSink(this),
+                sessionName
+        );
         runtime = newRuntime;
         if (oldRuntime != null) {
             oldRuntime.close();
@@ -228,6 +235,28 @@ public class AgentTuiWindow implements AutoCloseable {
     public void showDone() {
         enqueue(() -> {
             status = "ready";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 后台任务成功完成时，只更新底部状态栏计数。
+     */
+    public void showBackgroundTaskCompleted(String taskName) {
+        enqueue(() -> {
+            backgroundCompletedCount++;
+            latestBackgroundTaskName = taskName == null ? "" : taskName;
+            dirty = true;
+        });
+    }
+
+    /**
+     * 后台任务失败时，只更新底部状态栏计数。
+     */
+    public void showBackgroundTaskFailed(String taskName) {
+        enqueue(() -> {
+            backgroundFailedCount++;
+            latestBackgroundTaskName = taskName == null ? "" : taskName;
             dirty = true;
         });
     }
@@ -702,7 +731,7 @@ public class AgentTuiWindow implements AutoCloseable {
 
         drawSlashCommandMenu(graphics, size, statusY);
 
-        String visibleStatus = scrollOffset == 0 ? status : status + " | scroll +" + scrollOffset + " | End 到底部";
+        String visibleStatus = scrollOffset == 0 ? formatStatusLine() : formatStatusLine() + " | scroll +" + scrollOffset + " | End 到底部";
         putClipped(graphics, 1, statusY, visibleStatus, Math.max(1, width - 2), MUTED, BG);
         drawHorizontalLine(graphics, topLineY, width, PURPLE);
         drawHorizontalLine(graphics, bottomLineY, width, PURPLE);
@@ -766,6 +795,20 @@ public class AgentTuiWindow implements AutoCloseable {
                 + " output=" + lastUsage.outputTokens()
                 + " total=" + lastUsage.totalTokens()
                 + " | context=" + context;
+    }
+
+    private String formatStatusLine() {
+        StringBuilder line = new StringBuilder(status);
+        if (backgroundCompletedCount > 0 || backgroundFailedCount > 0) {
+            line.append(" | background completed=")
+                    .append(backgroundCompletedCount)
+                    .append(" failed=")
+                    .append(backgroundFailedCount);
+            if (!latestBackgroundTaskName.isBlank()) {
+                line.append(" latest=").append(latestBackgroundTaskName);
+            }
+        }
+        return line.toString();
     }
 
     private String formatPercent(int currentTokens, int maxTokens) {

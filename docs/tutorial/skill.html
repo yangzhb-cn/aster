@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="brand" href="index.html"><span class="brand-mark">A</span><span>agent-small-mvp 教程</span></a>
     <nav class="nav-links">
-      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a class="active" href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
+      <a href="entry.html">入口</a><a href="agent.html">agent</a><a href="context.html">context</a><a href="tool.html">tool</a><a class="active" href="skill.html">skill</a><a href="llm.html">llm</a><a href="mcp.html">mcp</a><a href="session.html">session</a><a href="background.html">background</a><a href="tui.html">tui</a><a href="chat.html">chat</a>
     </nav>
   </header>
 
@@ -24,6 +24,60 @@
           <p class="eyebrow">Package · dev.agentmvp.skill</p>
           <h1>skill 包：只做适配，不做完整 Skill 系统。</h1>
           <p class="lead">这里的 Skill 不是可执行插件。它更像一本按场景摆放的操作手册：启动时只告诉模型“有哪些手册”，需要时再用 `load_skill` 读取全文。</p>
+        </section>
+
+        <section class="section" id="diagrams">
+          <h2>四张图看懂 skill 包</h2>
+          <div class="diagram-grid">
+            <div class="diagram-card">
+              <h3>架构图</h3>
+              <pre><code>workspace/skills/*/SKILL.md
+  -> SkillRepository.scan()
+       -> SkillMetadata(name, description)
+  -> SkillIndexRenderer
+       -> system prompt
+  -> LoadSkillTool
+       -> SkillRepository.load(name)
+       -> ToolResult</code></pre>
+              <p>启动时只注入索引，完整内容通过工具渐进式加载。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>文件结构图</h3>
+              <pre><code>skill/
+  SkillRepository.java      # 扫描和读取 SKILL.md
+  SkillIndexRenderer.java   # name/description 转 system prompt
+  model/
+    SkillMetadata.java      # 索引信息
+    SkillDocument.java      # 完整文档
+tool/builtin/
+  LoadSkillTool.java        # LLM 加载 Skill 的工具入口
+workspace/skills/
+  */SKILL.md                # 放进去即可被扫描</code></pre>
+              <p>Skill 的脚本和 reference 不自动执行，仍由 read/bash 等工具按需处理。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>时序图</h3>
+              <pre><code>Factory -> SkillRepository: scan(workspace/skills)
+Factory -> SkillIndexRenderer: render(metadata)
+Factory -> SessionStore: append(system skill index)
+LLM -> ToolRegistry: load_skill(name)
+LoadSkillTool -> SkillRepository: load(name)
+LoadSkillTool -> LLM: SKILL.md content</code></pre>
+              <p>LLM 根据索引自行判断是否需要加载某个 Skill。</p>
+            </div>
+            <div class="diagram-card">
+              <h3>流程图</h3>
+              <pre><code>启动扫描 Skill
+  -> 只读取 name/description
+  -> 注入 system prompt
+  -> 用户提出任务
+  -> LLM 判断需要哪个 Skill
+  -> 调用 load_skill
+  -> 读取完整 SKILL.md
+  -> 继续使用 read/bash 处理附属资料</code></pre>
+              <p>这就是渐进式加载：常驻信息尽量小，细节按需拿。</p>
+            </div>
+          </div>
         </section>
 
         <section class="section" id="progress">
@@ -131,6 +185,7 @@
       <aside class="toc">
         <strong>本页导航</strong>
         <a href="#what">适配边界</a>
+        <a href="#diagrams">四张图</a>
         <a href="#progress">当前范围</a>
         <a href="#repo">扫描索引</a>
         <a href="#load">加载全文</a>

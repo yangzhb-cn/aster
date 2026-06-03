@@ -5,7 +5,7 @@ import java.util.Objects;
 /**
  * 长期记忆提醒段落渲染器。
  *
- * <p>模板来自 resources/prompts/long-term-memory-system.md。
+ * <p>模板来自 resources/prompts/memory/injection.md。
  * Java 只负责把 Markdown 记忆替换进去，外层 system-reminder 标签由请求前 Hook 统一生成。</p>
  */
 public class MemoryPromptRenderer {

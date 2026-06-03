@@ -22,6 +22,9 @@ class PromptLoaderTest {
         String summaryPrompt = loader.load(PromptPaths.CONTEXT_SUMMARY);
         String memorySystemPrompt = loader.load(PromptPaths.LONG_TERM_MEMORY_SYSTEM);
         String memoryExtractionPrompt = loader.load(PromptPaths.MEMORY_EXTRACTION);
+        String teamPlannerPrompt = loader.load(PromptPaths.TEAM_PLANNER_SYSTEM);
+        String teamCodeResearcherPrompt = loader.load(PromptPaths.TEAM_CODE_RESEARCHER_SYSTEM);
+        String teamRiskReviewerPrompt = loader.load(PromptPaths.TEAM_RISK_REVIEWER_SYSTEM);
 
         assertTrue(systemPrompt.contains("Aster System Prompt"));
         assertTrue(systemPrompt.contains("Skill 使用"));
@@ -30,6 +33,9 @@ class PromptLoaderTest {
         assertTrue(memorySystemPrompt.contains("{{memory}}"));
         assertTrue(memoryExtractionPrompt.contains("USER_PROFILE"));
         assertTrue(memoryExtractionPrompt.contains("BEHAVIOR_PREFERENCE"));
+        assertTrue(teamPlannerPrompt.contains("planner"));
+        assertTrue(teamCodeResearcherPrompt.contains("code_researcher"));
+        assertTrue(teamRiskReviewerPrompt.contains("risk_reviewer"));
     }
 
     /**

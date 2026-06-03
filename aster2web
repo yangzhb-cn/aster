@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 从脚本所在目录定位项目根目录，保证 Web 静态资源和 workspace 路径稳定。
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+# 本地开发默认把密钥和端口写在 .env；脚本启动时自动导入。
+if [[ -f .env ]]; then
+  set -a
+  source .env
+  set +a
+fi
+
+# 当前 Web 调试默认使用 8081；需要其他端口时设置 ASTER_WEB_PORT 覆盖。
+export ASTER_WEB_PORT="${ASTER_WEB_PORT:-8081}"
+
+if command -v lsof >/dev/null 2>&1; then
+  EXISTING_PIDS="$(lsof -tiTCP:"$ASTER_WEB_PORT" -sTCP:LISTEN || true)"
+  if [[ -n "$EXISTING_PIDS" ]]; then
+    echo "Aster Web port $ASTER_WEB_PORT is already in use."
+    lsof -nP -iTCP:"$ASTER_WEB_PORT" -sTCP:LISTEN || true
+    echo
+    echo "Open: http://localhost:$ASTER_WEB_PORT"
+    echo "Stop current Web: screen -S aster2web -X quit"
+    echo "Use another port: ASTER_WEB_PORT=8082 ./aster2web"
+    exit 0
+  fi
+fi
+
+exec mvn -q -Dexec.mainClass=com.aster.ui.web.WebMain exec:java

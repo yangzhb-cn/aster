@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 从脚本所在目录定位项目根目录，避免在其他路径启动时找不到 workspace。
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+# 本地开发默认把密钥写在 .env；这里统一加载，避免每次手动 export。
+if [[ -f .env ]]; then
+  set -a
+  source .env
+  set +a
+fi
+
+exec mvn -q -Dexec.mainClass=com.aster.ui.tui.TuiMain exec:java

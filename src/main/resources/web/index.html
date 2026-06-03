@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Aster Web</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M32 6l7.7 17.4L58 25.5 44.3 38.2 48.4 57 32 47.3 15.6 57l4.1-18.8L6 25.5l18.3-2.1z' fill='%230d9488'/%3E%3Ccircle cx='32' cy='32' r='8' fill='%23fffdf8'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="/assets/app.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true"></span>
+          <span>Aster</span>
+        </div>
+        <div class="run-strip">
+          <span id="connectionState" class="state-pill">connecting</span>
+          <span id="modelName">model</span>
+          <span id="sessionName">session</span>
+        </div>
+        <div class="top-actions">
+          <button id="stopButton" class="ghost-button danger" type="button">Stop</button>
+        </div>
+      </header>
+
+      <aside class="left-rail">
+        <section class="rail-section sessions-section">
+          <div class="session-head">
+            <span class="eyebrow">SESSIONS</span>
+            <button id="newSessionButton" class="icon-button" type="button" title="新建会话" aria-label="新建会话">+</button>
+          </div>
+          <div id="sessionList" class="session-list"></div>
+        </section>
+      </aside>
+
+      <main class="chat-pane">
+        <section class="chat-surface">
+          <div id="messages" class="messages" aria-live="polite"></div>
+        </section>
+
+        <form id="composer" class="composer">
+          <label class="sr-only" for="prompt">输入消息</label>
+          <textarea id="prompt" rows="1" placeholder="输入任务或问题"></textarea>
+          <button id="sendButton" type="submit">发送</button>
+        </form>
+      </main>
+
+      <aside class="right-rail">
+        <section class="rail-section">
+          <span class="eyebrow">TOKENS</span>
+          <div class="token-grid">
+            <div class="token-row">
+              <span>input</span>
+              <strong id="inputTokens">-</strong>
+            </div>
+            <div class="token-row">
+              <span>cache</span>
+              <strong id="cacheTokens">-</strong>
+            </div>
+            <div class="token-row">
+              <span>miss</span>
+              <strong id="missTokens">-</strong>
+            </div>
+            <div class="token-row">
+              <span>output</span>
+              <strong id="outputTokens">-</strong>
+            </div>
+            <div class="token-row strong">
+              <span>total</span>
+              <strong id="totalTokens">-</strong>
+            </div>
+          </div>
+        </section>
+        <section class="rail-section">
+          <span class="eyebrow">CONTEXT</span>
+          <div class="token-grid">
+            <div class="token-row">
+              <span>before</span>
+              <strong id="contextBefore">-</strong>
+            </div>
+            <div class="token-row">
+              <span>after</span>
+              <strong id="contextAfter">-</strong>
+            </div>
+            <div class="token-row">
+              <span>max</span>
+              <strong id="contextMax">-</strong>
+            </div>
+            <div class="token-row strong">
+              <span>compressed</span>
+              <strong id="contextCompressed">-</strong>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <script src="/assets/app.js"></script>
+  </body>
+</html>

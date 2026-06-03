@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# 从脚本所在目录定位项目根目录，保证 Telegram session 映射写入本项目 workspace。
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT_DIR"
+
+# Telegram token、chat allowlist 和模型 key 统一从 .env 加载。
+if [[ -f .env ]]; then
+  set -a
+  source .env
+  set +a
+fi
+
+# 如果本地 .env 用 OWNER_ID 表示 Telegram chatId，这里转成 IM 入口需要的 allowlist。
+if [[ -z "${TELEGRAM_ALLOWED_CHAT_IDS:-}" && -n "${OWNER_ID:-}" ]]; then
+  export TELEGRAM_ALLOWED_CHAT_IDS="$OWNER_ID"
+fi
+
+exec mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java

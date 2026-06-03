@@ -57,6 +57,23 @@ public class TuiAgentEventHandler implements AgentEventHandler {
             window.appendReasoningToken(token.text());
             return;
         }
+        if (event instanceof AgentEvent.ToolApprovalRequested approval) {
+            window.showToolApprovalRequested(
+                    approval.approvalId(),
+                    approval.toolName(),
+                    approval.argumentsJson()
+            );
+            return;
+        }
+        if (event instanceof AgentEvent.ToolApprovalResolved approval) {
+            window.showToolApprovalResolved(
+                    approval.approvalId(),
+                    approval.toolName(),
+                    approval.approved(),
+                    approval.reason()
+            );
+            return;
+        }
         if (event instanceof AgentEvent.ToolCallStart toolCall) {
             window.showToolStart(toolCall.toolCallId(), toolCall.toolName(), toolCall.argumentsJson());
             return;

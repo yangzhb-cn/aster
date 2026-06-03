@@ -89,6 +89,7 @@ public class WebServer implements AutoCloseable {
         server.createContext("/api/messages", this::handleMessageSubmit);
         server.createContext("/api/steer", this::handleSteer);
         server.createContext("/api/stop", this::handleStop);
+        server.createContext("/api/approvals", this::handleApprovals);
         server.createContext("/api/status", this::handleStatus);
         server.createContext("/api/sessions", this::handleSessions);
     }
@@ -173,6 +174,50 @@ public class WebServer implements AutoCloseable {
             return;
         }
         sendJson(exchange, 200, statusPayload());
+    }
+
+    /**
+     * 处理 Web 工具审批。
+     */
+    private void handleApprovals(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, Map.of("error", "Method Not Allowed"));
+            return;
+        }
+
+        String path = exchange.getRequestURI().getPath();
+        Map<?, ?> payload = readPayload(exchange);
+        String approvalId = stringValue(payload, "id");
+        boolean accepted;
+        int count = 0;
+        synchronized (runtimeLock) {
+            if ("/api/approvals/approve".equals(path)) {
+                if (approvalId.isBlank()) {
+                    count = runtime.approveAllTools();
+                    accepted = count > 0;
+                } else {
+                    accepted = runtime.approveTool(approvalId);
+                    count = accepted ? 1 : 0;
+                }
+            } else if ("/api/approvals/deny".equals(path)) {
+                String reason = stringValue(payload, "reason");
+                if (approvalId.isBlank()) {
+                    count = runtime.denyAllTools(reason.isBlank() ? "用户拒绝全部待审批工具" : reason);
+                    accepted = count > 0;
+                } else {
+                    accepted = runtime.denyTool(approvalId, reason);
+                    count = accepted ? 1 : 0;
+                }
+            } else {
+                sendJson(exchange, 404, Map.of("error", "Not Found"));
+                return;
+            }
+        }
+        sendJson(exchange, accepted ? 202 : 404, Map.of(
+                "accepted", accepted,
+                "count", count,
+                "status", statusPayload()
+        ));
     }
 
     /**
@@ -358,6 +403,7 @@ public class WebServer implements AutoCloseable {
             status.put("skillCount", runtime.skillCount());
             status.put("busy", runtime.isBusy());
             status.put("queuedCount", runtime.queuedCount());
+            status.put("pendingApprovals", runtime.pendingToolApprovals());
         }
         status.put("sseClients", clients.size());
         return status;

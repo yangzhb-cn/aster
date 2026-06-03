@@ -359,14 +359,6 @@ public class AgentLoop {
      * 并行执行所有工具调用，并为每个调用写入一条 tool 结果消息。
      */
     private void executeToolCalls(List<ToolCall> toolCalls) throws IOException {
-        for (ToolCall call : toolCalls) {
-            publish(new AgentEvent.ToolCallStart(
-                    call.id(),
-                    call.function().name(),
-                    call.function().argumentsJson()
-            ));
-        }
-
         List<ToolCall> allowedCalls = new ArrayList<>();
         Map<String, ToolResult> blockedResults = new LinkedHashMap<>();
         for (ToolCall call : toolCalls) {
@@ -376,6 +368,11 @@ public class AgentLoop {
                     call
             ));
             if (decision.type() == ToolHookDecisionType.ALLOW) {
+                publish(new AgentEvent.ToolCallStart(
+                        call.id(),
+                        call.function().name(),
+                        call.function().argumentsJson()
+                ));
                 allowedCalls.add(call);
             } else {
                 blockedResults.put(

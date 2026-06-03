@@ -86,10 +86,22 @@ public class TelegramUpdatePoller implements AutoCloseable {
                     /session 查看当前会话
                     /new 新建会话
                     /stop 停止当前任务
+                    /approve [id] 批准工具，省略 id 表示全部批准
+                    /deny [id] [reason] 拒绝工具，省略 id 表示全部拒绝
                     """.stripTrailing());
             case "/session" -> runtimeManager.showSession(message);
             case "/new" -> runtimeManager.newSession(message);
             case "/stop" -> runtimeManager.stop(message);
+            case "/approve" -> runtimeManager.approve(message, commandArgument(text));
+            case "/deny" -> {
+                String rest = commandArgument(text);
+                if (rest.isBlank()) {
+                    runtimeManager.deny(message, "", "");
+                } else {
+                    String[] parts = rest.split("\\s+", 2);
+                    runtimeManager.deny(message, parts[0], parts.length > 1 ? parts[1] : "用户拒绝执行");
+                }
+            }
             default -> botClient.sendMessage(message.chat().id(), "未知命令。发送 /help 查看可用命令。");
         }
     }
@@ -98,6 +110,11 @@ public class TelegramUpdatePoller implements AutoCloseable {
         String head = text.split("\\s+", 2)[0];
         int botSuffix = head.indexOf('@');
         return botSuffix >= 0 ? head.substring(0, botSuffix) : head;
+    }
+
+    private String commandArgument(String text) {
+        String[] parts = text.split("\\s+", 2);
+        return parts.length < 2 ? "" : parts[1].trim();
     }
 
     private void sleepQuietly() {

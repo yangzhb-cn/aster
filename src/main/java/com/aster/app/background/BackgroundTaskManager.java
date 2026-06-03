@@ -22,14 +22,10 @@ public class BackgroundTaskManager implements AutoCloseable {
     }
 
     /**
-     * 启动时恢复所有 enabled 任务。
+     * 启动后台任务扫描器。
      */
-    public void start() throws IOException {
-        for (BackgroundTask task : store.listTasks()) {
-            if (task.enabled()) {
-                scheduler.schedule(task);
-            }
-        }
+    public void start() {
+        scheduler.start();
     }
 
     /**
@@ -37,7 +33,7 @@ public class BackgroundTaskManager implements AutoCloseable {
      */
     public BackgroundTask create(BackgroundTask task) throws IOException {
         store.saveTask(task);
-        scheduler.schedule(task);
+        scheduler.scanNow();
         return task;
     }
 

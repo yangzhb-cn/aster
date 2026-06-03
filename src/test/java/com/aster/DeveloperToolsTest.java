@@ -5,9 +5,10 @@ import com.aster.app.background.BackgroundTaskExecutor;
 import com.aster.app.background.BackgroundTaskManager;
 import com.aster.app.background.BackgroundTaskScheduler;
 import com.aster.app.background.JsonlBackgroundTaskStore;
-import com.aster.app.background.NoopTaskHandler;
+import com.aster.app.background.ReminderTaskHandler;
 import com.aster.app.extension.DeveloperToolExtension;
 import com.aster.app.extension.RuntimeExtensionContext;
+import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
 import com.aster.app.mcp.McpToolExecutor;
@@ -171,13 +172,13 @@ class DeveloperToolsTest {
         );
         BackgroundTaskExecutor executor = new BackgroundTaskExecutor(
                 store,
-                List.of(new NoopTaskHandler()),
+                List.of(new ReminderTaskHandler()),
                 BackgroundTaskEventBus.single(ignored -> {
                 })
         );
         BackgroundTaskManager backgroundTaskManager = new BackgroundTaskManager(
                 store,
-                new BackgroundTaskScheduler(executor)
+                new BackgroundTaskScheduler(store, executor)
         );
         return new RuntimeExtensionContext(
                 objectMapper,
@@ -192,7 +193,8 @@ class DeveloperToolsTest {
                 skillRepository,
                 new MarkdownMemoryStore(tempDir.resolve("memory.md")),
                 new MemoryPromptRenderer("{{memory}}"),
-                backgroundTaskManager
+                backgroundTaskManager,
+                new ToolApprovalManager()
         );
     }
 

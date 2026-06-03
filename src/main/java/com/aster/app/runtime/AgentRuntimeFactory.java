@@ -12,7 +12,8 @@ import com.aster.app.background.BackgroundTaskNotificationHandler;
 import com.aster.app.background.BackgroundTaskScheduler;
 import com.aster.app.background.BackgroundTaskStore;
 import com.aster.app.background.JsonlBackgroundTaskStore;
-import com.aster.app.background.NoopTaskHandler;
+import com.aster.app.background.ReminderTaskHandler;
+import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.extension.RuntimeExtensionContext;
 import com.aster.app.extension.RuntimeExtensionRegistry;
 import com.aster.core.context.ContextBuilder;
@@ -142,12 +143,13 @@ public class AgentRuntimeFactory {
                 objectMapper,
                 notificationSink,
                 List.of(
-                        new NoopTaskHandler(),
+                        new ReminderTaskHandler(),
                         new MemoryExtractionTaskHandler(memoryExtractionAgent)
                 )
         );
         backgroundTaskManager.start();
         HookRegistry hookRegistry = new HookRegistry();
+        ToolApprovalManager toolApprovalManager = new ToolApprovalManager();
 
         RuntimeExtensionContext extensionContext = new RuntimeExtensionContext(
                 objectMapper,
@@ -161,7 +163,8 @@ public class AgentRuntimeFactory {
                 skillRepository,
                 memoryStore,
                 memoryPromptRenderer,
-                backgroundTaskManager
+                backgroundTaskManager,
+                toolApprovalManager
         );
         RuntimeExtensionRegistry extensionRegistry = RuntimeExtensionRegistry.defaults();
         extensionRegistry.registerTools(extensionContext);
@@ -172,6 +175,7 @@ public class AgentRuntimeFactory {
         eventHandlers.add(eventHandler);
         eventHandlers.addAll(extensionRegistry.eventHandlers(extensionContext));
         AgentEventBus eventBus = new AgentEventBus(sessionName, eventHandlers);
+        toolApprovalManager.attachEventBus(eventBus);
         ContextPipeline contextPipeline = new ContextPipeline(
                 sessionStore,
                 new ContextBuilder(
@@ -198,6 +202,7 @@ public class AgentRuntimeFactory {
                 agentLoop,
                 runCoordinator,
                 backgroundTaskManager,
+                toolApprovalManager,
                 parallelToolExecutor,
                 mcpToolExecutor,
                 provider,
@@ -209,8 +214,8 @@ public class AgentRuntimeFactory {
     /**
      * 创建后台任务框架。
      *
-     * <p>后台框架只负责调度、执行记录和事件通知。
-     * 具体动作由 handlers 决定，例如 noop 或长期记忆抽取。</p>
+     * <p>后台框架只负责扫描调度、执行记录和事件通知。
+     * 具体动作由 handlers 决定，例如 reminder 或长期记忆抽取。</p>
      */
     private BackgroundTaskManager createBackgroundTaskManager(
             ObjectMapper objectMapper,
@@ -232,7 +237,7 @@ public class AgentRuntimeFactory {
         );
         return new BackgroundTaskManager(
                 store,
-                new BackgroundTaskScheduler(executor)
+                new BackgroundTaskScheduler(store, executor)
         );
     }
 

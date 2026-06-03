@@ -1,6 +1,7 @@
 package com.aster.app.extension;
 
 import com.aster.app.background.BackgroundTaskManager;
+import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
@@ -33,7 +34,8 @@ public record RuntimeExtensionContext(
         SkillRepository skillRepository,
         MarkdownMemoryStore memoryStore,
         MemoryPromptRenderer memoryPromptRenderer,
-        BackgroundTaskManager backgroundTaskManager
+        BackgroundTaskManager backgroundTaskManager,
+        ToolApprovalManager toolApprovalManager
 ) {
     public RuntimeExtensionContext {
         Objects.requireNonNull(objectMapper);
@@ -48,5 +50,6 @@ public record RuntimeExtensionContext(
         Objects.requireNonNull(memoryStore);
         Objects.requireNonNull(memoryPromptRenderer);
         Objects.requireNonNull(backgroundTaskManager);
+        Objects.requireNonNull(toolApprovalManager);
     }
 }

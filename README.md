@@ -59,6 +59,7 @@ src/main/java/com/aster/
 │   ├── tool/developer/     ls / glob / grep / subagent / web_fetch / web_search 扩展工具
 │   ├── tool/background/    background_task 后台任务管理工具
 │   ├── tool/result/        大工具结果 JSONL 外部卸载
+│   ├── hitl/               bash / write / edit 工具调用人工审批
 │   ├── mcp/                MCP client/server/tool adapter
 │   ├── skill/              Skill 扫描、索引、加载
 │   ├── memory/             长期记忆抽取、Markdown 存储、提醒段落渲染
@@ -78,7 +79,7 @@ src/main/java/com/aster/
 TuiMain / WebMain / TelegramMain
   -> AgentRuntimeFactory
      -> BuiltinTools 注册 read/write/bash/edit
-     -> RuntimeExtensionRegistry 注册 load_skill、开发者工具、后台任务工具、MCP、system-reminder、长期记忆抽取、工具结果卸载、steer
+     -> RuntimeExtensionRegistry 注册 load_skill、开发者工具、后台任务工具、MCP、工具审批、system-reminder、长期记忆抽取、工具结果卸载、steer
   -> AgentRunCoordinator
      -> 空闲输入立即执行
      -> 运行中普通输入进入 follow-up 队列
@@ -95,6 +96,7 @@ TuiMain / WebMain / TelegramMain
      -> AgentLoop 转成 AgentEvent
      -> TuiAgentEventHandler / WebAgentEventHandler 流式刷新界面
      -> TelegramAgentEventHandler 合并最终回答后发回 Telegram
+     -> HookRegistry.BEFORE_TOOL_CALL 对 bash/write/edit 做人工审批
      -> ParallelToolExecutor 并行执行多个 tool_call
      -> HookRegistry.BEFORE_TOOL_RESULT_APPEND 卸载大工具结果
      -> SessionStore 写回 assistant/tool 消息
@@ -114,6 +116,7 @@ RuntimeExtension：
   DeveloperToolExtension  -> 注册 ls/glob/grep/subagent/web_fetch/web_search
   BackgroundTaskToolExtension -> 注册 background_task
   McpToolExtension        -> 加载 workspace/mcp.json 并注册 MCP tools
+  ToolApprovalExtension   -> 注册 bash/write/edit 工具审批 Hook
   SteerExtension          -> 注册运行中引导 Hook
   SystemReminderExtension -> 注册请求前 <system-reminder> 注入 Hook
   MemoryExtension         -> 注册长期记忆抽取 Hook
@@ -124,6 +127,8 @@ SlashCommand：
   /session ...
   /steer ...
   /stop
+  /approve [id]
+  /deny [id] [reason]
 ```
 
 事件定义仍属于 `core/event`，扩展可以增加 `AgentEventHandler` 监听事件，但不替代核心事件协议。
@@ -147,6 +152,7 @@ ProviderStreamEvent
 
 - `AssistantToken`：assistant 正文流式增量。
 - `ReasoningToken`：DeepSeek `reasoning_content` 增量。
+- `ToolApprovalRequested` / `ToolApprovalResolved`：高危工具人工审批状态。
 - `ToolCallStart` / `ToolCallDone`：工具调用状态。
 - `UsageReported`：输入、缓存、输出 token 统计。
 - `ContextBuilt`：上下文压缩前后 token 估算。
@@ -160,7 +166,7 @@ Hook 是“在某个主流程点插入扩展逻辑”，用于改写、阻断或
 | HookPoint | 当前用途 |
 |---|---|
 | `BEFORE_LLM_REQUEST` | 把 Skill 索引、旧对话摘要和长期记忆临时注入最后一条 user 消息开头的 `<system-reminder>` 块。 |
-| `BEFORE_TOOL_CALL` | 预留给工具权限、高危工具审查、HITL。 |
+| `BEFORE_TOOL_CALL` | `ToolApprovalExtension` 对 `bash`、`write`、`edit` 做人工审批。 |
 | `BEFORE_TOOL_RESULT_APPEND` | 大工具结果卸载到 `workspace/artifacts/tool-results/*.jsonl`。 |
 | `AFTER_RUN` | 每轮对话结束后提交长期记忆抽取后台任务。 |
 
@@ -195,6 +201,12 @@ Session 规则：
 - `workspace/sessions/index.json` 保存 `displayName`、创建/更新时间和 `archived` 状态。
 - 新 sessionId 采用 `sess_yyyyMMdd_HHmmss_uid` 形式；displayName 只用于 UI 展示。
 - 删除会话只把索引里的 `archived` 置为 `true`，不删除 JSONL 审计文件。
+
+后台任务规则：
+
+- `workspace/tasks/tasks.jsonl` 保存任务定义，`workspace/tasks/runs.jsonl` 保存每次执行记录。
+- `BackgroundTaskScheduler` 默认每 10 秒扫描一次任务清单和运行记录；可用 `SCHEDULE_INTERVAL_SECONDS` 覆盖。
+- 当前可执行的后台动作是 `reminder` 和 `memory_extract`，没有 `noop` 任务类型。
 
 ## 运行
 
@@ -247,6 +259,7 @@ mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
 `aster2im` 支持把 `.env` 里的 `OWNER_ID` 当作默认 `TELEGRAM_ALLOWED_CHAT_IDS` 使用。
 Telegram 当前使用 long polling，不需要公网 webhook。`TELEGRAM_ALLOWED_CHAT_IDS` 必填，用逗号分隔多个 chatId。
 每个 Telegram chat 会映射到一个 Aster session，当前映射保存在 `workspace/im/telegram-sessions.json`。
+如果需要调整定时任务扫描频率，可以在 `.env` 写 `SCHEDULE_INTERVAL_SECONDS=10`。
 
 也可以用通用 OpenAI-compatible 配置覆盖：
 
@@ -264,4 +277,4 @@ mvn -q exec:java
 mvn test
 ```
 
-当前测试覆盖 AgentLoop、上下文压缩、DeepSeek/OpenAI-compatible parser、MCP、本地 MCP Server、内置工具、开发者扩展工具、后台任务工具、Skill、Session、后台任务、长期记忆、Prompt 和 TUI Markdown 渲染。
+当前测试覆盖 AgentLoop、上下文压缩、DeepSeek/OpenAI-compatible parser、MCP、本地 MCP Server、内置工具、开发者扩展工具、后台任务工具、Telegram IM、Skill、Session、后台任务、长期记忆、Prompt 和 TUI Markdown 渲染。

@@ -360,6 +360,7 @@ textarea:focus {
 .message.system,
 .message.thinking,
 .message.tool,
+.message.approval,
 .message.error {
   justify-items: start;
 }
@@ -424,6 +425,92 @@ textarea:focus {
   border-color: var(--line-strong);
   border-left-color: var(--accent-strong);
   background: #f8faf7;
+}
+
+.message.approval .message-body {
+  width: min(760px, 100%);
+  border-color: #fed7aa;
+  border-left-color: var(--warn);
+  background: #fff7ed;
+}
+
+.approval-card {
+  display: grid;
+  gap: 10px;
+}
+
+.approval-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.approval-title {
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.approval-status {
+  border: 1px solid #fdba74;
+  border-radius: 999px;
+  padding: 2px 8px;
+  color: #9a3412;
+  background: #ffedd5;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.approval-meta {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.approval-args {
+  max-height: 220px;
+  overflow: hidden;
+  margin: 0;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+  color: var(--muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.approval-approve {
+  color: var(--accent-strong);
+  border-color: #a8e3db;
+  background: var(--primary-weak);
+}
+
+.approval-deny {
+  color: var(--danger);
+  border-color: #f0b8b1;
+  background: #fff5f4;
+}
+
+.approval-card.approved .approval-status {
+  color: var(--accent-strong);
+  border-color: #a8e3db;
+  background: var(--primary-weak);
+}
+
+.approval-card.denied .approval-status {
+  color: var(--danger);
+  border-color: #f0b8b1;
+  background: #fff5f4;
 }
 
 .tool-card {

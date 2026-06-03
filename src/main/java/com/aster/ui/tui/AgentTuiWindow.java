@@ -232,6 +232,31 @@ public class AgentTuiWindow implements AutoCloseable {
     }
 
     /**
+     * 显示工具审批请求。
+     */
+    public void showToolApprovalRequested(String approvalId, String toolName, String argumentsJson) {
+        enqueue(() -> {
+            addBlock(new SystemBlock(renderApprovalRequest(approvalId, toolName, argumentsJson)));
+            status = "tool approval required: " + toolName;
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示工具审批结果。
+     */
+    public void showToolApprovalResolved(String approvalId, String toolName, boolean approved, String reason) {
+        enqueue(() -> {
+            String state = approved ? "已批准" : "已拒绝";
+            addBlock(new SystemBlock("工具审批" + state + "：" + toolName + "\n"
+                    + "id=" + approvalId + "\n"
+                    + "reason=" + reason));
+            status = approved ? "tool approved: " + toolName : "tool denied: " + toolName;
+            dirty = true;
+        });
+    }
+
+    /**
      * 更新底部预算行，不把 usage 当作一条对话消息插入历史区。
      */
     public void showUsage(TokenUsage usage, int maxContextTokens) {
@@ -312,6 +337,38 @@ public class AgentTuiWindow implements AutoCloseable {
             status = "error: " + errorMessage;
             dirty = true;
         });
+    }
+
+    private String renderApprovalRequest(String approvalId, String toolName, String argumentsJson) {
+        return """
+                工具等待审批：%s
+                id=%s
+
+                参数：
+                ```json
+                %s
+                ```
+
+                输入 /approve %s 批准，/deny %s 拒绝；不带 id 表示处理全部待审批工具。
+                """.formatted(
+                toolName,
+                approvalId,
+                previewApprovalArguments(argumentsJson),
+                approvalId,
+                approvalId
+        ).stripTrailing();
+    }
+
+    private String previewApprovalArguments(String argumentsJson) {
+        if (argumentsJson == null || argumentsJson.isBlank()) {
+            return "{}";
+        }
+        String value = argumentsJson.strip();
+        int max = 2_000;
+        if (value.length() <= max) {
+            return value;
+        }
+        return value.substring(0, max) + "\n... 已截断 " + value.length() + " 字符";
     }
 
     /**

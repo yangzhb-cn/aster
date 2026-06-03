@@ -9,7 +9,7 @@ import java.util.Map;
  * 后台任务动作。
  *
  * <p>trigger 决定“什么时候执行”，action 决定“执行什么”。
- * 现在已经有 noop 和 memory_extract。后续 notify、tool_call 等动作
+ * 现在已经有 reminder 和 memory_extract。后续 notify、tool_call 等动作
  * 也会继续通过 action.type 分发到不同 handler。</p>
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -18,10 +18,4 @@ public record TaskAction(
         String type,
         Map<String, Object> params
 ) {
-    /**
-     * 创建空动作，方便测试调度框架。
-     */
-    public static TaskAction noop() {
-        return new TaskAction("noop", Map.of());
-    }
 }

@@ -56,6 +56,34 @@ public class TelegramRuntimeManager implements AutoCloseable {
     }
 
     /**
+     * 批准当前 chat 的待审批工具调用。
+     */
+    public synchronized void approve(TelegramMessage message, String approvalId) throws IOException {
+        ChatRuntime chatRuntime = runtimeFor(message);
+        if (approvalId == null || approvalId.isBlank()) {
+            int count = chatRuntime.runtime().approveAllTools();
+            sender.sendMessage(message.chat().id(), count > 0 ? "已批准全部待审批工具：" + count : "当前没有待审批工具。");
+            return;
+        }
+        boolean accepted = chatRuntime.runtime().approveTool(approvalId.trim());
+        sender.sendMessage(message.chat().id(), accepted ? "已批准工具：" + approvalId.trim() : "未找到待审批工具：" + approvalId.trim());
+    }
+
+    /**
+     * 拒绝当前 chat 的待审批工具调用。
+     */
+    public synchronized void deny(TelegramMessage message, String approvalId, String reason) throws IOException {
+        ChatRuntime chatRuntime = runtimeFor(message);
+        if (approvalId == null || approvalId.isBlank()) {
+            int count = chatRuntime.runtime().denyAllTools("用户拒绝全部待审批工具");
+            sender.sendMessage(message.chat().id(), count > 0 ? "已拒绝全部待审批工具：" + count : "当前没有待审批工具。");
+            return;
+        }
+        boolean accepted = chatRuntime.runtime().denyTool(approvalId.trim(), reason);
+        sender.sendMessage(message.chat().id(), accepted ? "已拒绝工具：" + approvalId.trim() : "未找到待审批工具：" + approvalId.trim());
+    }
+
+    /**
      * 为当前 chat 新建一个 session 并切换过去。
      */
     public synchronized void newSession(TelegramMessage message) throws IOException {

@@ -25,6 +25,8 @@ public sealed interface AgentEvent permits
         AgentEvent.MessageFinished,
         AgentEvent.AssistantToken,
         AgentEvent.ReasoningToken,
+        AgentEvent.ToolApprovalRequested,
+        AgentEvent.ToolApprovalResolved,
         AgentEvent.ToolCallStart,
         AgentEvent.ToolCallDone,
         AgentEvent.UsageReported,
@@ -148,6 +150,33 @@ public sealed interface AgentEvent permits
      * 不是宿主程序自己编造的隐藏思维链。</p>
      */
     record ReasoningToken(String text) implements AgentEvent {
+    }
+
+    /**
+     * 工具调用正在等待人工审批。
+     *
+     * <p>argumentsJson 保留模型生成的原始参数，UI 可以截断展示，
+     * 但审批通过后执行的仍然是这份原始参数。</p>
+     */
+    record ToolApprovalRequested(
+            String approvalId,
+            String toolCallId,
+            String toolName,
+            String argumentsJson,
+            String reason
+    ) implements AgentEvent {
+    }
+
+    /**
+     * 工具调用审批已经完成。
+     */
+    record ToolApprovalResolved(
+            String approvalId,
+            String toolCallId,
+            String toolName,
+            boolean approved,
+            String reason
+    ) implements AgentEvent {
     }
 
     /**

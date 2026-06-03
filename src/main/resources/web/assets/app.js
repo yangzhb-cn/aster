@@ -6,6 +6,7 @@ const state = {
   tools: new Map(),
   currentAssistant: null,
   currentReasoning: null,
+  approvals: new Map(),
 };
 const TOOL_PREVIEW_CHAR_LIMIT = 1200;
 const TOOL_PREVIEW_LINE_LIMIT = 12;
@@ -254,6 +255,65 @@ function addToolBlock(payload = {}) {
   updateToolBlock(block, payload, "running");
   scrollToBottom();
   return block;
+}
+
+function addApprovalBlock(payload = {}) {
+  const node = document.createElement("article");
+  node.className = "message approval";
+  node.innerHTML = `
+    <div class="message-header">APPROVAL</div>
+    <div class="message-body">
+      <div class="approval-card pending">
+        <div class="approval-top">
+          <strong class="approval-title"></strong>
+          <span class="approval-status">pending</span>
+        </div>
+        <div class="approval-meta"></div>
+        <pre class="approval-args"><code></code></pre>
+        <div class="approval-actions">
+          <button class="approval-approve" type="button">Approve</button>
+          <button class="approval-deny" type="button">Deny</button>
+        </div>
+      </div>
+    </div>
+  `;
+  const block = {
+    node,
+    card: node.querySelector(".approval-card"),
+    title: node.querySelector(".approval-title"),
+    status: node.querySelector(".approval-status"),
+    meta: node.querySelector(".approval-meta"),
+    argsCode: node.querySelector(".approval-args code"),
+    approve: node.querySelector(".approval-approve"),
+    deny: node.querySelector(".approval-deny"),
+  };
+  block.approve.addEventListener("click", () => resolveApproval(payload.approvalId, true));
+  block.deny.addEventListener("click", () => resolveApproval(payload.approvalId, false));
+  updateApprovalBlock(block, payload);
+  messagesEl.append(node);
+  scrollToBottom();
+  return block;
+}
+
+function updateApprovalBlock(block, payload = {}, resolved = null) {
+  block.title.textContent = `审批工具：${payload.toolName || "tool"}`;
+  block.meta.textContent = `id=${payload.approvalId || ""} · call=${payload.toolCallId || ""}`;
+  block.argsCode.textContent = previewText(formatToolArguments(payload.argumentsJson)).text;
+  if (resolved) {
+    block.card.className = `approval-card ${resolved.approved ? "approved" : "denied"}`;
+    block.status.textContent = resolved.approved ? "approved" : "denied";
+    block.approve.disabled = true;
+    block.deny.disabled = true;
+  }
+}
+
+async function resolveApproval(approvalId, approved) {
+  if (!approvalId) return;
+  try {
+    await postJson(approved ? "/api/approvals/approve" : "/api/approvals/deny", { id: approvalId });
+  } catch (error) {
+    addMessage("error", error.message);
+  }
 }
 
 function updateToolBlock(block, payload = {}, status = "running") {
@@ -548,6 +608,7 @@ function handleAgentEvent(event) {
     state.currentAssistant = null;
     state.currentReasoning = null;
     state.tools.clear();
+    state.approvals.clear();
     state.busy = true;
     return;
   }
@@ -564,6 +625,20 @@ function handleAgentEvent(event) {
   if (type === "ReasoningToken") {
     if (!state.currentReasoning) state.currentReasoning = addMessage("thinking", "");
     updateMessage(state.currentReasoning, state.currentReasoning.text + (payload.text || ""));
+    return;
+  }
+  if (type === "ToolApprovalRequested") {
+    const block = addApprovalBlock(payload);
+    if (payload.approvalId) state.approvals.set(payload.approvalId, block);
+    return;
+  }
+  if (type === "ToolApprovalResolved") {
+    const block = state.approvals.get(payload.approvalId);
+    if (block) {
+      updateApprovalBlock(block, payload, payload);
+    } else {
+      addMessage("system", `工具审批${payload.approved ? "通过" : "拒绝"}：${payload.toolName || ""}`);
+    }
     return;
   }
   if (type === "ToolCallStart") {

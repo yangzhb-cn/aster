@@ -20,12 +20,23 @@ public class TelegramNotificationSink implements NotificationSink {
 
     @Override
     public void backgroundTaskCompleted(TaskRun run) {
-        send("后台任务完成：" + run.taskName());
+        send("后台任务完成：" + run.taskName() + detail(run));
     }
 
     @Override
     public void backgroundTaskFailed(TaskRun run) {
-        send("后台任务失败：" + run.taskName());
+        send("后台任务失败：" + run.taskName() + detail(run));
+    }
+
+    private String detail(TaskRun run) {
+        String message = run.message();
+        if (message == null || message.isBlank()) {
+            return "";
+        }
+        if (message.length() > 800) {
+            message = message.substring(0, 800) + "\n... 已截断 " + message.length() + " 字符";
+        }
+        return "\n" + message;
     }
 
     private void send(String text) {

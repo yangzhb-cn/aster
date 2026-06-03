@@ -53,13 +53,24 @@ public class TelegramAgentEventHandler implements AgentEventHandler {
             sender.sendMessage(chatId, "已进入队列，当前队列：" + queued.queueSize());
             return;
         }
+        if (event instanceof AgentEvent.ToolApprovalRequested approval) {
+            sender.sendMessage(chatId, renderApprovalRequest(approval));
+            return;
+        }
+        if (event instanceof AgentEvent.ToolApprovalResolved approval) {
+            sender.sendMessage(chatId, "工具审批" + (approval.approved() ? "通过" : "拒绝")
+                    + "：" + approval.toolName()
+                    + "\nid=" + approval.approvalId()
+                    + "\nreason=" + approval.reason());
+            return;
+        }
         if (event instanceof AgentEvent.ToolCallStart tool) {
             sender.sendMessage(chatId, "工具调用开始：" + tool.toolName());
             return;
         }
         if (event instanceof AgentEvent.ToolCallDone tool) {
             String status = tool.success() ? "完成" : "失败";
-            String preview = tool.success() ? "" : "\n" + preview(tool.text());
+            String preview = shouldShowToolPreview(tool) ? "\n" + preview(tool.text()) : "";
             sender.sendMessage(chatId, "工具调用" + status + "：" + tool.toolName() + " · " + tool.elapsedMillis() + "ms" + preview);
             return;
         }
@@ -102,5 +113,18 @@ public class TelegramAgentEventHandler implements AgentEventHandler {
             return text;
         }
         return text.substring(0, TOOL_PREVIEW_LIMIT) + "\n... 已截断 " + text.length() + " 字符";
+    }
+
+    private boolean shouldShowToolPreview(AgentEvent.ToolCallDone tool) {
+        return !tool.success() || "bash".equals(tool.toolName());
+    }
+
+    private String renderApprovalRequest(AgentEvent.ToolApprovalRequested approval) {
+        return "工具等待审批：" + approval.toolName()
+                + "\nid=" + approval.approvalId()
+                + "\n参数：\n" + preview(approval.argumentsJson())
+                + "\n\n/approve " + approval.approvalId() + " 批准"
+                + "\n/deny " + approval.approvalId() + " 拒绝"
+                + "\n省略 id 表示处理全部待审批工具。";
     }
 }

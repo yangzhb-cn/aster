@@ -17,8 +17,9 @@ import java.util.Objects;
 /**
  * background_task 工具。
  *
- * <p>它把后台任务管理能力暴露给 Agent：创建一次性任务、创建延迟任务、
- * 创建固定间隔任务、列出任务、取消任务。真正执行什么仍由 BackgroundTaskHandler 决定。</p>
+ * <p>它把后台任务和定时调度能力暴露给 Agent：立即执行、延迟执行、
+ * 固定间隔重复执行、列出任务、取消任务。trigger 只决定什么时候执行，
+ * 真正执行什么仍由 BackgroundTaskHandler 根据 taskType 决定。</p>
  */
 public class BackgroundTaskTool {
     private static final int MAX_LIST_TASKS = 100;
@@ -36,26 +37,36 @@ public class BackgroundTaskTool {
                 "background_task",
                 "Background Task",
                 """
-                        管理 Aster 后台任务。支持：
-                        - create_immediate：立即执行一次
-                        - create_delay：延迟执行一次
-                        - create_interval：按固定间隔重复执行
+                        管理 Aster 后台任务和定时任务。适合用来安排“稍后提醒我”“每隔一段时间执行一次”等非阻塞任务，不要用 bash sleep 来模拟定时。
+
+                        支持的 action：
+                        - create_immediate：创建后由后台调度器尽快执行一次
+                        - create_delay：创建后等待 delaySeconds 秒再执行一次
+                        - create_interval：创建后按 intervalSeconds 秒固定间隔重复执行
                         - list：列出任务定义
                         - cancel：取消任务
 
-                        注意：taskType 必须有已注册的 BackgroundTaskHandler 支持，例如 noop 或 memory_extract。
+                        taskType 表示到期后真正执行的动作，必须有已注册的 BackgroundTaskHandler 支持。
+                        当前可用 taskType：
+                        - reminder：到期后发送提醒，params.text 是提醒内容
+                        - memory_extract：提交长期记忆抽取任务，一般由系统自动使用
+
+                        触发规则：
+                        - create_delay 必须传 delaySeconds
+                        - create_interval 必须传 intervalSeconds，必须大于 0
+                        - 定时任务由后台扫描器周期检查任务清单，不阻塞当前对话
                         """.strip(),
                 objectSchema(
                         Map.of(
-                                "action", stringSchema("操作类型：create_immediate/create_delay/create_interval/list/cancel"),
-                                "name", stringSchema("任务展示名，创建任务时可选"),
-                                "taskType", stringSchema("后台任务动作类型，例如 noop 或 memory_extract"),
+                                "action", stringSchema("操作类型：create_immediate/create_delay/create_interval/list/cancel。创建定时提醒优先用 create_delay 或 create_interval"),
+                                "name", stringSchema("任务展示名，创建任务时可选，例如 10 秒后提醒"),
+                                "taskType", stringSchema("任务到期后执行的动作类型。当前常用 reminder，系统任务可用 memory_extract"),
                                 "params", Map.of(
                                         "type", "object",
-                                        "description", "传给 TaskAction 的参数对象"
+                                        "description", "传给任务 handler 的参数对象。reminder 需要 text 字段，例如 {\"text\":\"提醒内容\"}"
                                 ),
-                                "delaySeconds", numberSchema("延迟秒数，仅 create_delay 使用"),
-                                "intervalSeconds", numberSchema("间隔秒数，仅 create_interval 使用，必须大于 0"),
+                                "delaySeconds", numberSchema("延迟秒数，仅 create_delay 使用。例如 60 表示 60 秒后执行"),
+                                "intervalSeconds", numberSchema("固定间隔秒数，仅 create_interval 使用，必须大于 0。例如 3600 表示每小时执行一次"),
                                 "taskId", stringSchema("任务 id，仅 cancel 使用")
                         ),
                         List.of("action")

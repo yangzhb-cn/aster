@@ -2,11 +2,14 @@ package com.aster.app.runtime;
 
 import com.aster.core.agent.AgentLoop;
 import com.aster.app.background.BackgroundTaskManager;
+import com.aster.app.hitl.ToolApprovalManager;
+import com.aster.app.hitl.model.ToolApprovalRequest;
 import com.aster.llm.model.OpenAiCompatibleProvider;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.core.tool.ParallelToolExecutor;
 
 import java.io.IOException;
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -19,6 +22,7 @@ public class AgentRuntime implements AutoCloseable {
     private final AgentLoop agentLoop;
     private final AgentRunCoordinator runCoordinator;
     private final BackgroundTaskManager backgroundTaskManager;
+    private final ToolApprovalManager toolApprovalManager;
     private final ParallelToolExecutor parallelToolExecutor;
     private final McpToolExecutor mcpToolExecutor;
     private final OpenAiCompatibleProvider provider;
@@ -29,6 +33,7 @@ public class AgentRuntime implements AutoCloseable {
             AgentLoop agentLoop,
             AgentRunCoordinator runCoordinator,
             BackgroundTaskManager backgroundTaskManager,
+            ToolApprovalManager toolApprovalManager,
             ParallelToolExecutor parallelToolExecutor,
             McpToolExecutor mcpToolExecutor,
             OpenAiCompatibleProvider provider,
@@ -38,6 +43,7 @@ public class AgentRuntime implements AutoCloseable {
         this.agentLoop = Objects.requireNonNull(agentLoop);
         this.runCoordinator = Objects.requireNonNull(runCoordinator);
         this.backgroundTaskManager = Objects.requireNonNull(backgroundTaskManager);
+        this.toolApprovalManager = Objects.requireNonNull(toolApprovalManager);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
         this.mcpToolExecutor = Objects.requireNonNull(mcpToolExecutor);
         this.provider = Objects.requireNonNull(provider);
@@ -70,7 +76,44 @@ public class AgentRuntime implements AutoCloseable {
      * 请求当前 run 停止。
      */
     public boolean stop() {
-        return runCoordinator.stop();
+        boolean stopped = runCoordinator.stop();
+        boolean canceledApprovals = toolApprovalManager.cancelAll("用户请求停止");
+        return stopped || canceledApprovals;
+    }
+
+    /**
+     * 批准一个待审批工具调用。
+     */
+    public boolean approveTool(String approvalId) {
+        return toolApprovalManager.approve(approvalId);
+    }
+
+    /**
+     * 拒绝一个待审批工具调用。
+     */
+    public boolean denyTool(String approvalId, String reason) {
+        return toolApprovalManager.deny(approvalId, reason);
+    }
+
+    /**
+     * 批准当前全部待审批工具调用。
+     */
+    public int approveAllTools() {
+        return toolApprovalManager.approveAll();
+    }
+
+    /**
+     * 拒绝当前全部待审批工具调用。
+     */
+    public int denyAllTools(String reason) {
+        return toolApprovalManager.denyAll(reason);
+    }
+
+    /**
+     * 当前待审批工具调用列表。
+     */
+    public List<ToolApprovalRequest> pendingToolApprovals() {
+        return toolApprovalManager.pendingApprovals();
     }
 
     /**
@@ -120,6 +163,7 @@ public class AgentRuntime implements AutoCloseable {
      */
     @Override
     public void close() {
+        toolApprovalManager.cancelAll("runtime closing");
         runCoordinator.close();
         backgroundTaskManager.close();
         parallelToolExecutor.close();

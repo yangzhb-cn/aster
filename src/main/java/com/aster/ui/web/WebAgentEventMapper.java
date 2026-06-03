@@ -82,6 +82,18 @@ public final class WebAgentEventMapper {
             payload.put("text", value.text());
         } else if (event instanceof AgentEvent.ReasoningToken value) {
             payload.put("text", value.text());
+        } else if (event instanceof AgentEvent.ToolApprovalRequested value) {
+            payload.put("approvalId", value.approvalId());
+            payload.put("toolCallId", value.toolCallId());
+            payload.put("toolName", value.toolName());
+            payload.put("argumentsJson", value.argumentsJson());
+            payload.put("reason", value.reason());
+        } else if (event instanceof AgentEvent.ToolApprovalResolved value) {
+            payload.put("approvalId", value.approvalId());
+            payload.put("toolCallId", value.toolCallId());
+            payload.put("toolName", value.toolName());
+            payload.put("approved", value.approved());
+            payload.put("reason", value.reason());
         } else if (event instanceof AgentEvent.ToolCallStart value) {
             payload.put("toolCallId", value.toolCallId());
             payload.put("toolName", value.toolName());

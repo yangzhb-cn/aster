@@ -5,13 +5,14 @@ import com.aster.app.background.BackgroundTaskExecutor;
 import com.aster.app.background.BackgroundTaskManager;
 import com.aster.app.background.BackgroundTaskScheduler;
 import com.aster.app.background.JsonlBackgroundTaskStore;
-import com.aster.app.background.NoopTaskHandler;
+import com.aster.app.background.ReminderTaskHandler;
 import com.aster.app.background.model.BackgroundTask;
 import com.aster.app.background.model.TaskRun;
 import com.aster.app.background.model.TaskRunStatus;
 import com.aster.app.background.model.TaskStatus;
 import com.aster.app.extension.BackgroundTaskToolExtension;
 import com.aster.app.extension.RuntimeExtensionContext;
+import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
 import com.aster.app.mcp.McpToolExecutor;
@@ -75,7 +76,8 @@ class BackgroundTaskToolTest {
             ToolResult create = execute(runtime.registry(), Map.of(
                     "action", "create_interval",
                     "name", "测试 interval",
-                    "taskType", "noop",
+                    "taskType", "reminder",
+                    "params", Map.of("text", "interval reminder"),
                     "intervalSeconds", 60
             ));
             String taskId = runtime.store().listTasks().get(0).id();
@@ -107,14 +109,40 @@ class BackgroundTaskToolTest {
             ToolResult create = execute(runtime.registry(), Map.of(
                     "action", "create_immediate",
                     "name", "测试 immediate",
-                    "taskType", "noop"
+                    "taskType", "reminder",
+                    "params", Map.of("text", "立即提醒")
             ));
             List<TaskRun> runs = waitForRuns(runtime.store(), 1);
 
             assertFalse(create.error());
             assertEquals(1, runs.size());
             assertEquals(TaskRunStatus.SUCCESS, runs.get(0).status());
-            assertEquals("noop task completed", runs.get(0).message());
+            assertEquals("立即提醒", runs.get(0).message());
+        } finally {
+            runtime.manager().close();
+        }
+    }
+
+    /**
+     * 验证 reminder 动作可以通过 background_task 创建并产出提醒正文。
+     */
+    @Test
+    void createsReminderTaskAndRecordsReminderText() throws Exception {
+        TestRuntime runtime = createRuntime();
+
+        try {
+            ToolResult create = execute(runtime.registry(), Map.of(
+                    "action", "create_immediate",
+                    "name", "测试提醒",
+                    "taskType", "reminder",
+                    "params", Map.of("text", "该看结果了")
+            ));
+            List<TaskRun> runs = waitForRuns(runtime.store(), 1);
+
+            assertFalse(create.error());
+            assertEquals(1, runs.size());
+            assertEquals(TaskRunStatus.SUCCESS, runs.get(0).status());
+            assertEquals("该看结果了", runs.get(0).message());
         } finally {
             runtime.manager().close();
         }
@@ -128,12 +156,12 @@ class BackgroundTaskToolTest {
         );
         BackgroundTaskExecutor executor = new BackgroundTaskExecutor(
                 store,
-                List.of(new NoopTaskHandler()),
+                List.of(new ReminderTaskHandler()),
                 BackgroundTaskEventBus.noop()
         );
         BackgroundTaskManager manager = new BackgroundTaskManager(
                 store,
-                new BackgroundTaskScheduler(executor)
+                new BackgroundTaskScheduler(store, executor)
         );
         ToolRegistry registry = new ToolRegistry(new LocalToolExecutor(objectMapper), new McpToolExecutor());
         new BackgroundTaskToolExtension().registerTools(extensionContext(registry, manager));
@@ -155,7 +183,8 @@ class BackgroundTaskToolTest {
                 SkillRepository.scan(tempDir.resolve("skills")),
                 new MarkdownMemoryStore(tempDir.resolve("memory.md")),
                 new MemoryPromptRenderer("{{memory}}"),
-                manager
+                manager,
+                new ToolApprovalManager()
         );
     }
 

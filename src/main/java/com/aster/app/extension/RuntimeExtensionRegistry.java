@@ -29,6 +29,7 @@ public class RuntimeExtensionRegistry {
                 new DeveloperToolExtension(),
                 new BackgroundTaskToolExtension(),
                 new McpToolExtension(),
+                new ToolApprovalExtension(),
                 new SteerExtension(),
                 new SystemReminderExtension(),
                 new MemoryExtension(),

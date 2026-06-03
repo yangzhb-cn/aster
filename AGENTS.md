@@ -4,7 +4,7 @@
 
 ## 项目定位
 
-Aster 是一个教学版 Java Agent MVP，用来演示 AgentLoop、流式 LLM、上下文压缩、工具调用、MCP、Skill、Session 持久化、长期记忆、后台任务和 TUI 的最小可运行架构。
+Aster 是一个教学版 Java Agent MVP，用来演示 AgentLoop、流式 LLM、上下文压缩、工具调用、HITL 工具审批、MCP、Skill、Session 持久化、长期记忆、后台任务和 TUI/Web/IM 的最小可运行架构。
 
 它不是完整产品。做改动时优先保持结构清晰、代码少、教学可读，不要为了“以后可能需要”提前堆复杂抽象。
 
@@ -86,6 +86,7 @@ src/main/java/com/aster/
   -> BEFORE_LLM_REQUEST Hook
   -> 流式请求 LLM
   -> 解析 assistant/tool_calls
+  -> BEFORE_TOOL_CALL Hook
   -> 并行执行工具
   -> BEFORE_TOOL_RESULT_APPEND Hook
   -> 写回 assistant/tool 消息
@@ -189,6 +190,7 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 - `DeveloperToolExtension`：注册 `ls`、`glob`、`grep`、`subagent`、`web_fetch`、`web_search`。
 - `BackgroundTaskToolExtension`：注册 `background_task` 后台任务管理工具。
 - `McpToolExtension`：读取 `workspace/mcp.json` 并注册 MCP tools。
+- `ToolApprovalExtension`：注册 `bash`、`write`、`edit` 工具调用人工审批 Hook。
 - `SteerExtension`：注册运行中引导 Hook。
 - `SystemReminderExtension`：注册请求前 `<system-reminder>` 注入 Hook。
 - `MemoryExtension`：注册长期记忆抽取 Hook。
@@ -216,6 +218,26 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 新增工具默认走 RuntimeExtension；只有确实属于 Agent 宿主底座能力时，才考虑放入 `app/tool/builtin/`。
 
 路径类工具当前教学版不做复杂权限系统。后续若要做权限，走 `BEFORE_TOOL_CALL` Hook 或独立审批能力，不要在工具里散落临时判断。
+
+### HITL 工具审批
+
+HITL 审批放在 `app/hitl/`，通过 `ToolApprovalExtension` 注册到 `BEFORE_TOOL_CALL`。
+
+当前默认审批工具：
+
+- `bash`
+- `write`
+- `edit`
+
+规则：
+
+- 不要在 `BashTool`、`WriteTool`、`EditTool` 里硬编码审批逻辑。
+- 审批请求通过 `ToolApprovalRequested` 事件发给 TUI/Web/Telegram，必须展示工具名、审批 id 和原始参数。
+- 审批通过后继续执行原始 `tool_call_id` 和原始参数，不重新构造 tool_call。
+- 审批拒绝后仍要写回一条 `role=tool` 错误结果，保持 tool_call/tool_result 协议完整。
+- `/approve <id>` 批准单个工具；`/approve` 不带 id 表示批准全部待审批工具。
+- `/deny <id> [reason]` 拒绝单个工具；`/deny` 不带 id 表示拒绝全部待审批工具。
+- `/stop` 必须释放正在等待的审批，避免 Agent run 卡住。
 
 ### 开发者扩展工具
 
@@ -249,7 +271,8 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 
 - 工具只调用 `BackgroundTaskManager`，不要直接调用 `BackgroundTaskScheduler` 或 `BackgroundTaskExecutor`。
 - `background_task` 只管理任务定义：创建 immediate/delay/interval、列出任务、取消任务。
-- 真正执行什么由 `TaskAction.type` 对应的 `BackgroundTaskHandler` 决定。
+- 真正执行什么由 `TaskAction.type` 对应的 `BackgroundTaskHandler` 决定；当前支持 `reminder`、`memory_extract`。
+- 不要新增 `noop` 类任务；没有真实动作的任务不应该暴露给 Agent。
 - 新增一种后台动作时，先新增 `BackgroundTaskHandler`，再让 `background_task` 创建对应 `TaskAction`。
 
 ### 工具结果外部卸载
@@ -326,6 +349,8 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 - 后台任务完成后不要打断当前主回答。
 - TUI 当前只更新底部状态栏。
 - 任务记录写入 `workspace/tasks/*.jsonl`，保留审计痕迹。
+- `BackgroundTaskScheduler` 按 `SCHEDULE_INTERVAL_SECONDS` 周期扫描任务清单和运行记录，默认 10 秒。
+- `immediate` 创建后会触发一次即时扫描；`delay` 到 `createdAt + delaySeconds` 后执行一次；`interval` 按上次完成时间加 `intervalSeconds` 重复执行。
 - 后续定时提醒、记忆抽取、索引构建等都应该作为后台任务 handler 扩展。
 
 ## UI 规则
@@ -343,7 +368,7 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 - TUI 只消费 `AgentEventEnvelope`，不要直接侵入 AgentLoop。
 - Web 对话输入只通过 `AgentRuntime.submit/steer/stop`，session CRUD 通过 `SessionIndex` 管理元信息，通过 `JsonlSessionStore` 读取历史。
 - Web 静态资源放在 `src/main/resources/web/`，不要引入前端构建链路。
-- Telegram 只通过 `AgentRuntime.submit/stop` 输入，通过 `TelegramAgentEventHandler` 消费 `AgentEventEnvelope` 输出。
+- Telegram 只通过 `AgentRuntime.submit/stop/approve/deny` 输入，通过 `TelegramAgentEventHandler` 消费 `AgentEventEnvelope` 输出。
 - Telegram 必须使用 `TELEGRAM_ALLOWED_CHAT_IDS` 白名单；chat 到 session 的当前映射保存在 `workspace/im/telegram-sessions.json`。
 - 输出采用 Markdown-ish 渲染，支持标题、列表、表格、代码块、引用、分割线等基础格式。
 - 终端渲染对 emoji 兼容性有限，默认不要依赖 emoji 表达语义。

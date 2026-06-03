@@ -13,10 +13,11 @@ import com.googlecode.lanterna.input.KeyType;
 import com.googlecode.lanterna.screen.Screen;
 import com.aster.app.runtime.AgentRuntime;
 import com.aster.app.runtime.AgentRuntimeFactory;
-import com.aster.app.runtime.WorkspacePaths;
-import com.aster.core.session.SessionCatalog;
-import com.aster.core.session.model.SessionSummary;
 import com.aster.llm.model.TokenUsage;
+import com.aster.ui.tui.command.SlashCommand;
+import com.aster.ui.tui.command.SlashCommandContext;
+import com.aster.ui.tui.command.SlashCommandOption;
+import com.aster.ui.tui.command.SlashCommandRegistry;
 import com.aster.ui.tui.model.AssistantBlock;
 import com.aster.ui.tui.model.ErrorBlock;
 import com.aster.ui.tui.model.ReasoningBlock;
@@ -31,16 +32,11 @@ import com.aster.ui.tui.render.MarkdownRenderer;
 import com.aster.ui.tui.render.TerminalTextSanitizer;
 
 import java.io.IOException;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * 最小化的手绘 TUI。
@@ -53,17 +49,6 @@ public class AgentTuiWindow implements AutoCloseable {
     private static final TypeReference<Map<String, Object>> MAP_TYPE = new TypeReference<>() {
     };
     private static final int MAX_BLOCKS = 500;
-    private static final DateTimeFormatter SESSION_TIME_FORMATTER = DateTimeFormatter
-            .ofPattern("yyyy-MM-dd HH:mm:ss")
-            .withZone(ZoneId.systemDefault());
-    private static final List<SlashCommandOption> SLASH_COMMAND_OPTIONS = List.of(
-            new SlashCommandOption("/exit", "/exit", "退出 TUI", false),
-            new SlashCommandOption("/session list", "/session list", "列出本地会话", false),
-            new SlashCommandOption("/session new", "/session new", "创建自动命名新会话", false),
-            new SlashCommandOption("/session new <name>", "/session new ", "创建指定名称新会话", true),
-            new SlashCommandOption("/session use <name>", "/session use ", "切换到已有会话", true),
-            new SlashCommandOption("/session current", "/session current", "显示当前会话", false)
-    );
 
     private static final TextColor BG = new TextColor.RGB(37, 37, 37);
     private static final TextColor TOOL_BG = new TextColor.RGB(32, 47, 36);
@@ -80,9 +65,8 @@ public class AgentTuiWindow implements AutoCloseable {
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final MarkdownRenderer markdownRenderer = new MarkdownRenderer();
     private final TerminalTextSanitizer textSanitizer = new TerminalTextSanitizer();
-    private final ExecutorService agentExecutor = Executors.newSingleThreadExecutor();
+    private final SlashCommandRegistry slashCommandRegistry = SlashCommandRegistry.defaults();
     private final ConcurrentLinkedQueue<Runnable> uiUpdates = new ConcurrentLinkedQueue<>();
-    private final AtomicBoolean running = new AtomicBoolean(false);
     private final List<UiBlock> blocks = new ArrayList<>();
     private final StringBuilder input = new StringBuilder();
 
@@ -110,6 +94,13 @@ public class AgentTuiWindow implements AutoCloseable {
      */
     public void startRuntime(String sessionName) throws IOException {
         replaceRuntime(sessionName, true);
+    }
+
+    /**
+     * 给斜杠命令切换运行时。
+     */
+    public void switchRuntime(String sessionName, boolean clearBlocks) throws IOException {
+        replaceRuntime(sessionName, clearBlocks);
     }
 
     private void replaceRuntime(String sessionName, boolean clearBlocks) throws IOException {
@@ -141,6 +132,29 @@ public class AgentTuiWindow implements AutoCloseable {
      */
     public void setStatus(String status) {
         this.status = Objects.requireNonNull(status);
+        dirty = true;
+    }
+
+    /**
+     * 当前运行时，可能尚未初始化。
+     */
+    public AgentRuntime runtime() {
+        return runtime;
+    }
+
+    /**
+     * 追加一条系统块。
+     */
+    public void addSystemBlock(String text) {
+        addBlock(new SystemBlock(text));
+        dirty = true;
+    }
+
+    /**
+     * 追加一条错误块。
+     */
+    public void addErrorBlock(String text) {
+        addBlock(new ErrorBlock(text));
         dirty = true;
     }
 
@@ -240,6 +254,67 @@ public class AgentTuiWindow implements AutoCloseable {
     }
 
     /**
+     * 显示 run 开始执行。
+     */
+    public void showRunStarted() {
+        enqueue(() -> {
+            status = "running";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 follow-up 已经排队。
+     */
+    public void showRunQueued(int queueSize) {
+        enqueue(() -> {
+            status = "queued follow-up | queued=" + queueSize;
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示运行中引导已经接收。
+     */
+    public void showSteerReceived(int pendingCount) {
+        enqueue(() -> {
+            status = "steer accepted | pending=" + pendingCount;
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示停止请求已经接收。
+     */
+    public void showStopRequested() {
+        enqueue(() -> {
+            status = "stop requested";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示当前 run 已经停止。
+     */
+    public void showRunStopped() {
+        enqueue(() -> {
+            status = "stopped";
+            dirty = true;
+        });
+    }
+
+    /**
+     * 显示 run 执行失败。
+     */
+    public void showRunFailed(String errorMessage) {
+        enqueue(() -> {
+            addBlock(new ErrorBlock(errorMessage));
+            status = "error: " + errorMessage;
+            dirty = true;
+        });
+    }
+
+    /**
      * 后台任务成功完成时，只更新底部状态栏计数。
      */
     public void showBackgroundTaskCompleted(String taskName) {
@@ -273,7 +348,6 @@ public class AgentTuiWindow implements AutoCloseable {
         if (runtime != null) {
             runtime.close();
         }
-        agentExecutor.shutdownNow();
     }
 
     private void processInput() throws IOException {
@@ -397,48 +471,35 @@ public class AgentTuiWindow implements AutoCloseable {
             dirty = true;
             return;
         }
-        if (!running.compareAndSet(false, true)) {
-            status = "agent is already running";
-            addBlock(new ErrorBlock("agent is already running"));
-            dirty = true;
-            return;
+        boolean wasBusy = runtime.isBusy();
+        try {
+            runtime.submit(userInput);
+            status = wasBusy ? "queued follow-up" : "running";
+        } catch (RuntimeException e) {
+            addBlock(new ErrorBlock(e.getMessage()));
+            status = "submit failed";
         }
-
-        status = "running";
         dirty = true;
-
-        agentExecutor.submit(() -> {
-            try {
-                runtime.run(userInput);
-            } catch (Exception e) {
-                enqueue(() -> {
-                    addBlock(new ErrorBlock(e.getMessage()));
-                    status = "error: " + e.getMessage();
-                    dirty = true;
-                });
-            } finally {
-                running.set(false);
-            }
-        });
     }
 
     /**
      * 处理 TUI 内置斜杠命令。
      */
     private boolean handleSlashCommand(String userInput) {
-        if ("/exit".equals(userInput)) {
-            input.setLength(0);
-            status = "exiting";
-            dirty = true;
-            close();
-            return true;
+        SlashCommand command = slashCommandRegistry.find(userInput).orElse(null);
+        if (command == null) {
+            return false;
         }
-        if (userInput.equals("/session") || userInput.startsWith("/session ")) {
-            input.setLength(0);
-            handleSessionCommand(userInput);
-            return true;
+
+        input.setLength(0);
+        try {
+            command.handle(new SlashCommandContext(this), userInput);
+        } catch (Exception e) {
+            addErrorBlock(e.getMessage());
+            status = "command failed";
         }
-        return false;
+        dirty = true;
+        return true;
     }
 
     /**
@@ -450,29 +511,11 @@ public class AgentTuiWindow implements AutoCloseable {
             return List.of();
         }
 
-        List<SlashCommandOption> matches = new ArrayList<>();
-        for (SlashCommandOption option : SLASH_COMMAND_OPTIONS) {
-            if (matchesSlashCommand(option, typed)) {
-                matches.add(option);
-            }
-        }
+        List<SlashCommandOption> matches = new ArrayList<>(slashCommandRegistry.visibleOptions(typed));
         if (selectedSlashCommandIndex >= matches.size()) {
             selectedSlashCommandIndex = Math.max(0, matches.size() - 1);
         }
         return matches;
-    }
-
-    private boolean matchesSlashCommand(SlashCommandOption option, String typed) {
-        if (typed.equals("/")) {
-            return true;
-        }
-        if (option.requiresInput()) {
-            // 需要参数的命令只在“还没开始输入参数”时展示。
-            // 例如 /session use 仍然显示；/session use demo 就交给 Enter 正常执行。
-            return typed.length() <= option.insertText().length()
-                    && option.insertText().startsWith(typed);
-        }
-        return option.insertText().startsWith(typed);
     }
 
     private int clampedSlashCommandIndex(List<SlashCommandOption> options) {
@@ -483,120 +526,19 @@ public class AgentTuiWindow implements AutoCloseable {
     }
 
     /**
-     * 处理 session 命令。
+     * 确认当前没有正在执行的 Agent run。
      */
-    private void handleSessionCommand(String userInput) {
-        String[] parts = userInput.trim().split("\\s+");
-        String subcommand = parts.length >= 2 ? parts[1] : "help";
-
-        try {
-            switch (subcommand) {
-                case "list" -> showSessionList();
-                case "new" -> createSession(parts);
-                case "use" -> useSession(parts);
-                case "current" -> showCurrentSession();
-                default -> showSessionHelp();
-            }
-        } catch (Exception e) {
-            addBlock(new ErrorBlock(e.getMessage()));
-            status = "session command failed";
-            dirty = true;
-        }
-    }
-
-    private void showSessionList() throws IOException {
-        List<SessionSummary> sessions = SessionCatalog.list(WorkspacePaths.SESSIONS);
-        if (sessions.isEmpty()) {
-            addBlock(new SystemBlock("sessions: empty"));
-            status = "no sessions";
-            dirty = true;
-            return;
-        }
-
-        String current = currentSessionName();
-        StringBuilder text = new StringBuilder("sessions:\n");
-        for (SessionSummary session : sessions) {
-            String marker = session.name().equals(current) ? "* " : "  ";
-            text.append(marker)
-                    .append(session.name())
-                    .append(" | ")
-                    .append(formatBytes(session.sizeBytes()))
-                    .append(" | ")
-                    .append(SESSION_TIME_FORMATTER.format(session.modifiedAt()))
-                    .append("\n");
-        }
-        addBlock(new SystemBlock(text.toString().stripTrailing()));
-        status = "session list";
-        dirty = true;
-    }
-
-    private void createSession(String[] parts) throws IOException {
-        ensureAgentIsIdle();
-        String sessionName = parts.length >= 3
-                ? parts[2]
-                : SessionCatalog.generateName(WorkspacePaths.SESSIONS);
-        SessionCatalog.requireValidName(sessionName);
-        if (SessionCatalog.exists(WorkspacePaths.SESSIONS, sessionName)) {
-            throw new IOException("session already exists: " + sessionName + "，使用 /session use " + sessionName + " 切换");
-        }
-
-        replaceRuntime(sessionName, true);
-        status = "new session: " + sessionName;
-        dirty = true;
-    }
-
-    private void useSession(String[] parts) throws IOException {
-        ensureAgentIsIdle();
-        if (parts.length < 3) {
-            throw new IOException("usage: /session use <name>");
-        }
-        String sessionName = parts[2];
-        SessionCatalog.requireValidName(sessionName);
-        if (!SessionCatalog.exists(WorkspacePaths.SESSIONS, sessionName)) {
-            throw new IOException("session not found: " + sessionName);
-        }
-
-        replaceRuntime(sessionName, true);
-        status = "session: " + sessionName;
-        dirty = true;
-    }
-
-    private void showCurrentSession() {
-        addBlock(new SystemBlock("current session: " + currentSessionName()));
-        status = "session current";
-        dirty = true;
-    }
-
-    private void showSessionHelp() {
-        addBlock(new SystemBlock("""
-                session commands:
-                /session list
-                /session new [name]
-                /session use <name>
-                /session current
-                """.stripTrailing()));
-        status = "session help";
-        dirty = true;
-    }
-
-    private void ensureAgentIsIdle() throws IOException {
-        if (running.get()) {
+    public void ensureAgentIsIdle() throws IOException {
+        if (runtime != null && runtime.isBusy()) {
             throw new IOException("agent is running, wait for current request to finish");
         }
     }
 
-    private String currentSessionName() {
+    /**
+     * 当前 session 名称。
+     */
+    public String currentSessionName() {
         return runtime == null ? "(none)" : runtime.sessionName();
-    }
-
-    private String formatBytes(long bytes) {
-        if (bytes < 1024) {
-            return bytes + " B";
-        }
-        if (bytes < 1024 * 1024) {
-            return String.format("%.1f KB", bytes / 1024.0);
-        }
-        return String.format("%.1f MB", bytes / 1024.0 / 1024.0);
     }
 
     /**
@@ -1139,15 +1081,6 @@ public class AgentTuiWindow implements AutoCloseable {
             Thread.currentThread().interrupt();
             close();
         }
-    }
-
-    /**
-     * 斜杠菜单里的一个可选命令。
-     *
-     * <p>label 用来显示，insertText 用来写回输入框。
-     * requiresInput=true 表示这个命令还需要用户继续输入参数，不能选中后立刻执行。</p>
-     */
-    private record SlashCommandOption(String label, String insertText, String description, boolean requiresInput) {
     }
 
     /**

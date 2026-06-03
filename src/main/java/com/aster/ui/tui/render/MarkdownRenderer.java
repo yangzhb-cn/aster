@@ -3,6 +3,7 @@ package com.aster.ui.tui.render;
 import com.googlecode.lanterna.TerminalTextUtils;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -37,7 +38,7 @@ public class MarkdownRenderer {
             String trimmed = rawLine.trim();
 
             if (trimmed.startsWith("```")) {
-                flushTable(result, tableBuffer);
+                flushTable(result, tableBuffer, width);
                 inCodeBlock = !inCodeBlock;
                 continue;
             }
@@ -52,11 +53,11 @@ public class MarkdownRenderer {
                 continue;
             }
 
-            flushTable(result, tableBuffer);
+            flushTable(result, tableBuffer, width);
             appendNormalMarkdownLine(result, rawLine, trimmed, width);
         }
 
-        flushTable(result, tableBuffer);
+        flushTable(result, tableBuffer, width);
         return result;
     }
 
@@ -108,7 +109,7 @@ public class MarkdownRenderer {
         return trimmed.startsWith("|") && trimmed.endsWith("|") && trimmed.indexOf('|', 1) > 0;
     }
 
-    private void flushTable(List<MarkdownLine> result, List<String> tableBuffer) {
+    private void flushTable(List<MarkdownLine> result, List<String> tableBuffer, int width) {
         if (tableBuffer.isEmpty()) {
             return;
         }
@@ -124,21 +125,24 @@ public class MarkdownRenderer {
         }
 
         int columnCount = rows.stream().mapToInt(List::size).max().orElse(0);
-        int[] widths = new int[columnCount];
+        int[] naturalWidths = new int[columnCount];
         for (List<String> row : rows) {
             for (int i = 0; i < row.size(); i++) {
-                widths[i] = Math.max(widths[i], TerminalTextUtils.getColumnWidth(row.get(i)));
+                naturalWidths[i] = Math.max(naturalWidths[i], TerminalTextUtils.getColumnWidth(row.get(i)));
             }
         }
+        int[] widths = fitTableWidths(naturalWidths, width);
 
-        result.add(new MarkdownLine(tableBorder(widths), MarkdownLineType.TABLE));
+        result.add(new MarkdownLine(tableBorder(widths, '┌', '┬', '┐'), MarkdownLineType.TABLE));
         for (int rowIndex = 0; rowIndex < rows.size(); rowIndex++) {
-            result.add(new MarkdownLine(formatTableRow(rows.get(rowIndex), widths), MarkdownLineType.TABLE));
-            if (rowIndex == 0 && rows.size() > 1) {
-                result.add(new MarkdownLine(tableBorder(widths), MarkdownLineType.TABLE));
+            for (String line : formatWrappedTableRow(rows.get(rowIndex), widths)) {
+                result.add(new MarkdownLine(line, MarkdownLineType.TABLE));
+            }
+            if (rowIndex < rows.size() - 1) {
+                result.add(new MarkdownLine(tableBorder(widths, '├', '┼', '┤'), MarkdownLineType.TABLE));
             }
         }
-        result.add(new MarkdownLine(tableBorder(widths), MarkdownLineType.TABLE));
+        result.add(new MarkdownLine(tableBorder(widths, '└', '┴', '┘'), MarkdownLineType.TABLE));
     }
 
     private List<String> parseTableRow(String line) {
@@ -157,22 +161,136 @@ public class MarkdownRenderer {
         return !row.isEmpty() && row.stream().allMatch(cell -> cell.matches(":?-{3,}:?"));
     }
 
-    private String formatTableRow(List<String> row, int[] widths) {
-        StringBuilder result = new StringBuilder("|");
-        for (int i = 0; i < widths.length; i++) {
-            String cell = i < row.size() ? row.get(i) : "";
-            result.append(' ')
-                    .append(padRight(cell, widths[i]))
-                    .append(" |");
+    /**
+     * 根据 TUI 可用宽度压缩表格列宽，避免整行表格被终端外层折断。
+     */
+    private int[] fitTableWidths(int[] naturalWidths, int width) {
+        int columnCount = naturalWidths.length;
+        if (columnCount == 0) {
+            return naturalWidths;
         }
-        return result.toString();
+        if (tableWidth(naturalWidths) <= width) {
+            return naturalWidths;
+        }
+
+        int contentBudget = Math.max(columnCount, width - 1 - 3 * columnCount);
+        int minWidth = contentBudget >= columnCount * 3 ? 3 : 1;
+        int[] widths = new int[columnCount];
+        for (int i = 0; i < columnCount; i++) {
+            widths[i] = Math.min(Math.max(naturalWidths[i], 1), minWidth);
+        }
+
+        int remaining = contentBudget - Arrays.stream(widths).sum();
+        while (remaining > 0) {
+            int target = widestDeficitColumn(naturalWidths, widths);
+            if (target < 0) {
+                break;
+            }
+            widths[target]++;
+            remaining--;
+        }
+        return widths;
     }
 
-    private String tableBorder(int[] widths) {
-        StringBuilder result = new StringBuilder("+");
-        for (int width : widths) {
-            result.append("-".repeat(width + 2)).append('+');
+    /**
+     * 找出最需要继续分配宽度的列。
+     */
+    private int widestDeficitColumn(int[] naturalWidths, int[] widths) {
+        int target = -1;
+        int largestDeficit = 0;
+        for (int i = 0; i < naturalWidths.length; i++) {
+            int deficit = naturalWidths[i] - widths[i];
+            if (deficit > largestDeficit) {
+                largestDeficit = deficit;
+                target = i;
+            }
         }
+        return target;
+    }
+
+    /**
+     * 计算当前列宽对应的整张表格终端列宽。
+     */
+    private int tableWidth(int[] widths) {
+        return 1 + Arrays.stream(widths).map(width -> width + 3).sum();
+    }
+
+    /**
+     * 把一行 Markdown 表格渲染成一行或多行 TUI 表格文本。
+     */
+    private List<String> formatWrappedTableRow(List<String> row, int[] widths) {
+        List<List<String>> cells = new ArrayList<>();
+        int rowHeight = 1;
+        for (int i = 0; i < widths.length; i++) {
+            String cell = i < row.size() ? row.get(i) : "";
+            List<String> wrapped = wrapCell(cell, widths[i]);
+            cells.add(wrapped);
+            rowHeight = Math.max(rowHeight, wrapped.size());
+        }
+
+        List<String> lines = new ArrayList<>();
+        for (int lineIndex = 0; lineIndex < rowHeight; lineIndex++) {
+            StringBuilder line = new StringBuilder("│");
+            for (int columnIndex = 0; columnIndex < widths.length; columnIndex++) {
+                List<String> cellLines = cells.get(columnIndex);
+                String cell = lineIndex < cellLines.size() ? cellLines.get(lineIndex) : "";
+                line.append(' ')
+                        .append(padRight(cell, widths[columnIndex]))
+                        .append(" │");
+            }
+            lines.add(line.toString());
+        }
+        return lines;
+    }
+
+    /**
+     * 按终端列宽折行单元格内容。
+     */
+    private List<String> wrapCell(String value, int width) {
+        if (value == null || value.isEmpty()) {
+            return List.of("");
+        }
+
+        List<String> lines = new ArrayList<>();
+        StringBuilder current = new StringBuilder();
+        int currentWidth = 0;
+        int index = 0;
+        while (index < value.length()) {
+            int codePoint = value.codePointAt(index);
+            String text = new String(Character.toChars(codePoint));
+            int textWidth = TerminalTextUtils.getColumnWidth(text);
+            if (currentWidth > 0 && currentWidth + textWidth > width) {
+                lines.add(current.toString());
+                current.setLength(0);
+                currentWidth = 0;
+            }
+
+            current.append(text);
+            currentWidth += textWidth;
+
+            if (currentWidth >= width) {
+                lines.add(current.toString());
+                current.setLength(0);
+                currentWidth = 0;
+            }
+            index += Character.charCount(codePoint);
+        }
+        if (!current.isEmpty()) {
+            lines.add(current.toString());
+        }
+        return lines.isEmpty() ? List.of("") : lines;
+    }
+
+    /**
+     * 渲染表格边框或行分隔线。
+     */
+    private String tableBorder(int[] widths, char left, char middle, char right) {
+        StringBuilder result = new StringBuilder();
+        result.append(left);
+        for (int width : widths) {
+            result.append("─".repeat(width + 2)).append(middle);
+        }
+        result.setCharAt(result.length() - 1, right);
         return result.toString();
     }
 

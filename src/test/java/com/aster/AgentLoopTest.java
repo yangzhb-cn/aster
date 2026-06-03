@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.aster.core.event.AgentEventBus;
 import com.aster.core.agent.AgentLoop;
+import com.aster.core.agent.control.AgentRunControl;
 import com.aster.core.event.model.AgentEvent;
 import com.aster.core.event.model.AgentEventEnvelope;
 import com.aster.core.context.ContextBuilder;
@@ -591,6 +592,110 @@ class AgentLoopTest {
                 .findFirst()
                 .orElseThrow();
         assertEquals(0, requestStarted.toolCount());
+    }
+
+    /**
+     * 验证 stop 信号会停止流式 run，并把已经输出的 assistant 文本保存下来。
+     */
+    @Test
+    void stopSignalKeepsPartialAssistantTextAsStoppedRun() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        ToolRegistry toolRegistry = new ToolRegistry(
+                new LocalToolExecutor(objectMapper),
+                new McpToolExecutor()
+        );
+        AgentRunControl control = new AgentRunControl();
+        List<AgentEvent> events = new ArrayList<>();
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            handler.onEvent(textEvent("partial"));
+            control.requestStop();
+            handler.onEvent(textEvent(""));
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                "fake-model",
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                eventBus(events),
+                4
+        );
+
+        assertEquals("partial", loop.run("hello", control));
+        assertEquals("partial", sessionStore.loadMessages().get(1).content());
+        assertTrue(events.stream().anyMatch(event -> event instanceof AgentEvent.RunStopped));
+        assertTrue(events.stream().anyMatch(event ->
+                event instanceof AgentEvent.TurnFinished turnFinished
+                        && "stopped".equals(turnFinished.reason())
+        ));
+        assertTrue(events.stream().noneMatch(event -> event instanceof AgentEvent.RunFailed));
+    }
+
+    /**
+     * 验证 before_llm_request Hook 可以消费当前 run 的 steer 引导。
+     */
+    @Test
+    void beforeLlmRequestHookCanInjectSteerFromRunControl() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        ToolRegistry toolRegistry = new ToolRegistry(
+                new LocalToolExecutor(objectMapper),
+                new McpToolExecutor()
+        );
+        AgentRunControl control = new AgentRunControl();
+        control.addSteer("改用中文简短总结");
+        List<List<Message>> capturedRequests = new ArrayList<>();
+
+        HookRegistry hookRegistry = HookRegistry.empty();
+        hookRegistry.register(
+                AgentHookPoints.BEFORE_LLM_REQUEST,
+                context -> {
+                    List<String> steers = context.control().drainSteers();
+                    if (steers.isEmpty()) {
+                        return context;
+                    }
+                    List<Message> messages = new ArrayList<>(context.messages());
+                    messages.add(Message.user("steer:" + String.join("\n", steers)));
+                    return context.withMessages(messages);
+                }
+        );
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            capturedRequests.add(request.messages());
+            handler.onEvent(textEvent("answer"));
+            handler.onDone();
+        };
+
+        AgentLoop loop = new AgentLoop(
+                new OpenAiCompatibleProvider("fake", "http://localhost", "test-key", "fake-model"),
+                sessionStore,
+                new ContextBuilder(
+                        new SimpleTokenEstimator(),
+                        new TranscriptSummarizer(1_000),
+                        ContextOptions.defaults()
+                ),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(2)),
+                hookRegistry,
+                AgentEventBus.noop("test"),
+                4
+        );
+
+        assertEquals("answer", loop.run("hello", control));
+        assertEquals(0, control.pendingSteerCount());
+        assertTrue(capturedRequests.getFirst().stream().anyMatch(message ->
+                "user".equals(message.role()) && message.content().contains("steer:改用中文简短总结")
+        ));
     }
 
     /**

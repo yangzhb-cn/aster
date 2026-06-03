@@ -176,6 +176,25 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 
 ## App 能力层
 
+### Runtime Extension
+
+运行时可扩展能力放在 `app/extension/`，用于把能力注册到现有系统里，不直接改 AgentLoop。
+
+当前默认扩展：
+
+- `SkillToolExtension`：注册 `load_skill` 工具。
+- `McpToolExtension`：读取 `workspace/mcp.json` 并注册 MCP tools。
+- `MemoryExtension`：注册长期记忆注入和抽取 Hook。
+- `ToolResultExtension`：注册大工具结果卸载 Hook。
+- `SteerExtension`：注册运行中引导 Hook。
+
+规则：
+
+- `AgentRuntimeFactory` 只负责创建基础对象、注册四个底座工具、应用 RuntimeExtension。
+- 新增非底座工具、Hook、EventHandler 时，优先新增 `AsterRuntimeExtension` 实现。
+- 不要为了新增一个可选能力继续堆大 `AgentRuntimeFactory`。
+- RuntimeExtension 只做注册，不替代 `AgentLoop`、`ContextPipeline`、`SessionStore`。
+
 ### 内置工具
 
 内置工具放在 `app/tool/builtin/`：
@@ -184,9 +203,11 @@ Session 是可回溯、可分支、可恢复、可审计的原始对话历史。
 - `write`
 - `bash`
 - `edit`
-- `load_skill`
+
+这四个是固定底座工具，由 `BuiltinTools` 直接注册。不要把 `load_skill`、MCP 或后续新工具混回基础内置工具集合。
 
 每个工具一个类，实现统一工具接口，最后统一注册到 `ToolRegistry`。不要把多个工具写进一个大类。
+新增工具默认走 RuntimeExtension；只有确实属于 Agent 宿主底座能力时，才考虑放入 `app/tool/builtin/`。
 
 路径类工具当前教学版不做复杂权限系统。后续若要做权限，走 `BEFORE_TOOL_CALL` Hook 或独立审批能力，不要在工具里散落临时判断。
 
@@ -212,6 +233,7 @@ MCP 适配放在 `app/mcp/`。
 - 通过 JSON-RPC 协议适配为普通 Tool。
 
 是否安装具体 MCP 由 `workspace/mcp.json` 决定。项目本身只提供适配框架，不内置第三方 MCP。
+MCP 工具注册入口是 `McpToolExtension`，不要把 MCP 加载逻辑重新写回 `AgentRuntimeFactory`。
 
 ### Skill
 
@@ -223,6 +245,7 @@ Skill 是渐进式加载，不是真正运行时插件系统。
 - 只把 Skill 的 name/description 注入 system prompt。
 - 需要完整内容时，由 LLM 调用 `load_skill` 加载。
 - 不要启动时把所有 Skill 全文塞进上下文。
+- `load_skill` 由 `SkillToolExtension` 注册，不属于四个基础内置工具。
 
 ### Prompt
 
@@ -273,6 +296,7 @@ Prompt 放在 `src/main/resources/prompts/`，由 `PromptLoader` 读取。
 - 输出采用 Markdown-ish 渲染，支持标题、列表、表格、代码块、引用、分割线等基础格式。
 - 终端渲染对 emoji 兼容性有限，默认不要依赖 emoji 表达语义。
 - `/` 命令保持克制，新增命令前先确认是否真的必要。
+- 斜杠命令放在 `ui/tui/command/`，实现 `SlashCommand` 并注册到 `SlashCommandRegistry`；不要继续在 `AgentTuiWindow` 里堆 if/switch。
 - Web UI 后续应复用同一套 event handler 思路，不另起一套 Agent 逻辑。
 
 ## 代码风格
@@ -343,10 +367,11 @@ workspace/
 
 1. 模型供应商差异：放 `llm/`，输出统一 `ProviderStreamEvent`。
 2. Agent 主流程必经步骤：放 `core/stage/`。
-3. 主流程前后扩展：放 `core/hook/` 的 HookPoint，并在 `app/runtime` 注册实现。
+3. 主流程前后扩展：放 `core/hook/` 的 HookPoint，并通过 `app/extension/` 注册实现。
 4. 外部可观察状态：发布 `AgentEvent`，由 UI/Web/日志消费。
-5. 工具能力：实现 Tool，并注册到 `ToolRegistry`。
-6. 具体业务能力：放 `app/` 对应子包。
-7. 展示变化：放 `ui/`，消费事件，不改 AgentLoop。
+5. 工具能力：四个底座工具放 `app/tool/builtin/`；其他工具通过 RuntimeExtension 注册到 `ToolRegistry`。
+6. TUI 斜杠命令：放 `ui/tui/command/`，不要塞回 `AgentTuiWindow`。
+7. 具体业务能力：放 `app/` 对应子包，并通过 RuntimeExtension 接入。
+8. 展示变化：放 `ui/`，消费事件，不改 AgentLoop。
 
 如果不确定，优先保持核心链路不变，把新逻辑做成 app 层能力，通过 Hook/Event/Tool 接入。

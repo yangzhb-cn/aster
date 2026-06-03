@@ -59,6 +59,20 @@ public class AssistantMessageBuilder {
         return Message.assistant(content.toString(), reasoningText);
     }
 
+    /**
+     * 构造用户停止时可以安全保存的部分 assistant 文本。
+     *
+     * <p>这里故意忽略尚未完成的 tool_call 增量，避免把半截工具协议写入 session。</p>
+     */
+    public Message buildPartialTextMessage() {
+        if (content.isEmpty() && reasoningContent.isEmpty()) {
+            return null;
+        }
+        String text = content.isEmpty() ? null : content.toString();
+        String reasoningText = reasoningContent.isEmpty() ? null : reasoningContent.toString();
+        return Message.assistant(text == null ? "" : text, reasoningText);
+    }
+
     private void appendToolCallDelta(ToolCallDelta part) {
         toolCalls
                 .computeIfAbsent(part.index(), ignored -> new ToolCallBuilder())

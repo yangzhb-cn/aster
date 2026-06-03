@@ -17,6 +17,7 @@ import java.util.Objects;
  */
 public class AgentRuntime implements AutoCloseable {
     private final AgentLoop agentLoop;
+    private final AgentRunCoordinator runCoordinator;
     private final BackgroundTaskManager backgroundTaskManager;
     private final ParallelToolExecutor parallelToolExecutor;
     private final McpToolExecutor mcpToolExecutor;
@@ -26,6 +27,7 @@ public class AgentRuntime implements AutoCloseable {
 
     public AgentRuntime(
             AgentLoop agentLoop,
+            AgentRunCoordinator runCoordinator,
             BackgroundTaskManager backgroundTaskManager,
             ParallelToolExecutor parallelToolExecutor,
             McpToolExecutor mcpToolExecutor,
@@ -34,6 +36,7 @@ public class AgentRuntime implements AutoCloseable {
             int skillCount
     ) {
         this.agentLoop = Objects.requireNonNull(agentLoop);
+        this.runCoordinator = Objects.requireNonNull(runCoordinator);
         this.backgroundTaskManager = Objects.requireNonNull(backgroundTaskManager);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
         this.mcpToolExecutor = Objects.requireNonNull(mcpToolExecutor);
@@ -47,6 +50,41 @@ public class AgentRuntime implements AutoCloseable {
      */
     public String run(String userInput) throws IOException {
         return agentLoop.run(userInput);
+    }
+
+    /**
+     * 提交用户输入。运行中提交会进入 follow-up 队列。
+     */
+    public void submit(String userInput) {
+        runCoordinator.submit(userInput);
+    }
+
+    /**
+     * 向当前 run 发送运行中引导。
+     */
+    public boolean steer(String text) {
+        return runCoordinator.steer(text);
+    }
+
+    /**
+     * 请求当前 run 停止。
+     */
+    public boolean stop() {
+        return runCoordinator.stop();
+    }
+
+    /**
+     * 判断当前是否有正在执行或等待执行的输入。
+     */
+    public boolean isBusy() {
+        return runCoordinator.isBusy();
+    }
+
+    /**
+     * 返回 follow-up 队列长度。
+     */
+    public int queuedCount() {
+        return runCoordinator.queuedCount();
     }
 
     /**
@@ -82,6 +120,7 @@ public class AgentRuntime implements AutoCloseable {
      */
     @Override
     public void close() {
+        runCoordinator.close();
         backgroundTaskManager.close();
         parallelToolExecutor.close();
         mcpToolExecutor.close();

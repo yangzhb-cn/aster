@@ -25,6 +25,30 @@ public class TuiAgentEventHandler implements AgentEventHandler {
     @Override
     public void onEvent(AgentEventEnvelope envelope) {
         AgentEvent event = envelope.event();
+        if (event instanceof AgentEvent.RunStarted) {
+            window.showRunStarted();
+            return;
+        }
+        if (event instanceof AgentEvent.RunFailed failed) {
+            window.showRunFailed(failed.errorMessage());
+            return;
+        }
+        if (event instanceof AgentEvent.RunQueued queued) {
+            window.showRunQueued(queued.queueSize());
+            return;
+        }
+        if (event instanceof AgentEvent.SteerReceived steer) {
+            window.showSteerReceived(steer.pendingCount());
+            return;
+        }
+        if (event instanceof AgentEvent.StopRequested) {
+            window.showStopRequested();
+            return;
+        }
+        if (event instanceof AgentEvent.RunStopped) {
+            window.showRunStopped();
+            return;
+        }
         if (event instanceof AgentEvent.AssistantToken token) {
             window.appendAssistantToken(token.text());
             return;

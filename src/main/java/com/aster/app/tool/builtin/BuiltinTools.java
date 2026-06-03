@@ -1,10 +1,8 @@
 package com.aster.app.tool.builtin;
 
-import com.aster.app.skill.SkillRepository;
 import com.aster.core.tool.ToolRegistry;
 
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -27,18 +25,6 @@ public final class BuiltinTools {
     }
 
     /**
-     * 注册基础内置工具，并在存在 Skill 时额外注册 load_skill。
-     *
-     * <p>load_skill 属于 Skill 适配层的一部分，但执行上仍然是本地工具，
-     * 所以最终也统一走 ToolRegistry.registerLocal。</p>
-     */
-    public static void registerAll(ToolRegistry toolRegistry, Path workingDirectory, SkillRepository skillRepository) {
-        for (BuiltinTool tool : defaultTools(workingDirectory, skillRepository)) {
-            tool.registerTo(toolRegistry);
-        }
-    }
-
-    /**
      * 创建默认内置工具列表。
      */
     public static List<BuiltinTool> defaultTools(Path workingDirectory) {
@@ -50,14 +36,4 @@ public final class BuiltinTools {
         );
     }
 
-    /**
-     * 创建带 Skill 适配能力的默认内置工具列表。
-     */
-    public static List<BuiltinTool> defaultTools(Path workingDirectory, SkillRepository skillRepository) {
-        List<BuiltinTool> tools = new ArrayList<>(defaultTools(workingDirectory));
-        if (!skillRepository.isEmpty()) {
-            tools.add(new LoadSkillTool(workingDirectory, skillRepository));
-        }
-        return List.copyOf(tools);
-    }
 }

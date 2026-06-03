@@ -12,6 +12,10 @@ public sealed interface AgentEvent permits
         AgentEvent.RunStarted,
         AgentEvent.RunFinished,
         AgentEvent.RunFailed,
+        AgentEvent.RunQueued,
+        AgentEvent.SteerReceived,
+        AgentEvent.StopRequested,
+        AgentEvent.RunStopped,
         AgentEvent.TurnStarted,
         AgentEvent.TurnFinished,
         AgentEvent.ContextBuilt,
@@ -43,6 +47,30 @@ public sealed interface AgentEvent permits
      * 一次用户输入异常结束。
      */
     record RunFailed(String errorMessage) implements AgentEvent {
+    }
+
+    /**
+     * 新用户输入已经进入 follow-up 队列。
+     */
+    record RunQueued(String userInput, int queueSize) implements AgentEvent {
+    }
+
+    /**
+     * 运行中引导已经被当前 run 接收。
+     */
+    record SteerReceived(String text, int pendingCount) implements AgentEvent {
+    }
+
+    /**
+     * 用户已经请求停止当前 run。
+     */
+    record StopRequested() implements AgentEvent {
+    }
+
+    /**
+     * 当前 run 已经在安全点停止。
+     */
+    record RunStopped(String finalText) implements AgentEvent {
     }
 
     /**

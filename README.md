@@ -44,7 +44,7 @@ src/main/java/com/aster/
 │   └── model/              ChatRequest / Message / ToolCall / ProviderStreamEvent / TokenUsage
 │
 ├── core/                   Agent 核心生命周期
-│   ├── agent/              AgentLoop / AssistantMessageBuilder
+│   ├── agent/              AgentLoop / AssistantMessageBuilder / run 控制信号
 │   ├── event/              AgentEventBus / AgentEventHandler / AgentEventEnvelope
 │   ├── hook/               HookPoint / HookHandler / HookRegistry / AgentHookPoints
 │   ├── stage/              Stage / StagePipeline / 内置必经流程
@@ -53,8 +53,9 @@ src/main/java/com/aster/
 │   └── tool/               ToolHandler / ToolExecutor / ToolRegistry / ParallelToolExecutor
 │
 ├── app/                    具体能力实现和运行时装配
-│   ├── runtime/            AgentRuntimeFactory，把 core + app + llm 装配起来
-│   ├── tool/builtin/       read / write / bash / edit / load_skill
+│   ├── runtime/            AgentRuntimeFactory / AgentRunCoordinator，把 core + app + llm 装配起来
+│   ├── extension/          RuntimeExtension，把可选 Tool / Hook / EventHandler 注册进运行时
+│   ├── tool/builtin/       read / write / bash / edit 四个固定底座工具
 │   ├── tool/result/        大工具结果 JSONL 外部卸载
 │   ├── mcp/                MCP client/server/tool adapter
 │   ├── skill/              Skill 扫描、索引、加载
@@ -64,7 +65,7 @@ src/main/java/com/aster/
 │   └── prompt/             resources/prompts/*.md 加载
 │
 └── ui/
-    └── tui/                Lanterna 终端 UI
+    └── tui/                Lanterna 终端 UI，command/ 注册斜杠命令
 ```
 
 ## 主流程
@@ -72,12 +73,19 @@ src/main/java/com/aster/
 ```text
 TuiMain
   -> AgentRuntimeFactory
+     -> BuiltinTools 注册 read/write/bash/edit
+     -> RuntimeExtensionRegistry 注册 load_skill、MCP、长期记忆、工具结果卸载、steer
+  -> AgentRunCoordinator
+     -> 空闲输入立即执行
+     -> 运行中普通输入进入 follow-up 队列
+     -> /steer 写入当前 run 控制信号
+     -> /stop 请求当前 run 在安全点停止
   -> AgentLoop
      -> SessionStore 记录用户输入
      -> ContextPipeline 构造本轮 LLM 上下文
         -> LoadSessionMessagesStage 读取完整 session 历史
         -> ContextCompressionStage 压缩旧 turn 并校验工具协议
-     -> HookRegistry.BEFORE_LLM_REQUEST 注入长期记忆
+     -> HookRegistry.BEFORE_LLM_REQUEST 注入长期记忆 / steer 引导
      -> StreamingChatClient 发起 SSE 请求
      -> OpenAiCompatibleStreamParser 转成 ProviderStreamEvent
      -> AgentLoop 转成 AgentEvent
@@ -87,6 +95,30 @@ TuiMain
      -> SessionStore 写回 assistant/tool 消息
      -> HookRegistry.AFTER_RUN 提交后台记忆抽取任务
 ```
+
+## 扩展注册
+
+新增能力优先通过注册进入现有系统，而不是修改 AgentLoop：
+
+```text
+固定底座工具：
+  read / write / bash / edit
+
+RuntimeExtension：
+  SkillToolExtension      -> 注册 load_skill
+  McpToolExtension        -> 加载 workspace/mcp.json 并注册 MCP tools
+  MemoryExtension         -> 注册长期记忆注入和抽取 Hook
+  ToolResultExtension     -> 注册大工具结果卸载 Hook
+  SteerExtension          -> 注册运行中引导 Hook
+
+SlashCommand：
+  /exit
+  /session ...
+  /steer ...
+  /stop
+```
+
+事件定义仍属于 `core/event`，扩展可以增加 `AgentEventHandler` 监听事件，但不替代核心事件协议。
 
 ## Event / Hook / Stage
 
@@ -110,6 +142,7 @@ ProviderStreamEvent
 - `ToolCallStart` / `ToolCallDone`：工具调用状态。
 - `UsageReported`：输入、缓存、输出 token 统计。
 - `ContextBuilt`：上下文压缩前后 token 估算。
+- `RunQueued` / `SteerReceived` / `StopRequested` / `RunStopped`：运行中控制状态通知。
 - `Done`：一次用户请求结束。
 
 ### Hook

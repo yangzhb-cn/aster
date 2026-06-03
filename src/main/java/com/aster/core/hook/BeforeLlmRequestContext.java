@@ -1,15 +1,18 @@
 package com.aster.core.hook;
 
+import com.aster.core.agent.control.AgentRunControl;
 import com.aster.llm.model.Message;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 /**
  * LLM 请求前 Hook 上下文。
  *
  * <p>messages 是当前即将发给模型的消息列表。tools 是当前暴露给模型的工具 Schema。
- * Hook 可以返回新上下文，用于长期记忆注入、临时引导、工具隐藏、权限策略等场景。</p>
+ * control 是当前 run 的控制信号。Hook 可以返回新上下文，用于长期记忆注入、
+ * 运行中引导、工具隐藏、权限策略等场景。</p>
  */
 public record BeforeLlmRequestContext(
         String sessionName,
@@ -17,10 +20,12 @@ public record BeforeLlmRequestContext(
         int round,
         String model,
         int maxContextTokens,
+        AgentRunControl control,
         List<Message> messages,
         List<Map<String, Object>> tools
 ) {
     public BeforeLlmRequestContext {
+        control = Objects.requireNonNull(control);
         messages = List.copyOf(messages);
         tools = List.copyOf(tools);
     }
@@ -35,6 +40,7 @@ public record BeforeLlmRequestContext(
                 round,
                 model,
                 maxContextTokens,
+                control,
                 newMessages,
                 tools
         );
@@ -53,6 +59,7 @@ public record BeforeLlmRequestContext(
                 round,
                 model,
                 maxContextTokens,
+                control,
                 messages,
                 newTools
         );

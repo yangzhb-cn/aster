@@ -2,6 +2,8 @@ package com.aster.core.agent;
 
 import com.aster.core.event.AgentEventBus;
 import com.aster.core.event.model.AgentEvent;
+import com.aster.core.agent.control.AgentRunControl;
+import com.aster.core.agent.control.AgentStopException;
 import com.aster.llm.model.Message;
 import com.aster.llm.model.OpenAiCompatibleProvider;
 import com.aster.llm.model.ToolCall;
@@ -184,6 +186,17 @@ public class AgentLoop {
      * 执行一次用户请求，直到模型返回最终答案。
      */
     public String run(String userInput) throws IOException {
+        return run(userInput, new AgentRunControl());
+    }
+
+    /**
+     * 使用指定控制信号执行一次用户请求。
+     *
+     * <p>control 只影响当前 run：运行中引导会在 LLM 请求前由 Hook 消费，
+     * stop 请求会在 AgentLoop 的安全点转成用户主动停止。</p>
+     */
+    public String run(String userInput, AgentRunControl control) throws IOException {
+        Objects.requireNonNull(control);
         eventBus.beginRun();
         publish(new AgentEvent.RunStarted(userInput));
         sessionStore.recordRunStarted(userInput);
@@ -193,9 +206,20 @@ public class AgentLoop {
             publish(new AgentEvent.MessageStarted(0, "user"));
             sessionStore.append(Message.user(userInput));
             publish(new AgentEvent.MessageFinished(0, "user", false));
-            String answer = continueUntilFinal();
+            String answer = continueUntilFinal(control);
             sessionStore.recordRunFinished(answer);
             publish(new AgentEvent.RunFinished(answer));
+            hookRegistry.fireQuietly(AgentHookPoints.AFTER_RUN, new AfterRunContext(
+                    eventBus.sessionName(),
+                    eventBus.currentRunId(),
+                    userInput,
+                    answer
+            ));
+            return answer;
+        } catch (AgentStopException e) {
+            String answer = e.partialText();
+            sessionStore.recordRunFinished(answer);
+            publish(new AgentEvent.RunStopped(answer));
             hookRegistry.fireQuietly(AgentHookPoints.AFTER_RUN, new AfterRunContext(
                     eventBus.sessionName(),
                     eventBus.currentRunId(),
@@ -217,9 +241,10 @@ public class AgentLoop {
     /**
      * 持续进行“模型 -> 工具 -> 模型”循环，直到没有新的工具调用。
      */
-    private String continueUntilFinal() throws IOException {
+    private String continueUntilFinal(AgentRunControl control) throws IOException {
         for (int round = 0; round < maxToolRounds; round++) {
             int roundNumber = round + 1;
+            checkStop(control);
             publish(new AgentEvent.TurnStarted(roundNumber));
 
             // 每次请求 LLM 之前都必须经过内置 ContextPipeline。
@@ -232,6 +257,7 @@ public class AgentLoop {
                     context.afterTokens(),
                     context.maxContextTokens()
             ));
+            checkStop(control);
             List<Map<String, Object>> tools = toolRegistry.toLlmToolSchemas();
             BeforeLlmRequestContext hookContext = hookRegistry.apply(AgentHookPoints.BEFORE_LLM_REQUEST, new BeforeLlmRequestContext(
                     eventBus.sessionName(),
@@ -239,11 +265,13 @@ public class AgentLoop {
                     roundNumber,
                     model,
                     context.maxContextTokens(),
+                    control,
                     context.messages(),
                     tools
             ));
             List<Message> requestMessages = hookContext.messages();
             List<Map<String, Object>> requestTools = hookContext.tools();
+            checkStop(control);
             publish(new AgentEvent.LlmRequestStarted(
                     roundNumber,
                     model,
@@ -263,7 +291,20 @@ public class AgentLoop {
                     reasoningEffort
             );
 
-            Message assistant = streamAssistantMessage(request, context.maxContextTokens(), roundNumber);
+            Message assistant;
+            try {
+                assistant = streamAssistantMessage(request, context.maxContextTokens(), roundNumber, control);
+            } catch (AgentStopException e) {
+                publish(new AgentEvent.LlmRequestFinished(roundNumber));
+                Message partialAssistant = e.partialAssistant();
+                if (partialAssistant != null) {
+                    sessionStore.append(partialAssistant);
+                    publish(new AgentEvent.MessageFinished(roundNumber, "assistant", false));
+                }
+                publish(new AgentEvent.TurnFinished(roundNumber, "stopped"));
+                publish(new AgentEvent.Done(e.partialText()));
+                throw e;
+            }
             publish(new AgentEvent.LlmRequestFinished(roundNumber));
             // assistant 消息必须先原样写入历史。
             // 如果它包含 tool_calls，后面的 tool 消息要通过 tool_call_id 与它配对。
@@ -280,6 +321,10 @@ public class AgentLoop {
             // 有 tool_calls 时，Agent 负责执行工具，并把每个结果写回 role=tool。
             // 写回后继续下一轮 LLM，让模型基于工具结果生成最终回答。
             executeToolCalls(assistant.toolCalls());
+            if (control.stopRequested()) {
+                publish(new AgentEvent.TurnFinished(roundNumber, "stopped"));
+                throw new AgentStopException();
+            }
             publish(new AgentEvent.TurnFinished(roundNumber, "tool_calls"));
         }
 
@@ -289,13 +334,21 @@ public class AgentLoop {
     /**
      * 流式读取一轮 assistant 输出，并拼成完整 assistant 消息。
      */
-    private Message streamAssistantMessage(ChatRequest request, int maxContextTokens, int round) throws IOException {
+    private Message streamAssistantMessage(
+            ChatRequest request,
+            int maxContextTokens,
+            int round,
+            AgentRunControl control
+    ) throws IOException {
         AssistantMessageBuilder assistantBuilder = new AssistantMessageBuilder();
         publish(new AgentEvent.MessageStarted(round, "assistant"));
 
         streamingChatClient.stream(request, providerEvent -> {
             assistantBuilder.append(providerEvent);
             emitAgentEvent(providerEvent, maxContextTokens);
+            if (control.stopRequested()) {
+                throw new AgentStopException(assistantBuilder.buildPartialTextMessage());
+            }
         });
 
         return assistantBuilder.build();
@@ -394,5 +447,14 @@ public class AgentLoop {
 
     private void publish(AgentEvent event) {
         eventBus.publish(event);
+    }
+
+    /**
+     * 在不会破坏工具协议的位置检查用户停止请求。
+     */
+    private void checkStop(AgentRunControl control) {
+        if (control.stopRequested()) {
+            throw new AgentStopException();
+        }
     }
 }

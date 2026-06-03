@@ -1,13 +1,27 @@
 package com.aster;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.aster.app.background.BackgroundTaskEventBus;
+import com.aster.app.background.BackgroundTaskExecutor;
+import com.aster.app.background.BackgroundTaskManager;
+import com.aster.app.background.BackgroundTaskScheduler;
+import com.aster.app.background.JsonlBackgroundTaskStore;
+import com.aster.app.background.NoopTaskHandler;
+import com.aster.app.extension.RuntimeExtensionContext;
+import com.aster.app.extension.SkillToolExtension;
+import com.aster.app.memory.MarkdownMemoryStore;
+import com.aster.app.memory.MemoryPromptRenderer;
 import com.aster.llm.model.ToolCall;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.skill.SkillRepository;
+import com.aster.llm.model.OpenAiCompatibleProvider;
+import com.aster.core.hook.HookRegistry;
+import com.aster.core.session.InMemorySessionStore;
 import com.aster.core.tool.LocalToolExecutor;
 import com.aster.core.tool.ToolRegistry;
 import com.aster.app.tool.builtin.BuiltinTools;
 import com.aster.core.tool.model.ToolResult;
+import okhttp3.OkHttpClient;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -44,10 +58,10 @@ class BuiltinToolsTest {
     }
 
     /**
-     * 验证存在 Skill 时，会额外注册 load_skill。
+     * 验证存在 Skill 时，Skill 扩展会额外注册 load_skill。
      */
     @Test
-    void registersLoadSkillWhenSkillsExist() throws Exception {
+    void skillExtensionRegistersLoadSkillWhenSkillsExist() throws Exception {
         Path skillsDirectory = tempDir.resolve("skills");
         Path skillDirectory = skillsDirectory.resolve("web-access");
         Files.createDirectories(skillDirectory);
@@ -63,7 +77,11 @@ class BuiltinToolsTest {
                 """);
 
         SkillRepository skillRepository = SkillRepository.scan(skillsDirectory);
-        ToolRegistry registry = createRegistry(tempDir, skillRepository);
+        LocalToolExecutor localToolExecutor = new LocalToolExecutor(objectMapper);
+        McpToolExecutor mcpToolExecutor = new McpToolExecutor();
+        ToolRegistry registry = new ToolRegistry(localToolExecutor, mcpToolExecutor);
+        BuiltinTools.registerAll(registry, tempDir);
+        new SkillToolExtension().registerTools(extensionContext(registry, mcpToolExecutor, skillRepository));
 
         ToolResult result = execute(registry, "load_skill", Map.of("name", "web-access"));
 
@@ -145,18 +163,48 @@ class BuiltinToolsTest {
         return registry;
     }
 
-    private ToolRegistry createRegistry(Path workingDirectory, SkillRepository skillRepository) {
-        LocalToolExecutor localToolExecutor = new LocalToolExecutor(objectMapper);
-        ToolRegistry registry = new ToolRegistry(localToolExecutor, new McpToolExecutor());
-        BuiltinTools.registerAll(registry, workingDirectory, skillRepository);
-        return registry;
-    }
-
     private ToolResult execute(ToolRegistry registry, String name, Map<String, Object> arguments) throws Exception {
         return registry.execute(ToolCall.function(
                 "call_" + name,
                 name,
                 objectMapper.writeValueAsString(arguments)
         ));
+    }
+
+    private RuntimeExtensionContext extensionContext(
+            ToolRegistry registry,
+            McpToolExecutor mcpToolExecutor,
+            SkillRepository skillRepository
+    ) throws Exception {
+        JsonlBackgroundTaskStore store = new JsonlBackgroundTaskStore(
+                objectMapper,
+                tempDir.resolve("tasks.jsonl"),
+                tempDir.resolve("runs.jsonl")
+        );
+        BackgroundTaskExecutor executor = new BackgroundTaskExecutor(
+                store,
+                List.of(new NoopTaskHandler()),
+                BackgroundTaskEventBus.single(ignored -> {
+                })
+        );
+        BackgroundTaskManager backgroundTaskManager = new BackgroundTaskManager(
+                store,
+                new BackgroundTaskScheduler(executor)
+        );
+        return new RuntimeExtensionContext(
+                objectMapper,
+                new OkHttpClient(),
+                new OpenAiCompatibleProvider("fake", "http://localhost", "test-key", "fake-model"),
+                (request, handler) -> {
+                },
+                new InMemorySessionStore(),
+                registry,
+                HookRegistry.empty(),
+                mcpToolExecutor,
+                skillRepository,
+                new MarkdownMemoryStore(tempDir.resolve("memory.md")),
+                new MemoryPromptRenderer("{{memory}}"),
+                backgroundTaskManager
+        );
     }
 }

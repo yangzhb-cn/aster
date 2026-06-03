@@ -13,29 +13,23 @@ import com.aster.app.background.BackgroundTaskScheduler;
 import com.aster.app.background.BackgroundTaskStore;
 import com.aster.app.background.JsonlBackgroundTaskStore;
 import com.aster.app.background.NoopTaskHandler;
+import com.aster.app.extension.RuntimeExtensionContext;
+import com.aster.app.extension.RuntimeExtensionRegistry;
 import com.aster.core.context.ContextBuilder;
 import com.aster.core.context.ContextPipeline;
 import com.aster.core.context.SimpleTokenEstimator;
 import com.aster.core.context.TranscriptSummarizer;
 import com.aster.core.context.model.ContextOptions;
-import com.aster.core.hook.AgentHookPoints;
 import com.aster.core.hook.HookRegistry;
 import com.aster.llm.OpenAiCompatibleChatClient;
 import com.aster.llm.OpenAiCompatibleProviderFactory;
 import com.aster.llm.StreamingChatClient;
 import com.aster.llm.model.Message;
 import com.aster.llm.model.OpenAiCompatibleProvider;
-import com.aster.app.memory.LongTermMemoryInjectHook;
 import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryExtractionAgent;
-import com.aster.app.memory.MemoryExtractionHook;
 import com.aster.app.memory.MemoryExtractionTaskHandler;
 import com.aster.app.memory.MemoryPromptRenderer;
-import com.aster.app.mcp.McpToolLoader;
-import com.aster.app.mcp.config.McpClientFactory;
-import com.aster.app.mcp.config.McpConfigLoader;
-import com.aster.app.mcp.config.model.McpConfig;
-import com.aster.app.mcp.config.model.McpServerConfig;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.notification.NotificationSink;
 import com.aster.app.prompt.PromptLoader;
@@ -50,8 +44,6 @@ import com.aster.core.tool.LocalToolExecutor;
 import com.aster.core.tool.ParallelToolExecutor;
 import com.aster.core.tool.ToolRegistry;
 import com.aster.app.tool.builtin.BuiltinTools;
-import com.aster.app.tool.result.ToolResultOffloadHook;
-import com.aster.app.tool.result.ToolResultOffloader;
 import okhttp3.OkHttpClient;
 
 import java.io.IOException;
@@ -123,10 +115,8 @@ public class AgentRuntimeFactory {
         ToolRegistry toolRegistry = new ToolRegistry(localToolExecutor, mcpToolExecutor);
 
         SkillRepository skillRepository = SkillRepository.scan(WorkspacePaths.SKILLS);
-        // 所有本地内置工具最终都通过 ToolRegistry.registerLocal 注册。
-        BuiltinTools.registerAll(toolRegistry, Path.of("."), skillRepository);
-        loadConfiguredMcpServers(objectMapper, httpClient, toolRegistry, mcpToolExecutor);
-        ParallelToolExecutor parallelToolExecutor = ParallelToolExecutor.fixedPool(toolRegistry, 4);
+        // read/write/bash/edit 是固定底座工具；load_skill、MCP 等能力走 RuntimeExtension。
+        BuiltinTools.registerAll(toolRegistry, Path.of("."));
         MarkdownMemoryStore memoryStore = new MarkdownMemoryStore(WorkspacePaths.LONG_TERM_MEMORY);
         MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer(longTermMemorySystemPrompt);
 
@@ -161,19 +151,30 @@ public class AgentRuntimeFactory {
         );
         backgroundTaskManager.start();
         HookRegistry hookRegistry = new HookRegistry();
-        hookRegistry.register(
-                AgentHookPoints.BEFORE_LLM_REQUEST,
-                new LongTermMemoryInjectHook(memoryStore, memoryPromptRenderer)
+
+        RuntimeExtensionContext extensionContext = new RuntimeExtensionContext(
+                objectMapper,
+                httpClient,
+                provider,
+                streamingChatClient,
+                sessionStore,
+                toolRegistry,
+                hookRegistry,
+                mcpToolExecutor,
+                skillRepository,
+                memoryStore,
+                memoryPromptRenderer,
+                backgroundTaskManager
         );
-        hookRegistry.register(
-                AgentHookPoints.BEFORE_TOOL_RESULT_APPEND,
-                new ToolResultOffloadHook(ToolResultOffloader.defaults(objectMapper, WorkspacePaths.TOOL_RESULTS))
-        );
-        hookRegistry.register(
-                AgentHookPoints.AFTER_RUN,
-                new MemoryExtractionHook(backgroundTaskManager)
-        );
-        AgentEventBus eventBus = AgentEventBus.single(sessionName, eventHandler);
+        RuntimeExtensionRegistry extensionRegistry = RuntimeExtensionRegistry.defaults();
+        extensionRegistry.registerTools(extensionContext);
+        extensionRegistry.registerHooks(extensionContext);
+        ParallelToolExecutor parallelToolExecutor = ParallelToolExecutor.fixedPool(toolRegistry, 4);
+
+        List<AgentEventHandler> eventHandlers = new ArrayList<>();
+        eventHandlers.add(eventHandler);
+        eventHandlers.addAll(extensionRegistry.eventHandlers(extensionContext));
+        AgentEventBus eventBus = new AgentEventBus(sessionName, eventHandlers);
         ContextPipeline contextPipeline = new ContextPipeline(
                 sessionStore,
                 new ContextBuilder(
@@ -194,9 +195,11 @@ public class AgentRuntimeFactory {
                 eventBus,
                 MAX_TOOL_ROUNDS
         );
+        AgentRunCoordinator runCoordinator = new AgentRunCoordinator(agentLoop, eventBus);
 
         return new AgentRuntime(
                 agentLoop,
+                runCoordinator,
                 backgroundTaskManager,
                 parallelToolExecutor,
                 mcpToolExecutor,
@@ -236,32 +239,4 @@ public class AgentRuntimeFactory {
         );
     }
 
-    /**
-     * 从 workspace/mcp.json 加载外部 MCP Server。
-     *
-     * <p>没有 workspace/mcp.json 时什么都不做；有配置时，每个 server 都会经历：
-     * 创建客户端 -> initialize -> tools/list -> 注册成普通 Tool。</p>
-     */
-    private void loadConfiguredMcpServers(
-            ObjectMapper objectMapper,
-            OkHttpClient httpClient,
-            ToolRegistry toolRegistry,
-            McpToolExecutor mcpToolExecutor
-    ) throws IOException {
-        McpConfig mcpConfig = new McpConfigLoader(objectMapper).loadIfExists(WorkspacePaths.MCP_CONFIG);
-        McpClientFactory clientFactory = new McpClientFactory(httpClient, objectMapper);
-        McpToolLoader toolLoader = new McpToolLoader(toolRegistry, mcpToolExecutor);
-
-        for (McpServerConfig serverConfig : mcpConfig.servers()) {
-            try {
-                toolLoader.load(clientFactory.create(serverConfig));
-            } catch (IOException e) {
-                // 如果前面的 MCP 已经注册成功，当前 MCP 又加载失败，
-                // 启动会终止，因此要先释放已经启动的本地 MCP 子进程。
-                mcpToolExecutor.close();
-                // 配了 MCP 却启动失败，直接让启动失败，比静默丢工具更容易排查。
-                throw new IOException("Failed to load MCP server " + serverConfig.id(), e);
-            }
-        }
-    }
 }

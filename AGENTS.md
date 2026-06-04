@@ -53,6 +53,7 @@ Aster 是一个教学版 Java Agent Runtime MVP，用来演示 AgentLoop、OpenA
 - 新增注释用中文；新增类要写类注释；核心方法要写方法注释。
 - 不要新增非流式 LLM 主路径；当前主路径是 SSE 流式调用。
 - 上下文压缩必须按消息/turn 边界处理，不要字符串硬切 conversation history。
+- 主 runtime 使用 `ContextWindowCache` 维护“旧对话摘要 + 最近完整 turn”；不要在每轮 LLM 请求前反复全量 replay JSONL。
 - `SessionStore` 保存完整原始历史；压缩摘要、长期记忆、当前时间等动态内容只进入本轮请求上下文。
 - `assistant.tool_calls` 与 `role=tool` 的 `tool_call_id` 必须保持配对；工具失败或审批拒绝也要写回合法 tool 结果。
 - `read/write/bash/edit` 是固定底座工具；`load_skill`、MCP、`todo`、`background_task`、`schedule`、新工具和可选能力优先通过 `AsterRuntimeExtension` 注册。

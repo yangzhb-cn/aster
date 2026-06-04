@@ -20,9 +20,11 @@ import com.aster.app.background.model.TaskTrigger;
 import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.extension.RuntimeExtensionContext;
 import com.aster.app.extension.RuntimeExtensionRegistry;
-import com.aster.core.context.ContextBuilder;
 import com.aster.core.context.ContextPipeline;
+import com.aster.core.context.ContextWindowCache;
 import com.aster.core.context.SimpleTokenEstimator;
+import com.aster.core.context.Summarizer;
+import com.aster.core.context.TokenEstimator;
 import com.aster.core.context.TranscriptSummarizer;
 import com.aster.core.context.model.ContextOptions;
 import com.aster.core.hook.HookRegistry;
@@ -60,6 +62,7 @@ import com.aster.app.schedule.JsonScheduledUserMessageStore;
 import com.aster.app.schedule.ScheduledUserMessageManager;
 import com.aster.app.schedule.ScheduledUserMessageStore;
 import com.aster.core.session.BootstrappedSessionStore;
+import com.aster.core.session.ContextWindowSessionStore;
 import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionCatalog;
 import com.aster.core.session.SessionIndex;
@@ -186,10 +189,20 @@ public class AgentRuntimeFactory {
         // 基础 system prompt 来自 jar 内置 resources/prompts/agent/system.md。
         bootstrapMessages.add(Message.system(systemPrompt));
 
-        SessionStore sessionStore = new BootstrappedSessionStore(
+        SessionStore persistentSessionStore = new BootstrappedSessionStore(
                 bootstrapMessages,
                 JsonlSessionStore.openNamed(objectMapper, WorkspacePaths.SESSIONS, sessionName)
         );
+        TokenEstimator tokenEstimator = new SimpleTokenEstimator();
+        Summarizer contextSummarizer = new TranscriptSummarizer(contextSummaryPrompt, 8_000);
+        ContextOptions contextOptions = ContextOptions.defaults();
+        ContextWindowCache contextWindowCache = ContextWindowCache.from(
+                persistentSessionStore,
+                tokenEstimator,
+                contextSummarizer,
+                contextOptions
+        );
+        SessionStore sessionStore = new ContextWindowSessionStore(persistentSessionStore, contextWindowCache);
         MemoryExtractionAgent memoryExtractionAgent = new MemoryExtractionAgent(
                 provider.defaultModel(),
                 sessionStore,
@@ -240,14 +253,7 @@ public class AgentRuntimeFactory {
         AgentEventBus eventBus = new AgentEventBus(sessionName, eventHandlers);
         eventPublisher.attach(eventBus);
         toolApprovalManager.attachEventBus(eventBus);
-        ContextPipeline contextPipeline = new ContextPipeline(
-                sessionStore,
-                new ContextBuilder(
-                        new SimpleTokenEstimator(),
-                        new TranscriptSummarizer(contextSummaryPrompt, 8_000),
-                        ContextOptions.defaults()
-                )
-        );
+        ContextPipeline contextPipeline = new ContextPipeline(contextWindowCache);
 
         AgentLoop agentLoop = new AgentLoop(
                 provider,

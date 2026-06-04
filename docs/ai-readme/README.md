@@ -16,7 +16,7 @@ flowchart LR
 
 - 生成时间：2026-06-04 14:24
 - 生成分支：master
-- 最近同步：2026-06-05，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离和文档维护规则
+- 最近同步：2026-06-05，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、ContextWindowCache 和文档维护规则
 
 ## 入口功能矩阵
 

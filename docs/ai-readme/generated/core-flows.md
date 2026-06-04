@@ -28,7 +28,7 @@ sequenceDiagram
     participant Runtime as AgentRuntime
     participant Coordinator as AgentRunCoordinator
     participant Loop as AgentLoop
-    participant Context as ContextPipeline
+    participant Context as ContextPipeline / ContextWindowCache
     participant LLM as StreamingChatClient
     participant Tools as ParallelToolExecutor
     participant Session as SessionStore
@@ -104,19 +104,23 @@ sequenceDiagram
 - 运行中 session 归档或物理删除会返回 409，避免关闭仍在执行的 runtime。
 - 前端收到 SSE 后必须使用 `meta.sessionName` 判断是否渲染到当前窗口；非当前 session 只更新 running/queued/approval 状态。
 
-## 流程 2：Context 构建和 `<system-reminder>`
+## 流程 2：Context 窗口缓存和 `<system-reminder>`
 
 ```mermaid
 sequenceDiagram
     participant Loop as AgentLoop
     participant Pipeline as ContextPipeline
-    participant Stage as ContextCompressionStage
+    participant Cache as ContextWindowCache
+    participant Store as SessionStore
     participant Hook as SystemReminderInjectHook
     participant LLM as StreamingChatClient
 
+    Store-->>Cache: runtime 启动时 loadMessages 一次
+    Loop->>Store: append(user / assistant / tool)
+    Store-->>Cache: append 成功后增量更新 window
     Loop->>Pipeline: build()
-    Pipeline->>Stage: LoadSession + Compress
-    Stage-->>Pipeline: messages + summary
+    Pipeline->>Cache: build()
+    Cache-->>Pipeline: recent turns + runningSummary
     Pipeline-->>Loop: ContextBuildResult
     Loop->>Hook: BEFORE_LLM_REQUEST
     Hook-->>Loop: last user prepended with <system-reminder>
@@ -126,8 +130,8 @@ sequenceDiagram
 ### 调用链
 
 1. `core/context/ContextPipeline.build`
-2. `core/stage/LoadSessionMessagesStage`
-3. `core/stage/ContextCompressionStage`
+2. `core/context/ContextWindowCache.build`
+3. `core/session/ContextWindowSessionStore.append`
 4. `core/context/ToolProtocolValidator`
 5. `app/extension/SystemReminderInjectHook`
 6. `app/memory/MemoryPromptRenderer`
@@ -135,7 +139,9 @@ sequenceDiagram
 
 ### 关键分支
 
+- 主 runtime 启动时从 JSONL 完整恢复一次；后续每条消息 append 成功后增量进入 `ContextWindowCache`。
 - 压缩按 user turn，而不是字符串硬切。
+- 内存窗口只保留 `runningSummary + 最近完整 turn`，完整原始历史仍在 `SessionStore`。
 - 当前时间、时区、长期记忆、Skill 索引和旧对话摘要只进入本轮 request messages。
 - 压缩摘要不写回 `SessionStore`。
 

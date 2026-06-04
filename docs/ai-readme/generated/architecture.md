@@ -26,7 +26,7 @@ flowchart TD
     Room --> RoomAgents["RoomAgentRunner\n独立私有 session"]
     Room --> RoomHub["RoomHub\n共享 hub messages"]
 
-    AgentLoop --> Context["ContextPipeline\nStage + ContextBuilder"]
+    AgentLoop --> Context["ContextPipeline\nContextWindowCache + ContextBuilder"]
     AgentLoop --> Hooks["HookRegistry"]
     AgentLoop --> Tools["ToolRegistry + ParallelToolExecutor"]
     AgentLoop --> Session["SessionStore JSONL"]
@@ -63,7 +63,7 @@ flowchart TD
 | 决策 | 当前实现 | 原因 |
 | --- | --- | --- |
 | 只保留流式 LLM 主路径 | `StreamingChatClient` + SSE parser | TUI/Web/Telegram 都消费流式事件，避免维护流式和非流式两套路径 |
-| Context 压缩使用 Stage | `ContextCompressionStage` | 压缩是请求前必经安全步骤，不应依赖可选 Hook |
+| Context 压缩使用运行态窗口 | `ContextWindowCache` + `ContextPipeline` | 主 runtime 启动时恢复一次 JSONL，之后增量维护摘要和最近 turn，避免每轮请求全量 replay |
 | 可选能力走 Hook / Extension | `HookRegistry`、`RuntimeExtensionRegistry` | 避免 `AgentLoop` 堆业务 if-else |
 | Tool 统一抽象 | `ToolRegistry`、`ToolHandler`、`ToolResult` | 本地工具、MCP 工具、扩展工具统一给 LLM 暴露 |
 | 高影响工具走 HITL | `ToolApprovalHook` 审批 `bash/write/edit` | 工具执行前可见、可拒绝，拒绝仍保持 tool_result 协议闭环 |

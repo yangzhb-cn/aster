@@ -12,6 +12,7 @@
 | steer 不是普通用户消息 | 运行中引导如果写入 session，可能插到 tool_call/tool_result 中间，破坏协议 | steer 通过 LLM 请求前 Hook 临时注入，不写入 session | `SteerExtension`, `BeforeLlmRequestContext` |
 | 长期记忆和压缩摘要不应混入 system prompt 或永久历史 | 动态内容如果写进 session 或 system prompt，会污染审计历史，也难以恢复 | 统一放进最后一条 user 消息开头的 `<system-reminder>`，只参与本轮请求 | `SystemReminderInjectHook` |
 | tool_call 协议很容易被破坏 | assistant 的 tool_calls 必须紧跟匹配的 role=tool 结果；中间不能插普通 user | 工具失败、审批拒绝、大结果卸载也要写回合法 tool 结果；上下文压缩按消息边界处理 | `AgentLoop`, `ContextBuilder` |
+| 每轮 LLM 都全量 replay JSONL 会浪费 | 工具调用多轮时，每轮 `ContextPipeline.build()` 都会 `loadMessages()` 并回放完整事件日志 | 主 runtime 启动时恢复一次，之后用 `ContextWindowSessionStore` 增量更新 `ContextWindowCache`；完整历史仍留在 JSONL | `ContextWindowCache`, `ContextWindowSessionStore` |
 | Web 审批接口曾出现 `java.time.Instant` 序列化错误 | 当前 ObjectMapper 没有注册 `JavaTimeModule` | 对 Web DTO 和持久化状态优先使用 ISO 字符串时间，或显式注册模块；项目里 Todo/Room 使用字符串时间 | `ToolApprovalRequest`, `TodoItem`, `HubMessage` |
 | TUI Markdown 表格渲染异常 | 表格宽度、中文字符宽度和换行处理如果按普通字符硬切，边框会错位 | 表格渲染要按列计算宽度，长内容截断/换行，不能只按原始 Markdown 输出 | `ui/tui` Markdown 渲染 |
 | Web Enter 发送失效 | textarea 默认 Enter 换行，没有拦截 keydown 提交表单 | Enter 调用 `requestSubmit()`，Shift+Enter 保留换行 | `src/main/resources/web/assets/app.js` |

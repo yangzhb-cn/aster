@@ -35,7 +35,7 @@ llm
 - 流式 AgentLoop：`LLM -> tool_calls -> tool results -> LLM`。
 - 工具：`read/write/bash/edit/load_skill`，以及 `ls/glob/grep/subagent/web_fetch/web_search/todo/background_task/schedule`。
 - HITL：`bash/write/edit` 执行前需要人工审批。
-- 上下文：保留最近对话，旧对话压缩后注入 `<system-reminder>`。
+- 上下文：运行态维护旧对话摘要和最近 turn，摘要注入 `<system-reminder>`。
 - Session：`workspace/sessions/*.jsonl` 持久化完整原始历史。
 - Web/TUI/IM：共用 `AgentRuntime` 和 `AgentEvent`。
 - `/team`：固定 DAG 的只读并行探索。

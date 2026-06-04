@@ -31,4 +31,6 @@ logs/
 .firecrawl/
 
 # 知识文档
-docs/
+docs/*
+!docs/ai-readme/
+!docs/ai-readme/**

@@ -14,7 +14,9 @@
 | P0 | 动态 `/plan` | `AgentRuntime.submitPlan()`、`PlanModeCoordinator` | LLM 生成 DAG，用户 `/start` 执行 |
 | P1 | 固定 `/team` | `AgentRuntime.submitTeam()`、`AgentTeamRunner` | 只读并行探索，结果交主 Agent |
 | P1 | 后台任务 | `BackgroundTaskScheduler` | reminder、todo_scan、memory_extract |
+| P1 | 自动化用户消息 schedule | `ScheduledUserMessageScheduler` | 到点后向当前 session 提交 user 消息，复用普通 Agent 链路 |
 | P1 | 多入口事件消费 | TUI / Web / Telegram event handlers | 同一 AgentEvent，不同展示策略 |
+| P1 | Web 多 session 并行运行 | `WebSessionRuntimePool`、`WebAgentEventMapper`、`app.js` | Web 切换 B 不停止 A；SSE 按 sessionName 分流 |
 | P1 | Web Room 多 Agent 聊天 | `AgentRuntime.sendRoomMessage()`、`RoomCoordinator` | Web 独有；成员关系 + 共享 hub message + Agent 私有上下文 |
 | P1 | 归档中心 | `WebServer.handleArchives()` | Web 独有；恢复、单个物理删除或批量物理删除已归档对象 |
 
@@ -68,6 +70,39 @@ sequenceDiagram
 - `/stop` 设置当前 `AgentRunControl.stopRequested`，AgentLoop 在安全点停止。
 - `/steer` 写入当前控制信号，请求前 Hook 负责消费。
 - 工具轮数上限来自 `AgentRuntimeFactory.MAX_TOOL_ROUNDS = 100`。
+
+## 流程 1.1：Web 多 session 并行运行
+
+```mermaid
+sequenceDiagram
+    participant Web as Web Chat
+    participant Server as WebServer
+    participant Pool as WebSessionRuntimePool
+    participant A as AgentRuntime(A)
+    participant B as AgentRuntime(B)
+    participant SSE as EventSource
+
+    Web->>Server: POST /api/messages {sessionId:A,text}
+    Server->>Pool: runtimeFor(A)
+    Pool-->>Server: A
+    Server->>A: submit(text)
+    Web->>Server: POST /api/sessions/use {id:B}
+    Server->>Pool: runtimeFor(B)
+    Pool-->>Server: B
+    Note over A,B: A 不关闭，B 可继续提交
+    Web->>Server: POST /api/messages {sessionId:B,text}
+    Server->>B: submit(text)
+    A-->>SSE: AgentEventEnvelope(sessionName=A)
+    B-->>SSE: AgentEventEnvelope(sessionName=B)
+    SSE-->>Web: 当前 session 才渲染，其它只更新左侧状态
+```
+
+### 关键分支
+
+- Web 的普通消息、`/stop`、`/steer`、HITL 审批都带 `sessionId`，后端按 session 找对应 runtime。
+- 切换 session 只更新 `currentSessionId` 并确保目标 runtime 存在，不关闭旧 runtime。
+- 运行中 session 归档或物理删除会返回 409，避免关闭仍在执行的 runtime。
+- 前端收到 SSE 后必须使用 `meta.sessionName` 判断是否渲染到当前窗口；非当前 session 只更新 running/queued/approval 状态。
 
 ## 流程 2：Context 构建和 `<system-reminder>`
 
@@ -234,7 +269,7 @@ sequenceDiagram
 
 - Team 是固定 DAG：T1 planner，T2/T3/T4 code researcher，T5/T6 risk reviewer。
 - Team 子 Agent 只注册 `read`、`ls`、`glob`、`grep`、`web_fetch`、`web_search`。
-- Team 使用空 `HookRegistry`，不注册写工具、bash、todo、background_task 或 subagent。
+- Team 使用空 `HookRegistry`，不注册写工具、bash、todo、background_task、schedule 或 subagent。
 - Team 子 Agent 工具事件不转发 UI，只转发成员 token，避免 read/grep 刷屏。
 
 ## 流程 6：后台任务
@@ -251,7 +286,7 @@ sequenceDiagram
 
     Tool->>Manager: create/list/cancel
     Manager->>Store: append task
-    Scheduler->>Store: scan tasks/runs
+    Scheduler->>Store: fixed-delay scan tasks/runs
     Scheduler->>Executor: execute due task
     Executor->>Handler: handle(action)
     Handler-->>Executor: result
@@ -272,7 +307,46 @@ sequenceDiagram
 
 - 当前 handler 包括 `reminder`、`todo_scan`、`memory_extract`。
 - `todo_scan` 由 runtime 启动时确保存在。
-- 不支持任意到点自动运行 Agent；复杂定时 Agent 任务需要新增明确 handler。
+- `background_task` 不负责让 Agent 到点自动执行任务；它只处理明确 handler 对应的系统后台动作和简单提醒。
+- 后台任务扫描间隔由 `BACKGROUND_TASK_SCAN_INTERVAL_SECONDS` 控制，旧 `SCHEDULE_INTERVAL_SECONDS` 只作为兼容 fallback。
+
+## 流程 6.1：自动化用户消息 schedule
+
+```mermaid
+sequenceDiagram
+    participant Tool as schedule tool
+    participant Manager as ScheduledUserMessageManager
+    participant Store as schedules.json
+    participant Scheduler as ScheduledUserMessageScheduler
+    participant Runtime as AgentRunCoordinator
+    participant Loop as AgentLoop
+
+    Tool->>Manager: create/list/cancel
+    Manager->>Store: write schedule
+    Manager->>Scheduler: reschedule()
+    Scheduler->>Store: find nearest nextRunAt
+    Scheduler->>Scheduler: sleep until nextRunAt
+    Scheduler->>Runtime: submit(rendered user input)
+    Runtime->>Loop: run(userInput, control)
+    Scheduler->>Store: complete/reschedule/failed
+```
+
+### 调用链
+
+1. `app/tool/schedule/ScheduleTool`
+2. `app/schedule/ScheduledUserMessageManager`
+3. `app/schedule/JsonScheduledUserMessageStore`
+4. `app/schedule/ScheduledUserMessageScheduler`
+5. `app/runtime/AgentRunCoordinator.submit`
+6. `core/agent/AgentLoop.run`
+
+### 关键分支
+
+- `schedule` 管理的是“到点提交 user 消息”，不是后台 handler。
+- 到点后照常走普通 Agent 链路，所以仍能使用工具、HITL、Session、Event 和上下文注入。
+- 一次性 `once/delay` 执行后标记 completed；`interval/daily` 执行后计算下一次 `nextRunAt`。
+- 派发失败会把 schedule 标记为 failed，避免已到期任务反复立即触发。
+- 当前 schedule 绑定创建它的 `AgentRuntime` session；应用未运行时不会主动执行。
 
 ## 流程 7：Web Room 多 Agent 聊天
 

@@ -12,6 +12,8 @@ import com.aster.app.extension.SkillToolExtension;
 import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
+import com.aster.app.schedule.JsonScheduledUserMessageStore;
+import com.aster.app.schedule.ScheduledUserMessageManager;
 import com.aster.llm.model.ToolCall;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.skill.SkillRepository;
@@ -207,6 +209,7 @@ class BuiltinToolsTest {
                 new MarkdownMemoryStore(tempDir.resolve("memory.md")),
                 new MemoryPromptRenderer("{{memory}}"),
                 backgroundTaskManager,
+                new ScheduledUserMessageManager(new JsonScheduledUserMessageStore(objectMapper, tempDir.resolve("schedules.json")), "test"),
                 new ToolApprovalManager(),
                 new JsonTodoStore(objectMapper, tempDir.resolve("todos.json"))
         );

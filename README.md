@@ -1,6 +1,6 @@
 # Aster
 
-Aster 是 Agent MVP，从 0-1 实现 Agent 主循环、流式 LLM、工具调用、上下文压缩、Session 持久化、HITL 审批、后台任务、动态 DAG Plan 和多智能体 agent team，以及TUI/Web/Telegram 入口。
+Aster 是 Agent MVP，从 0-1 实现 Agent 主循环、流式 LLM、工具调用、上下文压缩、Session 持久化、HITL 审批、后台任务、自动化用户消息 schedule、动态 DAG Plan 和多智能体 agent team，以及TUI/Web/Telegram 入口。
 
 详细架构和开发规则见 [AGENTS.md](./AGENTS.md)。
 
@@ -27,19 +27,20 @@ llm
 
 - `llm`：OpenAI-compatible SSE 适配。
 - `core`：AgentLoop、Event、Hook、Stage、Context、Session、Tool 抽象。
-- `app`：内置工具、扩展工具、MCP、Skill、长期记忆、后台任务、Plan/Team、运行时装配。
+- `app`：内置工具、扩展工具、MCP、Skill、长期记忆、后台任务、schedule、Plan/Team、运行时装配。
 - `ui`：TUI、Web Chat、Telegram IM。
 
 ## 主要能力
 
 - 流式 AgentLoop：`LLM -> tool_calls -> tool results -> LLM`。
-- 工具：`read/write/bash/edit/load_skill`，以及 `ls/glob/grep/subagent/web_fetch/web_search/todo/background_task`。
+- 工具：`read/write/bash/edit/load_skill`，以及 `ls/glob/grep/subagent/web_fetch/web_search/todo/background_task/schedule`。
 - HITL：`bash/write/edit` 执行前需要人工审批。
 - 上下文：保留最近对话，旧对话压缩后注入 `<system-reminder>`。
 - Session：`workspace/sessions/*.jsonl` 持久化完整原始历史。
 - Web/TUI/IM：共用 `AgentRuntime` 和 `AgentEvent`。
 - `/team`：固定 DAG 的只读并行探索。
 - `/plan`：动态生成 DAG，用户 `/start` 后按依赖并发执行。
+- `schedule`：到点后自动向当前 session 提交 user 消息，适合每天/每周/定期让 Agent 做事。
 
 ## 启动
 
@@ -99,7 +100,8 @@ mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
 - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`：Telegram 配置。
 - `OWNER_ID`：`aster2im` 的简化 chatId 配置。
 - `TAVILY_API_KEY`：`web_search` 工具需要。
-- `SCHEDULE_INTERVAL_SECONDS`：后台任务扫描间隔，默认 `10`。
+- `BACKGROUND_TASK_SCAN_INTERVAL_SECONDS`：后台任务扫描间隔，默认 `10`。
+- `SCHEDULE_INTERVAL_SECONDS`：旧变量名，仍作为后台任务扫描间隔的兼容 fallback；新配置优先用 `BACKGROUND_TASK_SCAN_INTERVAL_SECONDS`。
 
 ## 斜杠命令
 
@@ -120,6 +122,7 @@ mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
 workspace/
 ├── sessions/
 ├── tasks/
+├── schedules/
 ├── todos/
 ├── skills/
 ├── artifacts/tool-results/

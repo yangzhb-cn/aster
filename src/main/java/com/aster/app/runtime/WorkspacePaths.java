@@ -20,6 +20,8 @@ public final class WorkspacePaths {
     public static final Path TASKS = ROOT.resolve("tasks");
     public static final Path BACKGROUND_TASKS = TASKS.resolve("tasks.jsonl");
     public static final Path BACKGROUND_TASK_RUNS = TASKS.resolve("runs.jsonl");
+    public static final Path SCHEDULES = ROOT.resolve("schedules");
+    public static final Path SCHEDULE_FILE = SCHEDULES.resolve("schedules.json");
     public static final Path TODOS = ROOT.resolve("todos");
     public static final Path TODO_FILE = TODOS.resolve("todos.json");
     public static final Path ARTIFACTS = ROOT.resolve("artifacts");
@@ -47,6 +49,7 @@ public final class WorkspacePaths {
         Files.createDirectories(SESSIONS);
         Files.createDirectories(MEMORY);
         Files.createDirectories(TASKS);
+        Files.createDirectories(SCHEDULES);
         Files.createDirectories(TODOS);
         Files.createDirectories(ARTIFACTS);
         Files.createDirectories(TOOL_RESULTS);

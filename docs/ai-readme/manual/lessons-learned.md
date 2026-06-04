@@ -16,9 +16,10 @@
 | TUI Markdown 表格渲染异常 | 表格宽度、中文字符宽度和换行处理如果按普通字符硬切，边框会错位 | 表格渲染要按列计算宽度，长内容截断/换行，不能只按原始 Markdown 输出 | `ui/tui` Markdown 渲染 |
 | Web Enter 发送失效 | textarea 默认 Enter 换行，没有拦截 keydown 提交表单 | Enter 调用 `requestSubmit()`，Shift+Enter 保留换行 | `src/main/resources/web/assets/app.js` |
 | Web 工具结果太长撑爆页面 | 工具调用和工具结果分散展示，长结果没有折叠或截断 | 工具调用与结果合成一个块，默认完成后折叠，长内容按行数和字符数截断 | `app.js` tool block |
-| LLM 会用 `bash sleep` 实现提醒 | 提示词和长期记忆可能让模型以为定时任务应该靠 shell 等待 | 提醒/定时需求必须有真正的后台任务 handler 和 scheduler；不要暴露 bash 给这类场景 | `BackgroundTaskScheduler`, `ReminderTaskHandler` |
-| 定时任务不是只有后台队列 | 只有后台任务工具，没有扫描器和 handler 时，到期后没人执行 | 每 10 秒扫描任务清单，按 trigger 判断是否到期，再交给对应 handler | `app/background` |
-| `background_task` 描述不贴合提醒任务会误导模型 | 工具描述偏“后台执行”，模型不知道可以创建提醒/定时扫描 | 工具描述要明确 immediate、delay、interval 和支持的 action 类型 | `BackgroundTaskTool` |
+| LLM 会用 `bash sleep` 实现提醒 | 提示词和长期记忆可能让模型以为定时任务应该靠 shell 等待 | 简单提醒用 `background_task reminder`；需要 Agent 到点做事用 `schedule`；HITL 直接拒绝伪定时 bash | `ToolApprovalHook`, `BackgroundTaskTool`, `ScheduleTool` |
+| 定时 Agent 任务不应塞进后台 handler | 后台任务 handler 适合系统动作；“每天 12 点让 Agent 总结新闻”本质是自动提交一条新 user 消息 | `schedule` 保存 nextRunAt，到点后调用 `AgentRunCoordinator.submit()`，后续复用普通 AgentLoop | `app/schedule`, `AgentRuntimeFactory` |
+| 后台任务扫描配置名容易误导 | 旧环境变量 `SCHEDULE_INTERVAL_SECONDS` 实际控制 background scan，不控制 schedule | 新增 `BACKGROUND_TASK_SCAN_INTERVAL_SECONDS`，旧变量只保留兼容 fallback；schedule 自己按 nextRunAt 精准唤醒 | `BackgroundTaskScheduler`, `.env.example` |
+| `background_task` 描述不贴合提醒任务会误导模型 | 工具描述偏“后台执行”，模型不知道简单提醒和 Agent 自动化任务的边界 | 工具描述明确：background 处理 handler 和 reminder；schedule 处理自动化 user 消息 | `BackgroundTaskTool`, `ScheduleTool` |
 | Telegram IM 看不到 bash 执行内容 | 只展示工具开始/结束，缺少参数和结果摘要 | IM 事件处理要展示工具名、参数摘要、执行耗时和必要输出，但仍要截断长文本 | `ui/im/telegram` |
 | HITL 审批要有 call id 但也支持批量 | 用户审批时可能想按单个工具处理，也可能想全部通过/拒绝 | `/approve <id>`、`/deny <id>` 处理单个；不带 id 表示全部处理 | `ToolApprovalManager`, UI/IM commands |
 | Team 子 Agent 工具事件太多 | 多个 reader/reviewer 并行 read/grep 会产生大量工具事件，UI 会被刷屏 | Team 只转发成员正文和关键状态，不展示每个工具调用 | `TeamAgentFactory.teamEventBus` |
@@ -37,15 +38,17 @@
 | Room `@all` 并行回复不能按完成时间写入 | 并行 Agent 完成时间不稳定，如果谁先完成谁先写，聊天室顺序每次可能不同 | 成员关系保存 `orderIndex`，本次回复保存 `replyIndex`；并行执行后按顺序统一写回 | `RoomMembership`, `RoomCoordinator` |
 | 从聊天室移除 Agent 不等于删除 Agent | 全局 Agent 可复用到多个聊天室，移除只是离开当前房间 | 归档 `roomId + agentId` 成员关系；恢复时 generation + 1，旧私有上下文不再使用 | `RoomMembershipStore`, `RoomAgentSessionFactory` |
 | Archive 批量删除必须复用单删校验 | 批量操作更容易绕过“只能删除已归档对象”的约束 | 批量接口只收 `{type,id}` 列表，逐个调用原来的物理删除逻辑 | `WebServer.handleArchives` |
+| Web 多 session 并行不能只改后端 | A/B runtime 并行后，如果前端继续把所有 SSE 渲染到当前窗口，会出现 A 的 token 串到 B | HTTP 请求带 `sessionId`，后端用 `WebSessionRuntimePool` 路由；前端按 `meta.sessionName` 过滤渲染，非当前 session 只更新状态 | `WebSessionRuntimePool`, `app.js` |
 | ai-readme 生成文档会随着代码快速过时 | 功能连续新增后，入口能力、架构图、核心流程可能还停留在旧版本 | 每次涉及代码改动、架构变化、功能新增或经验沉淀，都要评估是否同步 `docs/ai-readme/README.md`、`generated/`、`manual/` | `docs/ai-readme/*`, `AGENTS.md` |
 
 ## 已知风险
 
 - 不要为了新增能力直接大改 `AgentLoop`。除非核心协议真的变化，否则优先通过 Hook、Event、Extension、Runtime 装配解决。
 - 不要让模型靠 `bash sleep`、shell 脚本或长阻塞命令实现提醒、定时任务、后台任务。
+- 不要把需要 Agent 到点执行的 schedule 做成 background handler；schedule 应提交 user 消息走普通 Agent 链路。
 - 不要把动态提醒、长期记忆、旧对话摘要、Room 共享消息写进永久 session 历史。
 - 不要把普通 user 消息插到 assistant tool_calls 和 role=tool 结果之间。
-- 不要在 Team/Room 子 Agent 中开放写工具、bash、todo、background_task 或 subagent，除非用户明确改变边界。
+- 不要在 Team/Room 子 Agent 中开放写工具、bash、todo、background_task、schedule 或 subagent，除非用户明确改变边界。
 - Web/IM 展示工具输出时必须截断长文本，避免 UI 被大结果撑爆。
 - `workspace/`、`.env`、`.firecrawl/` 是运行数据或本地密钥相关内容，不要提交。
 - 提示词外部化后，改代码时也要检查 `src/main/resources/prompts/` 是否需要同步更新。

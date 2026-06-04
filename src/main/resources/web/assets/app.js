@@ -4,6 +4,7 @@ const state = {
   queuedCount: 0,
   currentSessionId: "",
   sessions: [],
+  sessionStatuses: {},
   rooms: [],
   currentRoomId: "",
   roomAgents: [],
@@ -345,8 +346,8 @@ function addApprovalBlock(payload = {}) {
     approve: node.querySelector(".approval-approve"),
     deny: node.querySelector(".approval-deny"),
   };
-  block.approve.addEventListener("click", () => resolveApproval(payload.approvalId, true));
-  block.deny.addEventListener("click", () => resolveApproval(payload.approvalId, false));
+  block.approve.addEventListener("click", () => resolveApproval(payload.approvalId, true, payload.sessionId));
+  block.deny.addEventListener("click", () => resolveApproval(payload.approvalId, false, payload.sessionId));
   updateApprovalBlock(block, payload);
   messagesEl.append(node);
   scrollToBottom();
@@ -365,10 +366,10 @@ function updateApprovalBlock(block, payload = {}, resolved = null) {
   }
 }
 
-async function resolveApproval(approvalId, approved) {
+async function resolveApproval(approvalId, approved, sessionId = state.currentSessionId) {
   if (!approvalId) return;
   try {
-    await postJson(approved ? "/api/approvals/approve" : "/api/approvals/deny", { id: approvalId });
+    await postJson(approved ? "/api/approvals/approve" : "/api/approvals/deny", { id: approvalId, sessionId });
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -517,12 +518,15 @@ async function refreshStatus() {
 
 function applyStatus(status) {
   if (!status || !Object.keys(status).length) return;
-  state.busy = Boolean(status.busy);
-  state.queuedCount = Number(status.queuedCount || 0);
-  state.currentSessionId = status.sessionId || status.sessionName || state.currentSessionId;
+  state.currentSessionId = status.currentSessionId || status.sessionId || status.sessionName || state.currentSessionId;
+  state.sessionStatuses = status.sessionStatuses || state.sessionStatuses;
+  const current = sessionRuntimeStatus(state.currentSessionId);
+  state.busy = Boolean(current.busy ?? status.busy);
+  state.queuedCount = Number(current.queuedCount ?? status.queuedCount ?? 0);
   modelName.textContent = status.model || "model";
   sessionName.textContent = status.displayName || status.sessionName || "session";
   sendButton.disabled = false;
+  renderSessions();
 }
 
 function setMetric(node, value) {
@@ -577,6 +581,7 @@ function renderSessions() {
       <button class="session-main" type="button" data-action="use" title="切换会话">
         <strong></strong>
         <span></span>
+        <small class="session-runtime-status"></small>
       </button>
       <div class="session-actions">
         <button class="session-action" type="button" data-action="rename" title="重命名" aria-label="重命名">R</button>
@@ -585,8 +590,24 @@ function renderSessions() {
     `;
     row.querySelector("strong").textContent = session.displayName || session.id;
     row.querySelector("span").textContent = `${session.id} · ${formatSessionTime(session.updatedAt)}`;
+    const badge = row.querySelector(".session-runtime-status");
+    const label = formatSessionRuntimeStatus(sessionRuntimeStatus(session.id));
+    badge.textContent = label;
+    badge.hidden = !label;
     sessionList.append(row);
   }
+}
+
+function sessionRuntimeStatus(sessionId) {
+  return state.sessionStatuses?.[sessionId] || { sessionId, active: false, busy: false, queuedCount: 0, pendingApprovalCount: 0 };
+}
+
+function formatSessionRuntimeStatus(status = {}) {
+  if (Number(status.pendingApprovalCount || 0) > 0) return `approval ${status.pendingApprovalCount}`;
+  if (status.pendingPlan) return "plan";
+  if (Number(status.queuedCount || 0) > 0) return `queued ${status.queuedCount}`;
+  if (status.busy) return "running";
+  return "";
 }
 
 function formatSessionTime(timestamp) {
@@ -608,6 +629,8 @@ async function loadSessionMessages(sessionId) {
     state.currentAssistant = null;
     state.currentReasoning = null;
     state.tools.clear();
+    state.teamMembers.clear();
+    state.approvals.clear();
     for (const message of payload.messages || []) {
       renderStoredMessage(message);
     }
@@ -1382,9 +1405,78 @@ async function archiveTodo(todoId) {
   }
 }
 
-function handleAgentEvent(event) {
+function eventSessionId(event = {}) {
+  return event.meta?.sessionName || event.meta?.sessionId || "";
+}
+
+function mergeSessionRuntimeStatus(sessionId, patch = {}) {
+  if (!sessionId) return;
+  const previous = sessionRuntimeStatus(sessionId);
+  state.sessionStatuses = {
+    ...state.sessionStatuses,
+    [sessionId]: {
+      ...previous,
+      sessionId,
+      active: true,
+      ...patch,
+    },
+  };
+  if (sessionId === state.currentSessionId) {
+    const current = sessionRuntimeStatus(sessionId);
+    state.busy = Boolean(current.busy);
+    state.queuedCount = Number(current.queuedCount || 0);
+  }
+  renderSessions();
+}
+
+function updateSessionRuntimeFromEvent(event = {}) {
+  const sessionId = eventSessionId(event);
+  if (!sessionId) return;
   const type = event.type;
   const payload = event.payload || {};
+  if (["RunStarted", "TeamRunStarted", "PlanDraftStarted", "PlanExecutionStarted"].includes(type)) {
+    mergeSessionRuntimeStatus(sessionId, { busy: true });
+    return;
+  }
+  if (type === "RunQueued") {
+    mergeSessionRuntimeStatus(sessionId, { busy: true, queuedCount: payload.queueSize || 0 });
+    return;
+  }
+  if (type === "ToolApprovalRequested") {
+    const previous = sessionRuntimeStatus(sessionId);
+    mergeSessionRuntimeStatus(sessionId, { pendingApprovalCount: Number(previous.pendingApprovalCount || 0) + 1 });
+    return;
+  }
+  if (type === "ToolApprovalResolved") {
+    const previous = sessionRuntimeStatus(sessionId);
+    mergeSessionRuntimeStatus(sessionId, { pendingApprovalCount: Math.max(0, Number(previous.pendingApprovalCount || 0) - 1) });
+    return;
+  }
+  if (type === "PlanProposed") {
+    mergeSessionRuntimeStatus(sessionId, { busy: false, pendingPlan: true });
+    return;
+  }
+  if (["RunFailed", "RunStopped", "Done", "RunFinished", "TeamRunFinished", "PlanCanceled", "PlanFailed"].includes(type)) {
+    mergeSessionRuntimeStatus(sessionId, { busy: false, pendingPlan: false, queuedCount: 0 });
+  }
+}
+
+function handleAgentEvent(event) {
+  const type = event.type;
+  const sessionId = eventSessionId(event);
+  const payload = {
+    ...(event.payload || {}),
+    sessionId,
+  };
+
+  updateSessionRuntimeFromEvent(event);
+  if (sessionId && (sessionId !== state.currentSessionId || state.view !== "chat")) {
+    if (["RunFailed", "RunStopped", "Done", "RunFinished", "TeamRunFinished", "PlanProposed", "PlanCanceled", "PlanFailed"].includes(type)) {
+      refreshStatus();
+      loadSessions();
+    }
+    return;
+  }
 
   if (type === "RunStarted") {
     state.currentAssistant = null;
@@ -1578,7 +1670,7 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
   addMessage("user", text);
   sendButton.disabled = true;
   try {
-    await postJson("/api/messages", { text });
+    await postJson("/api/messages", { sessionId: state.currentSessionId, text });
   } catch (error) {
     addMessage("error", error.message);
   } finally {
@@ -1588,7 +1680,7 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
 
 stopButton.addEventListener("click", async () => {
   try {
-    await postJson("/api/stop");
+    await postJson("/api/stop", { sessionId: state.currentSessionId });
   } catch (error) {
     addMessage("error", error.message);
   }

@@ -20,6 +20,13 @@
 
 * {
   box-sizing: border-box;
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 html,
@@ -329,6 +336,18 @@ button:disabled {
   overflow: hidden;
   text-overflow: ellipsis;
   overflow-wrap: anywhere;
+}
+
+.session-runtime-status {
+  justify-self: start;
+  border: 1px solid #a8e3db;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: var(--primary-weak);
+  padding: 1px 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.5;
 }
 
 .session-actions {

@@ -2,21 +2,21 @@
 
 ## 项目总览
 
-Aster 是一个教学版 Java Agent Runtime MVP，用于演示流式 LLM、AgentLoop、Tool Calling、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、TUI/Web/Telegram 多入口、固定 Agent Team、动态 DAG Plan、Web 多 Agent 聊天室和归档中心的最小可运行架构。
+Aster 是一个教学版 Java Agent Runtime MVP，用于演示流式 LLM、AgentLoop、Tool Calling、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、TUI/Web/Telegram 多入口、固定 Agent Team、动态 DAG Plan、Web 多 Agent 聊天室和归档中心的最小可运行架构。
 
 ```mermaid
 flowchart LR
     UI["ui: TUI / Web / Telegram"] --> Runtime["app/runtime: AgentRuntime"]
     Runtime --> Core["core: AgentLoop / Context / Tool / Event"]
     Core --> LLM["llm: OpenAI-compatible SSE"]
-    Runtime --> App["app: tools / MCP / memory / plan / team / room"]
+    Runtime --> App["app: tools / MCP / memory / background / schedule / plan / team / room"]
 ```
 
 ## 生成信息
 
 - 生成时间：2026-06-04 14:24
 - 生成分支：master
-- 最近同步：2026-06-05，补充入口能力矩阵、Room、Archive 和文档维护规则
+- 最近同步：2026-06-05，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离和文档维护规则
 
 ## 入口功能矩阵
 
@@ -30,9 +30,11 @@ flowchart LR
 | `/steer` 运行中引导 | 已实现 | API 已有，页面未展示 | 未实现 | TUI 有 `/steer` 命令；Web 有 `/api/steer`，当前页面没有入口；Telegram 未接命令。 |
 | follow-up 排队 | 已实现 | 已实现 | 已实现 | 忙碌时普通输入进入 `AgentRunCoordinator` 队列。 |
 | Session CRUD | 部分实现 | 已实现 | 部分实现 | TUI 支持 list/new/use/delete/current；Web 支持列表、新建、切换、重命名、归档、历史读取；Telegram 支持当前 session 和新建。 |
+| 多 session 并行运行 | 未实现 | 已实现 | 已实现 | Web 用 `WebSessionRuntimePool` 保留每个 session 的 `AgentRuntime`，切换会话不打断旧会话；Telegram 每个 chat 也持有独立 runtime。 |
 | Token/Context 状态 | 已实现 | 已实现 | 未实现 | TUI footer 和 Web 右栏展示；Telegram 不展示指标面板。 |
 | Todo 便签 | 通过工具可用 | 已实现 | 通过工具可用 | Web 有右侧便签 CRUD；普通 Agent 可用 todo 工具；TUI/IM 没有专门面板。 |
 | 后台任务通知 | 已实现 | 已实现 | 已实现 | 通过各入口的 `NotificationSink` 展示长期记忆抽取、Todo 扫描等通知。 |
+| 自动化用户消息 schedule | 通过工具可用 | 通过工具可用 | 通过工具可用 | `schedule` 到点后向当前 session 提交 user 消息；不是后台 handler，后续仍走普通 Agent 链路。 |
 | `/team` 固定 DAG 探索 | 已实现 | 已实现 | 已实现 | 三个入口都能触发；Team 子 Agent 工具调用不展示，避免刷屏。 |
 | `/plan` 动态 DAG | 已实现 | 已实现 | 已实现 | 支持 `/plan` 生成、`/start` 执行、`/plan cancel` 取消。 |
 | Web 多 Agent 聊天室 | 未实现 | 已实现 | 未实现 | 只有 Web 有 Room 页面、房间 CRUD、成员管理、Agent CRUD、`@name`/`@all` 触发。 |

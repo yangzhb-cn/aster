@@ -24,7 +24,7 @@ import java.util.Set;
 /**
  * 创建房间 Agent 使用的受限工具注册表。
  *
- * <p>第一版允许只读和检索类工具，显式屏蔽 write、edit、bash、todo、background_task、
+ * <p>第一版允许只读和检索类工具，显式屏蔽 write、edit、bash、todo、background_task、schedule、
  * subagent 等会修改环境或递归启动任务的工具。</p>
  */
 public class RoomToolRegistryFactory {
@@ -33,6 +33,7 @@ public class RoomToolRegistryFactory {
             "edit",
             "bash",
             "background_task",
+            "schedule",
             "todo",
             "todo_read",
             "todo_write",

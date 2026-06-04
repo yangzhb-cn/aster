@@ -56,6 +56,9 @@ import com.aster.app.room.RoomMembershipStore;
 import com.aster.app.room.RoomPromptBuilder;
 import com.aster.app.room.RoomStore;
 import com.aster.app.room.RoomToolRegistryFactory;
+import com.aster.app.schedule.JsonScheduledUserMessageStore;
+import com.aster.app.schedule.ScheduledUserMessageManager;
+import com.aster.app.schedule.ScheduledUserMessageStore;
 import com.aster.core.session.BootstrappedSessionStore;
 import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionCatalog;
@@ -165,6 +168,8 @@ public class AgentRuntimeFactory {
         MarkdownMemoryStore memoryStore = new MarkdownMemoryStore(WorkspacePaths.LONG_TERM_MEMORY);
         MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer(longTermMemorySystemPrompt);
         TodoStore todoStore = new JsonTodoStore(objectMapper, WorkspacePaths.TODO_FILE);
+        ScheduledUserMessageStore scheduledUserMessageStore = new JsonScheduledUserMessageStore(objectMapper, WorkspacePaths.SCHEDULE_FILE);
+        ScheduledUserMessageManager scheduledUserMessageManager = new ScheduledUserMessageManager(scheduledUserMessageStore, sessionName);
         RoomStore roomStore = new JsonRoomStore(objectMapper, WorkspacePaths.ROOM_INDEX);
         RoomHub roomHub = new RoomHub(new JsonlRoomMessageStore(objectMapper, WorkspacePaths.ROOM_MESSAGES));
         RoomAgentPromptStore roomAgentPromptStore = new RoomAgentPromptStore(WorkspacePaths.ROOM_AGENT_PROMPTS);
@@ -220,6 +225,7 @@ public class AgentRuntimeFactory {
                 memoryStore,
                 memoryPromptRenderer,
                 backgroundTaskManager,
+                scheduledUserMessageManager,
                 toolApprovalManager,
                 todoStore
         );
@@ -255,6 +261,7 @@ public class AgentRuntimeFactory {
                 MAX_TOOL_ROUNDS
         );
         AgentRunCoordinator runCoordinator = new AgentRunCoordinator(agentLoop, eventBus);
+        scheduledUserMessageManager.start(schedule -> runCoordinator.submit(scheduledUserMessageManager.renderUserInput(schedule)));
         AgentTeamRunner agentTeamRunner = new AgentTeamRunner(
                 eventPublisher,
                 new TeamTaskExecutor(
@@ -320,6 +327,7 @@ public class AgentRuntimeFactory {
                 roomAgentSessionCleaner,
                 eventPublisher,
                 backgroundTaskManager,
+                scheduledUserMessageManager,
                 toolApprovalManager,
                 parallelToolExecutor,
                 mcpToolExecutor,

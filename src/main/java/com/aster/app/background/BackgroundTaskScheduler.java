@@ -169,7 +169,10 @@ public class BackgroundTaskScheduler implements AutoCloseable {
     }
 
     private static long configuredScanIntervalSeconds() {
-        String value = System.getenv("SCHEDULE_INTERVAL_SECONDS");
+        String value = System.getenv("BACKGROUND_TASK_SCAN_INTERVAL_SECONDS");
+        if (value == null || value.isBlank()) {
+            value = System.getenv("SCHEDULE_INTERVAL_SECONDS");
+        }
         if (value == null || value.isBlank()) {
             return DEFAULT_SCAN_INTERVAL_SECONDS;
         }

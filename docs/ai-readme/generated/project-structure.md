@@ -42,9 +42,10 @@ Aster/
 | `src/main/java/com/aster/core/tool/` | Tool 抽象、注册和并发执行 | `ToolRegistry.java`、`ParallelToolExecutor.java`、`LocalToolExecutor.java` |
 | `src/main/java/com/aster/app/runtime/` | Runtime 装配、run 调度、Plan 模式协调 | `AgentRuntimeFactory.java`、`AgentRuntime.java`、`AgentRunCoordinator.java`、`PlanModeCoordinator.java` |
 | `src/main/java/com/aster/app/extension/` | 可选能力注册入口 | `AsterRuntimeExtension.java`、`RuntimeExtensionRegistry.java`、`ToolApprovalExtension.java` |
-| `src/main/java/com/aster/app/tool/` | 内置工具、开发者工具、Todo/后台工具、结果卸载 | `builtin/BuiltinTools.java`、`developer/DeveloperTools.java`、`result/ToolResultOffloadHook.java` |
+| `src/main/java/com/aster/app/tool/` | 内置工具、开发者工具、Todo/后台/schedule 工具、结果卸载 | `builtin/BuiltinTools.java`、`developer/DeveloperTools.java`、`result/ToolResultOffloadHook.java` |
 | `src/main/java/com/aster/app/hitl/` | 人工审批 | `ToolApprovalHook.java`、`ToolApprovalManager.java` |
-| `src/main/java/com/aster/app/background/` | 后台任务和定时扫描 | `BackgroundTaskScheduler.java`、`BackgroundTaskExecutor.java`、`JsonlBackgroundTaskStore.java` |
+| `src/main/java/com/aster/app/background/` | 后台任务、延时提醒、Todo/记忆维护扫描 | `BackgroundTaskScheduler.java`、`BackgroundTaskExecutor.java`、`JsonlBackgroundTaskStore.java` |
+| `src/main/java/com/aster/app/schedule/` | 自动化用户消息，到点后提交 user 输入 | `ScheduledUserMessageManager.java`、`ScheduledUserMessageScheduler.java`、`JsonScheduledUserMessageStore.java` |
 | `src/main/java/com/aster/app/mcp/` | MCP client/server/transport 适配 | `McpClient.java`、`McpToolAdapter.java`、`transport/StdioMcpTransport.java` |
 | `src/main/java/com/aster/app/memory/` | 长期记忆存储和抽取 | `MarkdownMemoryStore.java`、`MemoryExtractionHook.java`、`MemoryExtractionTaskHandler.java` |
 | `src/main/java/com/aster/app/plan/` | 动态 DAG Plan 生成和执行 | `PlanPlannerAgent.java`、`PlanRunner.java`、`PlanTaskExecutor.java` |
@@ -77,6 +78,7 @@ flowchart TD
 workspace/
 ├── sessions/                 # JSONL 会话历史和 index.json
 ├── tasks/                    # 后台任务定义和运行记录
+├── schedules/                # 自动化用户消息定义
 ├── todos/                    # Web/Agent 共享 Todo 清单
 ├── skills/                   # 本地 Skill 文档
 ├── artifacts/tool-results/   # 大工具结果外部卸载

@@ -18,6 +18,7 @@ import com.aster.app.room.model.RoomAgentProfile;
 import com.aster.app.room.model.RoomMemberView;
 import com.aster.app.room.model.RoomMembership;
 import com.aster.app.room.model.RoomSendResult;
+import com.aster.app.schedule.ScheduledUserMessageManager;
 import com.aster.app.team.AgentTeamRunner;
 import com.aster.app.team.model.TeamRunOutput;
 import com.aster.core.event.model.AgentEvent;
@@ -52,6 +53,7 @@ public class AgentRuntime implements AutoCloseable {
     private final RoomAgentSessionCleaner roomAgentSessionCleaner;
     private final AgentEventPublisher eventPublisher;
     private final BackgroundTaskManager backgroundTaskManager;
+    private final ScheduledUserMessageManager scheduledUserMessageManager;
     private final ToolApprovalManager toolApprovalManager;
     private final ParallelToolExecutor parallelToolExecutor;
     private final McpToolExecutor mcpToolExecutor;
@@ -79,6 +81,7 @@ public class AgentRuntime implements AutoCloseable {
             RoomAgentSessionCleaner roomAgentSessionCleaner,
             AgentEventPublisher eventPublisher,
             BackgroundTaskManager backgroundTaskManager,
+            ScheduledUserMessageManager scheduledUserMessageManager,
             ToolApprovalManager toolApprovalManager,
             ParallelToolExecutor parallelToolExecutor,
             McpToolExecutor mcpToolExecutor,
@@ -100,6 +103,7 @@ public class AgentRuntime implements AutoCloseable {
         this.roomAgentSessionCleaner = Objects.requireNonNull(roomAgentSessionCleaner);
         this.eventPublisher = Objects.requireNonNull(eventPublisher);
         this.backgroundTaskManager = Objects.requireNonNull(backgroundTaskManager);
+        this.scheduledUserMessageManager = Objects.requireNonNull(scheduledUserMessageManager);
         this.toolApprovalManager = Objects.requireNonNull(toolApprovalManager);
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
         this.mcpToolExecutor = Objects.requireNonNull(mcpToolExecutor);
@@ -510,6 +514,7 @@ public class AgentRuntime implements AutoCloseable {
     public void close() {
         toolApprovalManager.cancelAll("runtime closing");
         planModeCoordinator.close();
+        scheduledUserMessageManager.close();
         teamExecutor.shutdownNow();
         runCoordinator.close();
         backgroundTaskManager.close();

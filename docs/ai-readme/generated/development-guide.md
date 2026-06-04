@@ -58,7 +58,8 @@
 | `TELEGRAM_ALLOWED_CHAT_IDS` | Telegram chat 白名单，逗号分隔 |
 | `OWNER_ID` | `aster2im` 兼容变量，可转换为 Telegram 白名单 |
 | `TAVILY_API_KEY` | `web_search` 工具使用 |
-| `SCHEDULE_INTERVAL_SECONDS` | 后台任务扫描间隔，默认 10 秒 |
+| `BACKGROUND_TASK_SCAN_INTERVAL_SECONDS` | 后台任务扫描间隔，默认 10 秒 |
+| `SCHEDULE_INTERVAL_SECONDS` | 旧后台扫描变量名，仍兼容；新配置优先使用 `BACKGROUND_TASK_SCAN_INTERVAL_SECONDS` |
 
 ## 开发循环
 

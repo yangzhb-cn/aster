@@ -50,27 +50,26 @@ public class WebServer implements AutoCloseable {
     private final WebSseClientRegistry clients = new WebSseClientRegistry();
     private final ExecutorService executor = Executors.newCachedThreadPool();
     private final ScheduledExecutorService heartbeat = Executors.newSingleThreadScheduledExecutor();
-    private final AgentRuntimeFactory runtimeFactory;
     private final WebAgentEventHandler eventHandler;
     private final WebNotificationSink notificationSink;
+    private final WebSessionRuntimePool runtimePool;
     private final SessionIndex sessionIndex;
     private final TodoStore todoStore;
     private final Object runtimeLock = new Object();
     private final HttpServer server;
-    private AgentRuntime runtime;
     private String currentSessionId;
     private String currentDisplayName;
 
     public WebServer(int port, AgentRuntimeFactory runtimeFactory, String sessionName) throws IOException {
-        this.runtimeFactory = Objects.requireNonNull(runtimeFactory);
         this.eventHandler = new WebAgentEventHandler(objectMapper, clients);
         this.notificationSink = new WebNotificationSink(objectMapper, clients);
+        this.runtimePool = new WebSessionRuntimePool(Objects.requireNonNull(runtimeFactory), eventHandler, notificationSink);
         this.sessionIndex = new SessionIndex(objectMapper, WorkspacePaths.SESSIONS);
         this.todoStore = new JsonTodoStore(objectMapper, WorkspacePaths.TODO_FILE);
         SessionRecord session = sessionIndex.ensure(sessionName, sessionName);
         this.currentSessionId = session.id();
         this.currentDisplayName = session.displayName();
-        this.runtime = runtimeFactory.create(eventHandler, notificationSink, session.id());
+        this.runtimePool.runtimeFor(session.id());
         this.server = HttpServer.create(new InetSocketAddress(port), 0);
         server.setExecutor(executor);
         registerRoutes();
@@ -140,44 +139,56 @@ public class WebServer implements AutoCloseable {
             return;
         }
 
-        String text = readTextPayload(exchange);
-        if (text.isBlank()) {
-            sendJson(exchange, 400, Map.of("error", "text is required"));
-            return;
-        }
+        try {
+            Map<?, ?> payload = readPayload(exchange);
+            String text = stringValue(payload, "text");
+            if (text.isBlank()) {
+                sendJson(exchange, 400, Map.of("error", "text is required"));
+                return;
+            }
 
-        synchronized (runtimeLock) {
-            if ("/start".equals(text)) {
-                if (!runtime.startPlan()) {
-                    sendJson(exchange, 409, Map.of("error", "当前没有待执行的 Plan"));
-                    return;
-                }
-            } else if (text.startsWith("/plan")) {
-                String task = text.length() <= "/plan".length() ? "" : text.substring("/plan".length()).trim();
-                if ("cancel".equalsIgnoreCase(task)) {
-                    if (!runtime.cancelPlan()) {
-                        sendJson(exchange, 409, Map.of("error", "当前没有可取消的 Plan"));
+            String sessionId = sessionIdFromPayload(payload);
+            synchronized (runtimeLock) {
+                SessionRecord session = activeSession(sessionId);
+                AgentRuntime target = runtimePool.runtimeFor(session.id());
+                if ("/start".equals(text)) {
+                    if (!target.startPlan()) {
+                        sendJson(exchange, 409, Map.of("error", "当前没有待执行的 Plan"));
                         return;
                     }
-                } else if (task.isBlank()) {
-                    sendJson(exchange, 400, Map.of("error", "用法：/plan 要完成的任务"));
-                    return;
+                } else if (text.startsWith("/plan")) {
+                    String task = text.length() <= "/plan".length() ? "" : text.substring("/plan".length()).trim();
+                    if ("cancel".equalsIgnoreCase(task)) {
+                        if (!target.cancelPlan()) {
+                            sendJson(exchange, 409, Map.of("error", "当前没有可取消的 Plan"));
+                            return;
+                        }
+                    } else if (task.isBlank()) {
+                        sendJson(exchange, 400, Map.of("error", "用法：/plan 要完成的任务"));
+                        return;
+                    } else {
+                        target.submitPlan(task);
+                    }
+                } else if (text.startsWith("/team")) {
+                    String task = text.length() <= "/team".length() ? "" : text.substring("/team".length()).trim();
+                    if (task.isBlank()) {
+                        sendJson(exchange, 400, Map.of("error", "用法：/team 要探索的问题"));
+                        return;
+                    }
+                    target.submitTeam(task);
                 } else {
-                    runtime.submitPlan(task);
+                    target.submit(text);
                 }
-            } else if (text.startsWith("/team")) {
-                String task = text.length() <= "/team".length() ? "" : text.substring("/team".length()).trim();
-                if (task.isBlank()) {
-                    sendJson(exchange, 400, Map.of("error", "用法：/team 要探索的问题"));
-                    return;
-                }
-                runtime.submitTeam(task);
-            } else {
-                runtime.submit(text);
+                sessionIndex.touch(session.id());
             }
-            sessionIndex.touch(currentSessionId);
+            sendJson(exchange, 202, statusPayload());
+        } catch (IllegalArgumentException e) {
+            sendJson(exchange, 400, Map.of("error", e.getMessage()));
+        } catch (IllegalStateException e) {
+            sendJson(exchange, 409, Map.of("error", e.getMessage()));
+        } catch (IOException e) {
+            sendJson(exchange, sessionErrorStatus(e), Map.of("error", e.getMessage()));
         }
-        sendJson(exchange, 202, statusPayload());
     }
 
     private void handleSteer(HttpExchange exchange) throws IOException {
@@ -186,17 +197,23 @@ public class WebServer implements AutoCloseable {
             return;
         }
 
-        String text = readTextPayload(exchange);
-        if (text.isBlank()) {
-            sendJson(exchange, 400, Map.of("error", "text is required"));
-            return;
-        }
+        try {
+            Map<?, ?> payload = readPayload(exchange);
+            String text = stringValue(payload, "text");
+            if (text.isBlank()) {
+                sendJson(exchange, 400, Map.of("error", "text is required"));
+                return;
+            }
 
-        boolean accepted;
-        synchronized (runtimeLock) {
-            accepted = runtime.steer(text);
+            boolean accepted;
+            synchronized (runtimeLock) {
+                String sessionId = sessionIdFromPayload(payload);
+                accepted = runtimeForActiveSession(sessionId).steer(text);
+            }
+            sendJson(exchange, accepted ? 202 : 409, statusPayload());
+        } catch (IOException e) {
+            sendJson(exchange, sessionErrorStatus(e), Map.of("error", e.getMessage()));
         }
-        sendJson(exchange, accepted ? 202 : 409, statusPayload());
     }
 
     private void handleStop(HttpExchange exchange) throws IOException {
@@ -205,11 +222,17 @@ public class WebServer implements AutoCloseable {
             return;
         }
 
-        boolean accepted;
-        synchronized (runtimeLock) {
-            accepted = runtime.stop();
+        try {
+            Map<?, ?> payload = readPayload(exchange);
+            boolean accepted;
+            synchronized (runtimeLock) {
+                String sessionId = sessionIdFromPayload(payload);
+                accepted = runtimeForActiveSession(sessionId).stop();
+            }
+            sendJson(exchange, accepted ? 202 : 409, statusPayload());
+        } catch (IOException e) {
+            sendJson(exchange, sessionErrorStatus(e), Map.of("error", e.getMessage()));
         }
-        sendJson(exchange, accepted ? 202 : 409, statusPayload());
     }
 
     private void handleStatus(HttpExchange exchange) throws IOException {
@@ -229,45 +252,50 @@ public class WebServer implements AutoCloseable {
             return;
         }
 
-        String path = exchange.getRequestURI().getPath();
-        Map<?, ?> payload = readPayload(exchange);
-        String approvalId = stringValue(payload, "id");
-        boolean accepted;
-        int count = 0;
-        synchronized (runtimeLock) {
-            if ("/api/approvals/approve".equals(path)) {
-                if (approvalId.isBlank()) {
-                    count = runtime.approveAllTools();
-                    accepted = count > 0;
+        try {
+            String path = exchange.getRequestURI().getPath();
+            Map<?, ?> payload = readPayload(exchange);
+            String approvalId = stringValue(payload, "id");
+            boolean accepted;
+            int count = 0;
+            synchronized (runtimeLock) {
+                AgentRuntime target = runtimeForActiveSession(sessionIdFromPayload(payload));
+                if ("/api/approvals/approve".equals(path)) {
+                    if (approvalId.isBlank()) {
+                        count = target.approveAllTools();
+                        accepted = count > 0;
+                    } else {
+                        accepted = target.approveTool(approvalId);
+                        count = accepted ? 1 : 0;
+                    }
+                } else if ("/api/approvals/deny".equals(path)) {
+                    String reason = stringValue(payload, "reason");
+                    if (approvalId.isBlank()) {
+                        count = target.denyAllTools(reason.isBlank() ? "用户拒绝全部待审批工具" : reason);
+                        accepted = count > 0;
+                    } else {
+                        accepted = target.denyTool(approvalId, reason);
+                        count = accepted ? 1 : 0;
+                    }
                 } else {
-                    accepted = runtime.approveTool(approvalId);
-                    count = accepted ? 1 : 0;
+                    sendJson(exchange, 404, Map.of("error", "Not Found"));
+                    return;
                 }
-            } else if ("/api/approvals/deny".equals(path)) {
-                String reason = stringValue(payload, "reason");
-                if (approvalId.isBlank()) {
-                    count = runtime.denyAllTools(reason.isBlank() ? "用户拒绝全部待审批工具" : reason);
-                    accepted = count > 0;
-                } else {
-                    accepted = runtime.denyTool(approvalId, reason);
-                    count = accepted ? 1 : 0;
-                }
-            } else {
-                sendJson(exchange, 404, Map.of("error", "Not Found"));
-                return;
             }
+            sendJson(exchange, accepted ? 202 : 404, Map.of(
+                    "accepted", accepted,
+                    "count", count,
+                    "status", statusPayload()
+            ));
+        } catch (IOException e) {
+            sendJson(exchange, sessionErrorStatus(e), Map.of("error", e.getMessage()));
         }
-        sendJson(exchange, accepted ? 202 : 404, Map.of(
-                "accepted", accepted,
-                "count", count,
-                "status", statusPayload()
-        ));
     }
 
     /**
      * 处理 Web 会话 CRUD。
      *
-     * <p>这里只管理 session 索引和当前 runtime 切换；真实消息仍由 JsonlSessionStore 读写。</p>
+     * <p>这里只管理 session 索引和当前选中 session；真实消息仍由 JsonlSessionStore 读写。</p>
      */
     private void handleSessions(HttpExchange exchange) throws IOException {
         try {
@@ -479,7 +507,7 @@ public class WebServer implements AutoCloseable {
     private void createRoom(HttpExchange exchange) throws IOException {
         Map<?, ?> payload = readPayload(exchange);
         synchronized (runtimeLock) {
-            runtime.createRoom(stringValue(payload, "name"));
+            currentRuntime().createRoom(stringValue(payload, "name"));
         }
         sendJson(exchange, 201, roomsPayload());
     }
@@ -487,7 +515,7 @@ public class WebServer implements AutoCloseable {
     private void updateRoom(HttpExchange exchange) throws IOException {
         Map<?, ?> payload = readPayload(exchange);
         synchronized (runtimeLock) {
-            runtime.updateRoom(
+            currentRuntime().updateRoom(
                     requiredValue(payload, "roomId"),
                     stringValue(payload, "name"),
                     stringValue(payload, "topic")
@@ -499,7 +527,7 @@ public class WebServer implements AutoCloseable {
     private void archiveRoom(HttpExchange exchange) throws IOException {
         Map<?, ?> payload = readPayload(exchange);
         synchronized (runtimeLock) {
-            runtime.archiveRoom(requiredValue(payload, "roomId"));
+            currentRuntime().archiveRoom(requiredValue(payload, "roomId"));
         }
         sendJson(exchange, 200, roomsPayload());
     }
@@ -507,7 +535,7 @@ public class WebServer implements AutoCloseable {
     private void handleRoomMessages(HttpExchange exchange, String roomId) throws IOException {
         if ("GET".equals(exchange.getRequestMethod())) {
             synchronized (runtimeLock) {
-                sendJson(exchange, 200, Map.of("messages", runtime.roomMessages(roomId).stream()
+                sendJson(exchange, 200, Map.of("messages", currentRuntime().roomMessages(roomId).stream()
                         .map(this::hubMessagePayload)
                         .toList()));
             }
@@ -517,7 +545,7 @@ public class WebServer implements AutoCloseable {
             String text = readTextPayload(exchange);
             RoomSendResult result;
             synchronized (runtimeLock) {
-                result = runtime.sendRoomMessage(roomId, text);
+                result = currentRuntime().sendRoomMessage(roomId, text);
             }
             sendJson(exchange, 202, Map.of(
                     "room", roomPayload(result.room()),
@@ -541,9 +569,9 @@ public class WebServer implements AutoCloseable {
         Map<?, ?> payload = readPayload(exchange);
         synchronized (runtimeLock) {
             switch (route.action()) {
-                case "" -> runtime.addRoomMember(route.roomId(), requiredValue(payload, "agentId"));
-                case "archive" -> runtime.archiveRoomMember(route.roomId(), requiredValue(payload, "agentId"));
-                case "restore" -> runtime.restoreRoomMember(route.roomId(), requiredValue(payload, "agentId"));
+                case "" -> currentRuntime().addRoomMember(route.roomId(), requiredValue(payload, "agentId"));
+                case "archive" -> currentRuntime().archiveRoomMember(route.roomId(), requiredValue(payload, "agentId"));
+                case "restore" -> currentRuntime().restoreRoomMember(route.roomId(), requiredValue(payload, "agentId"));
                 default -> {
                     sendJson(exchange, 404, Map.of("error", "Not Found"));
                     return;
@@ -556,7 +584,7 @@ public class WebServer implements AutoCloseable {
     private void createRoomAgent(HttpExchange exchange) throws IOException {
         RoomAgentInput input = objectMapper.convertValue(readPayload(exchange), RoomAgentInput.class);
         synchronized (runtimeLock) {
-            runtime.createRoomAgent(input);
+            currentRuntime().createRoomAgent(input);
         }
         sendJson(exchange, 201, roomAgentsPayload());
     }
@@ -564,7 +592,7 @@ public class WebServer implements AutoCloseable {
     private void updateRoomAgent(HttpExchange exchange) throws IOException {
         RoomAgentInput input = objectMapper.convertValue(readPayload(exchange), RoomAgentInput.class);
         synchronized (runtimeLock) {
-            runtime.updateRoomAgent(input);
+            currentRuntime().updateRoomAgent(input);
         }
         sendJson(exchange, 200, roomAgentsPayload());
     }
@@ -572,7 +600,7 @@ public class WebServer implements AutoCloseable {
     private void archiveRoomAgent(HttpExchange exchange) throws IOException {
         Map<?, ?> payload = readPayload(exchange);
         synchronized (runtimeLock) {
-            runtime.archiveRoomAgent(requiredValue(payload, "agentId"));
+            currentRuntime().archiveRoomAgent(requiredValue(payload, "agentId"));
         }
         sendJson(exchange, 200, roomAgentsPayload());
     }
@@ -585,8 +613,8 @@ public class WebServer implements AutoCloseable {
             switch (type) {
                 case "session" -> sessionIndex.restore(id);
                 case "todo" -> todoStore.restore(id);
-                case "room" -> runtime.restoreRoom(id);
-                case "room-agent" -> runtime.restoreRoomAgent(id);
+                case "room" -> currentRuntime().restoreRoom(id);
+                case "room-agent" -> currentRuntime().restoreRoomAgent(id);
                 default -> throw new IOException("unknown archive type: " + type);
             }
         }
@@ -615,27 +643,28 @@ public class WebServer implements AutoCloseable {
 
     private void deleteArchiveItem(String type, String id) throws IOException {
         switch (type) {
-            case "session" -> sessionIndex.deletePermanently(id);
+            case "session" -> {
+                runtimePool.closeIfIdle(id);
+                sessionIndex.deletePermanently(id);
+            }
             case "todo" -> todoStore.deletePermanently(id);
-            case "room" -> runtime.deleteRoomPermanently(id);
-            case "room-agent" -> runtime.deleteRoomAgentPermanently(id);
+            case "room" -> currentRuntime().deleteRoomPermanently(id);
+            case "room-agent" -> currentRuntime().deleteRoomAgentPermanently(id);
             default -> throw new IOException("unknown archive type: " + type);
         }
     }
 
     private void createSession(HttpExchange exchange) throws IOException {
-        ensureIdle();
         String displayName = readStringPayload(exchange, "displayName");
         SessionRecord session = sessionIndex.create(displayName);
-        switchRuntime(session);
+        selectSession(session);
         sendJson(exchange, 201, sessionsPayload());
     }
 
     private void useSession(HttpExchange exchange) throws IOException {
-        ensureIdle();
         String sessionId = readRequiredPayload(exchange, "id");
         SessionRecord session = activeSession(sessionId);
-        switchRuntime(session);
+        selectSession(session);
         sendJson(exchange, 200, sessionsPayload());
     }
 
@@ -653,17 +682,18 @@ public class WebServer implements AutoCloseable {
     }
 
     private void archiveSession(HttpExchange exchange) throws IOException {
-        ensureIdle();
         String sessionId = readRequiredPayload(exchange, "id");
-        sessionIndex.archive(sessionId);
-
         synchronized (runtimeLock) {
+            activeSession(sessionId);
+            runtimePool.closeIfIdle(sessionId);
+            sessionIndex.archive(sessionId);
+
             if (sessionId.equals(currentSessionId)) {
                 List<SessionRecord> sessions = sessionIndex.listActive();
                 SessionRecord next = sessions.isEmpty()
                         ? sessionIndex.create("新会话")
                         : sessions.getFirst();
-                switchRuntime(next);
+                selectSession(next);
             }
         }
 
@@ -770,21 +800,24 @@ public class WebServer implements AutoCloseable {
         return result;
     }
 
-    private Map<String, Object> statusPayload() {
+    private Map<String, Object> statusPayload() throws IOException {
         Map<String, Object> status = new LinkedHashMap<>();
         synchronized (runtimeLock) {
+            AgentRuntime selected = currentRuntime();
+            status.put("currentSessionId", currentSessionId);
             status.put("sessionId", currentSessionId);
             status.put("sessionName", currentSessionId);
             status.put("displayName", currentDisplayName);
-            status.put("model", runtime.provider().defaultModel());
-            status.put("provider", runtime.provider().name());
-            status.put("skillCount", runtime.skillCount());
-            status.put("busy", runtime.isBusy());
-            status.put("pendingPlan", runtime.hasPendingPlan());
-            status.put("queuedCount", runtime.queuedCount());
-            status.put("pendingApprovals", runtime.pendingToolApprovals().stream()
+            status.put("model", selected.provider().defaultModel());
+            status.put("provider", selected.provider().name());
+            status.put("skillCount", selected.skillCount());
+            status.put("busy", selected.isBusy());
+            status.put("pendingPlan", selected.hasPendingPlan());
+            status.put("queuedCount", selected.queuedCount());
+            status.put("pendingApprovals", selected.pendingToolApprovals().stream()
                     .map(this::approvalPayload)
                     .toList());
+            status.put("sessionStatuses", sessionStatusesPayload());
         }
         status.put("sseClients", clients.size());
         return status;
@@ -795,6 +828,28 @@ public class WebServer implements AutoCloseable {
         payload.put("sessions", sessionIndex.listActive());
         payload.put("currentSessionId", currentSessionId);
         payload.put("status", statusPayload());
+        return payload;
+    }
+
+    private Map<String, Object> sessionStatusesPayload() throws IOException {
+        List<String> sessionIds = sessionIndex.listActive().stream()
+                .map(SessionRecord::id)
+                .toList();
+        Map<String, Object> payload = new LinkedHashMap<>();
+        for (WebSessionRuntimeStatus status : runtimePool.statuses(sessionIds).values()) {
+            payload.put(status.sessionId(), sessionStatusPayload(status));
+        }
+        return payload;
+    }
+
+    private Map<String, Object> sessionStatusPayload(WebSessionRuntimeStatus status) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("sessionId", status.sessionId());
+        payload.put("active", status.active());
+        payload.put("busy", status.busy());
+        payload.put("pendingPlan", status.pendingPlan());
+        payload.put("queuedCount", status.queuedCount());
+        payload.put("pendingApprovalCount", status.pendingApprovalCount());
         return payload;
     }
 
@@ -813,10 +868,10 @@ public class WebServer implements AutoCloseable {
             payload.put("todos", todoStore.listArchived().stream()
                     .map(this::todoPayload)
                     .toList());
-            payload.put("rooms", runtime.listArchivedRooms().stream()
+            payload.put("rooms", currentRuntime().listArchivedRooms().stream()
                     .map(this::roomPayload)
                     .toList());
-            payload.put("roomAgents", runtime.listArchivedRoomAgents().stream()
+            payload.put("roomAgents", currentRuntime().listArchivedRoomAgents().stream()
                     .map(this::roomAgentPayload)
                     .toList());
         }
@@ -825,8 +880,9 @@ public class WebServer implements AutoCloseable {
 
     private Map<String, Object> roomsPayload() throws IOException {
         synchronized (runtimeLock) {
-            runtime.ensureDefaultRoom();
-            return Map.of("rooms", runtime.listRooms().stream()
+            AgentRuntime selected = currentRuntime();
+            selected.ensureDefaultRoom();
+            return Map.of("rooms", selected.listRooms().stream()
                     .map(this::roomPayload)
                     .toList());
         }
@@ -834,7 +890,7 @@ public class WebServer implements AutoCloseable {
 
     private Map<String, Object> roomAgentsPayload() throws IOException {
         synchronized (runtimeLock) {
-            return Map.of("agents", runtime.listRoomAgents().stream()
+            return Map.of("agents", currentRuntime().listRoomAgents().stream()
                     .map(this::roomAgentPayload)
                     .toList());
         }
@@ -842,14 +898,15 @@ public class WebServer implements AutoCloseable {
 
     private Map<String, Object> roomMembersPayload(String roomId) throws IOException {
         synchronized (runtimeLock) {
+            AgentRuntime selected = currentRuntime();
             Map<String, Object> payload = new LinkedHashMap<>();
-            payload.put("members", runtime.listRoomMembers(roomId).stream()
+            payload.put("members", selected.listRoomMembers(roomId).stream()
                     .map(this::roomMemberPayload)
                     .toList());
-            payload.put("removed", runtime.listArchivedRoomMembers(roomId).stream()
+            payload.put("removed", selected.listArchivedRoomMembers(roomId).stream()
                     .map(this::roomMemberPayload)
                     .toList());
-            payload.put("availableAgents", runtime.listAvailableRoomAgents(roomId).stream()
+            payload.put("availableAgents", selected.listAvailableRoomAgents(roomId).stream()
                     .map(this::roomAgentPayload)
                     .toList());
             return payload;
@@ -912,7 +969,7 @@ public class WebServer implements AutoCloseable {
         payload.put("createdAt", agent.createdAt());
         payload.put("updatedAt", agent.updatedAt());
         try {
-            payload.put("systemPrompt", runtime.roomAgentPrompt(agent));
+            payload.put("systemPrompt", currentRuntime().roomAgentPrompt(agent));
         } catch (IOException e) {
             payload.put("systemPrompt", "");
         }
@@ -948,32 +1005,31 @@ public class WebServer implements AutoCloseable {
                 .orElseThrow(() -> new IOException("session not found: " + sessionId));
     }
 
-    private void ensureIdle() throws IOException {
-        synchronized (runtimeLock) {
-            if (runtime.isBusy()) {
-                throw new IOException("agent is running, wait for current request to finish");
-            }
-        }
+    private String sessionIdFromPayload(Map<?, ?> payload) {
+        String sessionId = stringValue(payload, "sessionId");
+        return sessionId.isBlank() ? currentSessionId : sessionId;
+    }
+
+    private AgentRuntime currentRuntime() throws IOException {
+        return runtimeForActiveSession(currentSessionId);
+    }
+
+    private AgentRuntime runtimeForActiveSession(String sessionId) throws IOException {
+        SessionRecord session = activeSession(sessionId);
+        return runtimePool.runtimeFor(session.id());
     }
 
     /**
-     * 切换当前 Web runtime 到指定 session。
+     * 切换当前 Web 选中的 session。
      *
-     * <p>HttpServer、SSE 客户端和事件 handler 都保持不变，只替换底层 AgentRuntime。</p>
+     * <p>这里只更新当前指针并确保目标 runtime 存在，不关闭其他 session 的 runtime。
+     * 因此用户切到 B 时，A 可以继续在后台执行。</p>
      */
-    private void switchRuntime(SessionRecord session) throws IOException {
+    private void selectSession(SessionRecord session) throws IOException {
         synchronized (runtimeLock) {
-            if (runtime.isBusy()) {
-                throw new IOException("agent is running, wait for current request to finish");
-            }
-            AgentRuntime oldRuntime = runtime;
-            AgentRuntime nextRuntime = runtimeFactory.create(eventHandler, notificationSink, session.id());
-            runtime = nextRuntime;
+            runtimePool.runtimeFor(session.id());
             currentSessionId = session.id();
             currentDisplayName = session.displayName();
-            if (oldRuntime != null) {
-                oldRuntime.close();
-            }
         }
     }
 
@@ -1148,7 +1204,7 @@ public class WebServer implements AutoCloseable {
         server.stop(0);
         clients.close();
         synchronized (runtimeLock) {
-            runtime.close();
+            runtimePool.close();
         }
         heartbeat.shutdownNow();
         executor.shutdownNow();

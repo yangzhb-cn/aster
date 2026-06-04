@@ -42,7 +42,7 @@ public class ToolApprovalHook implements HookHandler<BeforeToolCallContext, Tool
         if ("bash".equals(toolName) && isTimingCommand(context.toolCall().function().argumentsJson())) {
             return ToolHookDecision.deny(
                     "不允许用 bash sleep/at/crontab/nohup 等 shell 方式模拟提醒或定时任务；"
-                            + "请改用 background_task 的 create_delay 或 create_interval。"
+                            + "简单延时提醒请用 background_task reminder，需要 Agent 到点自动执行的任务请用 schedule。"
             );
         }
         if (!protectedTools.contains(toolName)) {

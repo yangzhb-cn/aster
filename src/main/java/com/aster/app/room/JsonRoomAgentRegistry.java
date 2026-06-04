@@ -31,6 +31,7 @@ public class JsonRoomAgentRegistry implements RoomAgentRegistry {
             "edit",
             "bash",
             "background_task",
+            "schedule",
             "todo",
             "todo_read",
             "todo_write",

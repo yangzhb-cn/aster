@@ -17,9 +17,8 @@ import java.util.Objects;
 /**
  * background_task 工具。
  *
- * <p>它把后台任务和定时调度能力暴露给 Agent：立即执行、延迟执行、
- * 固定间隔重复执行、列出任务、取消任务。trigger 只决定什么时候执行，
- * 真正执行什么仍由 BackgroundTaskHandler 根据 taskType 决定。</p>
+ * <p>它只暴露系统后台任务和延时提醒能力。需要 Agent 到点自动执行的
+ * 用户任务应使用 schedule 工具，不应塞到后台 handler 里。</p>
  */
 public class BackgroundTaskTool {
     private static final int MAX_LIST_TASKS = 100;
@@ -37,12 +36,14 @@ public class BackgroundTaskTool {
                 "background_task",
                 "Background Task",
                 """
-                        管理 Aster 后台任务和定时任务。适合用来安排“稍后提醒我”“每隔一段时间执行一次”等非阻塞任务，不要用 bash sleep 来模拟定时。
+                        管理 Aster 后台任务和延时提醒。适合“5 分钟后提醒我一句话”、长期记忆抽取、便签扫描等不需要 Agent 自动思考的非阻塞任务。
+                        如果用户要求“每天 12 点帮我总结新闻”“定期检查网站并回答”等需要 Agent 到点执行的任务，必须改用 schedule 工具。
+                        不要用 bash sleep 来模拟等待。
 
                         支持的 action：
                         - create_immediate：创建后由后台调度器尽快执行一次
                         - create_delay：创建后等待 delaySeconds 秒再执行一次
-                        - create_interval：创建后按 intervalSeconds 秒固定间隔重复执行
+                        - create_interval：创建后按 intervalSeconds 秒固定间隔重复执行提醒或系统维护任务
                         - list：列出任务定义
                         - cancel：取消任务
 
@@ -55,11 +56,11 @@ public class BackgroundTaskTool {
                         触发规则：
                         - create_delay 必须传 delaySeconds
                         - create_interval 必须传 intervalSeconds，必须大于 0
-                        - 定时任务由后台扫描器周期检查任务清单，不阻塞当前对话
+                        - 后台任务由后台扫描器检查任务清单，不阻塞当前对话
                         """.strip(),
                 objectSchema(
                         Map.of(
-                                "action", stringSchema("操作类型：create_immediate/create_delay/create_interval/list/cancel。创建定时提醒优先用 create_delay 或 create_interval"),
+                                "action", stringSchema("操作类型：create_immediate/create_delay/create_interval/list/cancel。创建延时提醒优先用 create_delay"),
                                 "name", stringSchema("任务展示名，创建任务时可选，例如 10 秒后提醒"),
                                 "taskType", stringSchema("任务到期后执行的动作类型。当前常用 reminder，系统任务可用 memory_extract"),
                                 "params", Map.of(

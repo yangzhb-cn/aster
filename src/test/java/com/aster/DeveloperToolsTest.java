@@ -11,6 +11,8 @@ import com.aster.app.extension.RuntimeExtensionContext;
 import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
+import com.aster.app.schedule.JsonScheduledUserMessageStore;
+import com.aster.app.schedule.ScheduledUserMessageManager;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.skill.SkillRepository;
 import com.aster.app.todo.JsonTodoStore;
@@ -195,6 +197,7 @@ class DeveloperToolsTest {
                 new MarkdownMemoryStore(tempDir.resolve("memory.md")),
                 new MemoryPromptRenderer("{{memory}}"),
                 backgroundTaskManager,
+                new ScheduledUserMessageManager(new JsonScheduledUserMessageStore(objectMapper, tempDir.resolve("schedules.json")), "test"),
                 new ToolApprovalManager(),
                 new JsonTodoStore(objectMapper, tempDir.resolve("todos.json"))
         );

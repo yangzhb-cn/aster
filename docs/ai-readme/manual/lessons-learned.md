@@ -34,6 +34,8 @@
 | Room 工具限制要保存侧和运行侧都做 | 只在 ToolRegistry 屏蔽，Web 配置里仍显示危险工具会误导用户 | Agent 配置保存时剔除 forbidden tools，运行时再二次过滤 | `JsonRoomAgentRegistry`, `RoomToolRegistryFactory` |
 | Room Agent 不能写死角色 | 用户后续不一定做研发主题，可能是任意领域聊天室 | Agent 的 name、role、description、system prompt 都外部配置并可在 Web CRUD | `RoomAgentProfile`, `RoomAgentPromptStore` |
 | Room 共享消息不能等同于 Agent 私有上下文 | 后续加入的 Agent 要知道房间消息，但每个 Agent 又要有独立历史 | 房间 hub message 单独 JSONL；Agent 私有 session 单独 JSONL；通过 `RoomContextInjectHook` 临时注入 | `RoomHub`, `RoomAgentSessionFactory`, `RoomContextInjectHook` |
+| Room `@all` 并行回复不能按完成时间写入 | 并行 Agent 完成时间不稳定，如果谁先完成谁先写，聊天室顺序每次可能不同 | 成员关系保存 `orderIndex`，本次回复保存 `replyIndex`；并行执行后按顺序统一写回 | `RoomMembership`, `RoomCoordinator` |
+| 从聊天室移除 Agent 不等于删除 Agent | 全局 Agent 可复用到多个聊天室，移除只是离开当前房间 | 归档 `roomId + agentId` 成员关系；恢复时 generation + 1，旧私有上下文不再使用 | `RoomMembershipStore`, `RoomAgentSessionFactory` |
 | ai-readme 生成文档会随着代码快速过时 | 功能连续新增后，入口能力、架构图、核心流程可能还停留在旧版本 | 每次涉及代码改动、架构变化、功能新增或经验沉淀，都要评估是否同步 `docs/ai-readme/README.md`、`generated/`、`manual/` | `docs/ai-readme/*`, `AGENTS.md` |
 
 ## 已知风险

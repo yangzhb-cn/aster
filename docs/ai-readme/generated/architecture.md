@@ -128,10 +128,12 @@ flowchart TD
     WebRoom["Web Room 视图"] --> WebApi["WebServer\n/api/rooms /api/room-agents"]
     WebApi --> RuntimeRoom["AgentRuntime Room methods"]
     RuntimeRoom --> Store["RoomStore / RoomAgentRegistry"]
+    RuntimeRoom --> Members["RoomMembershipStore\nmembers.json / generation"]
     RuntimeRoom --> Hub["RoomHub\n共享 JSONL 消息"]
-    RuntimeRoom --> Coordinator["RoomCoordinator\n写 user hub message + 解析 @"]
+    RuntimeRoom --> Coordinator["RoomCoordinator\n写 user hub message + 按成员解析 @"]
     Coordinator --> Runner["RoomAgentRunner"]
-    Runner --> PrivateSession["RoomAgentSessionFactory\n每个 room-agent 独立 JSONL"]
+    Coordinator --> Parallel["@all 并行执行\n按 replyIndex 写回"]
+    Runner --> PrivateSession["RoomAgentSessionFactory\n每个 room-agent-generation 独立 JSONL"]
     Runner --> Hook["RoomContextInjectHook\n注入最近 hub messages"]
     Runner --> Tools["RoomToolRegistryFactory\nread/ls/glob/grep/web_fetch/web_search/load_skill"]
     Runner --> Loop["AgentLoop + noop event bus"]
@@ -155,6 +157,7 @@ flowchart LR
 - Web 前端当前使用静态资源和原生 JS，没有前端构建链路。
 - Web Room 当前是同步 HTTP 回复，不是 token 流式聊天室；Room Agent 事件总线使用 noop，页面只展示最终回复。
 - Room 当前只在 Web 入口实现；TUI 和 Telegram 没有 Room 页面或 Agent CRUD。
+- Room `@all` 只触发当前聊天室成员。Agent 并行执行，回复按成员顺序写回，避免完成时间影响消息顺序。
 - Archive Center 当前只在 Web 入口实现，集中处理已归档 session、todo、room、room-agent。
 - 长期记忆当前是 Markdown 存储，不是向量检索系统。
 - 后台任务当前只支持明确 handler，例如 `reminder`、`todo_scan`、`memory_extract`，不支持任意到点自动执行 Agent。

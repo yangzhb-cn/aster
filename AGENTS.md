@@ -59,6 +59,8 @@ Aster 是一个教学版 Java Agent Runtime MVP，用来演示 AgentLoop、OpenA
 - Room Agent 当前只开放只读/检索类工具；不要给聊天室 Agent 注册 `write/edit/bash/todo/background_task/subagent`。
 - Room 共享消息只保存用户消息、Agent 最终回复和系统提示；工具过程、reasoning 和私有上下文不写入 hub message。
 - Room Agent 有独立 JSONL session；房间共享消息通过 `RoomContextInjectHook` 临时注入最后一条 user 消息，不要直接落入 Agent 私有 session。
+- Room 成员关系由 `members.json` 管理；从聊天室移除 Agent 只归档成员关系，恢复时递增 generation 并使用新的私有 session。
+- Room `@all` 只触发当前聊天室成员；Agent 可并行执行，但回复必须按成员 `orderIndex` / `replyIndex` 稳定写回。
 - 修改核心链路、工具协议、Plan/Team、Session、后台任务或 UI 事件映射后，至少运行 `mvn test`。
 - 纯文档修改可以不跑测试，但最终说明要写清楚。
 

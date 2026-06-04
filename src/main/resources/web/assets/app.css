@@ -35,7 +35,8 @@ body {
 }
 
 button,
-textarea {
+textarea,
+select {
   font: inherit;
 }
 
@@ -378,7 +379,8 @@ input {
 }
 
 input[type="text"],
-input[type="datetime-local"] {
+input[type="datetime-local"],
+select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -389,7 +391,8 @@ input[type="datetime-local"] {
 }
 
 input[type="text"]:focus,
-input[type="datetime-local"]:focus {
+input[type="datetime-local"]:focus,
+select:focus {
   border-color: var(--accent);
 }
 
@@ -597,6 +600,70 @@ textarea:focus {
   color: var(--danger);
   border-color: #f0b8b1;
   background: #fff5f4;
+}
+
+.member-list {
+  display: grid;
+  gap: 8px;
+}
+
+.member-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px;
+}
+
+.member-row.removed {
+  border-style: dashed;
+  background: rgba(255, 253, 248, .58);
+  opacity: .76;
+}
+
+.member-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.member-main strong {
+  min-width: 0;
+  color: var(--accent-strong);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-main span {
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.member-add {
+  display: grid;
+  gap: 6px;
+}
+
+.member-add span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .tool-card {

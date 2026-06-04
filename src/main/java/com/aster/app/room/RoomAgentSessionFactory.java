@@ -25,15 +25,26 @@ public class RoomAgentSessionFactory {
     }
 
     /**
-     * 按 roomId 和 agentId 打开稳定的私有 JSONL session。
+     * 按 roomId、agentId 和成员 generation 打开私有 JSONL session。
+     *
+     * <p>generation 来自 RoomMembership。成员被移出聊天室后再恢复会递增 generation，
+     * 从而清空该 Agent 在该聊天室中的旧私有上下文。</p>
      */
-    public SessionStore open(String roomId, String agentId, String systemPrompt) throws IOException {
+    public SessionStore open(String roomId, String agentId, int generation, String systemPrompt) throws IOException {
         RoomIdValidator.requireSafeId(roomId, "roomId");
         RoomIdValidator.requireSafeId(agentId, "agentId");
-        String sessionName = roomId + "__" + agentId;
+        int safeGeneration = Math.max(1, generation);
+        String sessionName = roomId + "__" + agentId + "__g" + safeGeneration;
         return new BootstrappedSessionStore(
                 List.of(Message.system(systemPrompt)),
                 JsonlSessionStore.openNamed(objectMapper, sessionsDirectory, sessionName)
         );
+    }
+
+    /**
+     * 兼容旧调用：默认使用第一代私有 session。
+     */
+    public SessionStore open(String roomId, String agentId, String systemPrompt) throws IOException {
+        return open(roomId, agentId, 1, systemPrompt);
     }
 }

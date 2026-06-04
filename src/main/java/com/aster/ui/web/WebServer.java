@@ -8,6 +8,7 @@ import com.aster.app.room.model.ChatRoom;
 import com.aster.app.room.model.HubMessage;
 import com.aster.app.room.model.RoomAgentInput;
 import com.aster.app.room.model.RoomAgentProfile;
+import com.aster.app.room.model.RoomMemberView;
 import com.aster.app.room.model.RoomSendResult;
 import com.aster.app.todo.JsonTodoStore;
 import com.aster.app.todo.TodoStore;
@@ -354,6 +355,11 @@ public class WebServer implements AutoCloseable {
                 handleRoomMessages(exchange, messageRoomId);
                 return;
             }
+            RoomMemberRoute memberRoute = roomMemberRoute(path);
+            if (memberRoute != null) {
+                handleRoomMembers(exchange, memberRoute);
+                return;
+            }
 
             if ("/api/rooms".equals(path)) {
                 if ("GET".equals(exchange.getRequestMethod())) {
@@ -516,6 +522,32 @@ public class WebServer implements AutoCloseable {
             return;
         }
         sendJson(exchange, 405, Map.of("error", "Method Not Allowed"));
+    }
+
+    private void handleRoomMembers(HttpExchange exchange, RoomMemberRoute route) throws IOException {
+        if ("GET".equals(exchange.getRequestMethod()) && route.action().isBlank()) {
+            sendJson(exchange, 200, roomMembersPayload(route.roomId()));
+            return;
+        }
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, Map.of("error", "Method Not Allowed"));
+            return;
+        }
+
+        Map<?, ?> payload = readPayload(exchange);
+        String agentId = requiredValue(payload, "agentId");
+        synchronized (runtimeLock) {
+            switch (route.action()) {
+                case "" -> runtime.addRoomMember(route.roomId(), agentId);
+                case "archive" -> runtime.archiveRoomMember(route.roomId(), agentId);
+                case "restore" -> runtime.restoreRoomMember(route.roomId(), agentId);
+                default -> {
+                    sendJson(exchange, 404, Map.of("error", "Not Found"));
+                    return;
+                }
+            }
+        }
+        sendJson(exchange, 200, roomMembersPayload(route.roomId()));
     }
 
     private void createRoomAgent(HttpExchange exchange) throws IOException {
@@ -770,6 +802,22 @@ public class WebServer implements AutoCloseable {
         }
     }
 
+    private Map<String, Object> roomMembersPayload(String roomId) throws IOException {
+        synchronized (runtimeLock) {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("members", runtime.listRoomMembers(roomId).stream()
+                    .map(this::roomMemberPayload)
+                    .toList());
+            payload.put("removed", runtime.listArchivedRoomMembers(roomId).stream()
+                    .map(this::roomMemberPayload)
+                    .toList());
+            payload.put("availableAgents", runtime.listAvailableRoomAgents(roomId).stream()
+                    .map(this::roomAgentPayload)
+                    .toList());
+            return payload;
+        }
+    }
+
     private Map<String, Object> roomPayload(ChatRoom room) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("roomId", room.roomId());
@@ -794,7 +842,21 @@ public class WebServer implements AutoCloseable {
         payload.put("type", message.type().name());
         payload.put("content", message.content());
         payload.put("mentions", message.mentions());
+        payload.put("replyIndex", message.replyIndex());
         payload.put("createdAt", message.createdAt());
+        return payload;
+    }
+
+    private Map<String, Object> roomMemberPayload(RoomMemberView view) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("roomId", view.membership().roomId());
+        payload.put("agentId", view.membership().agentId());
+        payload.put("orderIndex", view.membership().orderIndex());
+        payload.put("generation", view.membership().generation());
+        payload.put("archived", view.membership().archived());
+        payload.put("createdAt", view.membership().createdAt());
+        payload.put("updatedAt", view.membership().updatedAt());
+        payload.put("agent", roomAgentPayload(view.agent()));
         return payload;
     }
 
@@ -903,6 +965,32 @@ public class WebServer implements AutoCloseable {
         return URLDecoder.decode(raw, StandardCharsets.UTF_8);
     }
 
+    private RoomMemberRoute roomMemberRoute(String path) {
+        String prefix = "/api/rooms/";
+        String marker = "/members";
+        if (!path.startsWith(prefix)) {
+            return null;
+        }
+        int markerIndex = path.indexOf(marker, prefix.length());
+        if (markerIndex < 0) {
+            return null;
+        }
+        String rawRoomId = path.substring(prefix.length(), markerIndex);
+        if (rawRoomId.isBlank() || rawRoomId.contains("/")) {
+            return null;
+        }
+        String suffix = path.substring(markerIndex + marker.length());
+        String action;
+        if (suffix.isBlank()) {
+            action = "";
+        } else if (suffix.startsWith("/") && suffix.indexOf('/', 1) < 0) {
+            action = suffix.substring(1);
+        } else {
+            return null;
+        }
+        return new RoomMemberRoute(URLDecoder.decode(rawRoomId, StandardCharsets.UTF_8), action);
+    }
+
     /**
      * 把历史消息压成前端可渲染的最小 DTO。
      */
@@ -951,6 +1039,9 @@ public class WebServer implements AutoCloseable {
         return payload;
     }
 
+    private record RoomMemberRoute(String roomId, String action) {
+    }
+
     private void sendJson(HttpExchange exchange, int status, Object body) throws IOException {
         sendText(exchange, status, objectMapper.writeValueAsString(body), "application/json; charset=utf-8");
     }
@@ -968,7 +1059,7 @@ public class WebServer implements AutoCloseable {
 
     private int roomErrorStatus(IOException error) {
         String message = error.getMessage() == null ? "" : error.getMessage();
-        if (message.startsWith("room not found") || message.startsWith("room agent not found")) {
+        if (message.startsWith("room not found") || message.startsWith("room agent not found") || message.startsWith("room member not found")) {
             return 404;
         }
         if (message.startsWith("room archived")) {

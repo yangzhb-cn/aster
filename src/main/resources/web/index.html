@@ -127,6 +127,18 @@
           </section>
         </div>
         <div id="roomRightPanel" class="hidden">
+          <section class="rail-section room-members-section">
+            <div class="todo-head">
+              <span class="eyebrow">MEMBERS</span>
+              <button id="refreshRoomMembersButton" class="icon-button" type="button" title="刷新成员" aria-label="刷新成员">R</button>
+            </div>
+            <div id="roomMemberList" class="member-list"></div>
+            <label class="member-add">
+              <span>加入 Agent</span>
+              <select id="roomMemberSelect"></select>
+            </label>
+            <button id="addRoomMemberButton" type="button">加入聊天室</button>
+          </section>
           <section class="rail-section room-editor-section">
             <span class="eyebrow">AGENT</span>
             <form id="roomAgentForm" class="room-agent-form">

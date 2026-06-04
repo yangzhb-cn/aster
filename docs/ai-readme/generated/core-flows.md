@@ -15,7 +15,7 @@
 | P1 | 固定 `/team` | `AgentRuntime.submitTeam()`、`AgentTeamRunner` | 只读并行探索，结果交主 Agent |
 | P1 | 后台任务 | `BackgroundTaskScheduler` | reminder、todo_scan、memory_extract |
 | P1 | 多入口事件消费 | TUI / Web / Telegram event handlers | 同一 AgentEvent，不同展示策略 |
-| P1 | Web Room 多 Agent 聊天 | `AgentRuntime.sendRoomMessage()`、`RoomCoordinator` | Web 独有；共享 hub message + Agent 私有上下文 |
+| P1 | Web Room 多 Agent 聊天 | `AgentRuntime.sendRoomMessage()`、`RoomCoordinator` | Web 独有；成员关系 + 共享 hub message + Agent 私有上下文 |
 | P1 | 归档中心 | `WebServer.handleArchives()` | Web 独有；恢复或物理删除已归档对象 |
 
 ## 流程 1：普通 Agent Run
@@ -281,6 +281,7 @@ sequenceDiagram
     participant Web as Web Room
     participant Runtime as AgentRuntime
     participant Coord as RoomCoordinator
+    participant Members as RoomMembershipStore
     participant Hub as RoomHub
     participant Parser as RoomMentionParser
     participant Runner as RoomAgentRunner
@@ -290,13 +291,17 @@ sequenceDiagram
     Web->>Runtime: sendRoomMessage(roomId, text)
     Runtime->>Coord: send(roomId, text)
     Coord->>Hub: publish user hub message
-    Coord->>Parser: parse @name/@alias/@all
-    loop each mentioned agent
+    Coord->>Members: list active members by orderIndex
+    Coord->>Parser: parse @name/@alias/@all in room members
+    par mentioned agents
         Coord->>Runner: run(room, agent, triggerMessage)
         Runner->>Hook: 注入最近 hub messages
         Runner->>Loop: run(triggerMessage.content)
         Loop-->>Runner: final answer
         Runner-->>Coord: answer
+    end
+    Coord->>Coord: sort by replyIndex
+    loop ordered replies
         Coord->>Hub: publish agent final reply
     end
     Coord-->>Web: emitted hub messages
@@ -308,17 +313,21 @@ sequenceDiagram
 2. `ui/web/WebServer.handleRoomMessages`
 3. `app/runtime/AgentRuntime.sendRoomMessage`
 4. `app/room/RoomCoordinator.send`
-5. `app/room/RoomHub.publish`
-6. `app/room/RoomMentionParser.parse`
-7. `app/room/RoomAgentRunner.run`
-8. `core/agent/AgentLoop.run`
+5. `app/room/RoomMembershipStore`
+6. `app/room/RoomHub.publish`
+7. `app/room/RoomMentionParser.parse`
+8. `app/room/RoomAgentRunner.run`
+9. `core/agent/AgentLoop.run`
 
 ### 关键分支
 
 - 房间第一条用户消息会补成房间 topic 的默认来源。
 - 未命中 `@name`、`@alias` 或 `@all` 时，只写入用户 hub message，不触发 Agent。
+- `@all` 只触发当前聊天室未归档成员，不触发全局所有 Agent。
+- Agent 并行执行；全部完成后按成员 `orderIndex` 派生的 `replyIndex` 写回 hub message。
 - Room Agent 的工具注册表由 `RoomToolRegistryFactory` 限制，只开放只读/检索类工具。
-- Room Agent 使用独立 JSONL session；共享房间消息通过 `RoomContextInjectHook` 临时注入，不写入私有 session。
+- Room Agent 使用独立 JSONL session；成员移除再恢复会递增 generation 并打开新的私有 session。
+- 共享房间消息通过 `RoomContextInjectHook` 临时注入，不写入私有 session。
 - Room Agent 事件总线是 noop，Web Room 只展示最终回复，不展示 token、reasoning、工具调用或工具结果。
 - 当前 Room 回复是同步 HTTP 请求，不是 SSE/WebSocket 流式聊天室。
 

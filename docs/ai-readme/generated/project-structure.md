@@ -82,5 +82,5 @@ workspace/
 ├── artifacts/tool-results/   # 大工具结果外部卸载
 ├── memory/                   # 长期记忆 Markdown
 ├── im/                       # Telegram chat-session 映射
-└── rooms/                    # Web Room、hub message、Agent 配置和 Agent 私有 session
+└── rooms/                    # Web Room、members、hub message、Agent 配置和 Agent 私有 session
 ```

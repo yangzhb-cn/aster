@@ -40,6 +40,7 @@ import com.aster.app.notification.NotificationSink;
 import com.aster.app.prompt.PromptLoader;
 import com.aster.app.prompt.PromptPaths;
 import com.aster.app.room.JsonRoomAgentRegistry;
+import com.aster.app.room.JsonRoomMembershipStore;
 import com.aster.app.room.JsonRoomStore;
 import com.aster.app.room.JsonlRoomMessageStore;
 import com.aster.app.room.RoomAgentPromptStore;
@@ -51,6 +52,7 @@ import com.aster.app.room.RoomAgentTemplateSeeder;
 import com.aster.app.room.RoomCoordinator;
 import com.aster.app.room.RoomHub;
 import com.aster.app.room.RoomMentionParser;
+import com.aster.app.room.RoomMembershipStore;
 import com.aster.app.room.RoomPromptBuilder;
 import com.aster.app.room.RoomStore;
 import com.aster.app.room.RoomToolRegistryFactory;
@@ -167,6 +169,7 @@ public class AgentRuntimeFactory {
         RoomHub roomHub = new RoomHub(new JsonlRoomMessageStore(objectMapper, WorkspacePaths.ROOM_MESSAGES));
         RoomAgentPromptStore roomAgentPromptStore = new RoomAgentPromptStore(WorkspacePaths.ROOM_AGENT_PROMPTS);
         RoomAgentSessionCleaner roomAgentSessionCleaner = new RoomAgentSessionCleaner(WorkspacePaths.ROOM_AGENT_SESSIONS);
+        RoomMembershipStore roomMembershipStore = new JsonRoomMembershipStore(objectMapper, WorkspacePaths.ROOM_MEMBERS);
         RoomAgentRegistry roomAgentRegistry = new JsonRoomAgentRegistry(
                 objectMapper,
                 WorkspacePaths.ROOM_AGENT_INDEX,
@@ -290,6 +293,7 @@ public class AgentRuntimeFactory {
                 roomStore,
                 roomHub,
                 roomAgentRegistry,
+                roomMembershipStore,
                 new RoomMentionParser(),
                 new RoomAgentRunner(
                         provider,
@@ -312,6 +316,7 @@ public class AgentRuntimeFactory {
                 roomCoordinator,
                 roomAgentRegistry,
                 roomAgentPromptStore,
+                roomMembershipStore,
                 roomAgentSessionCleaner,
                 eventPublisher,
                 backgroundTaskManager,

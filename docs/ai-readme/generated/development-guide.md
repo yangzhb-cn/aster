@@ -112,7 +112,7 @@ workspace/
 ├── artifacts/tool-results/   # 大工具结果
 ├── memory/                   # 长期记忆 Markdown
 ├── im/                       # Telegram session 映射
-└── rooms/                    # Web Room、Agent 配置、hub message 和私有 session
+└── rooms/                    # Web Room、成员关系、Agent 配置、hub message 和私有 session
 ```
 
 ## 修改规则

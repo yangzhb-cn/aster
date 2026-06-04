@@ -27,6 +27,7 @@ public record HubMessage(
         HubMessageType type,
         String content,
         List<String> mentions,
+        Integer replyIndex,
         String createdAt
 ) {
     public HubMessage {
@@ -49,6 +50,7 @@ public record HubMessage(
                 HubMessageType.CHAT,
                 requireContent(content),
                 mentions,
+                null,
                 now()
         );
     }
@@ -63,7 +65,8 @@ public record HubMessage(
             String agentId,
             String agentName,
             String agentRole,
-            String content
+            String content,
+            Integer replyIndex
     ) {
         return new HubMessage(
                 roomId,
@@ -77,8 +80,24 @@ public record HubMessage(
                 HubMessageType.CHAT,
                 requireContent(content),
                 List.of(),
+                replyIndex,
                 now()
         );
+    }
+
+    /**
+     * 创建不带顺序号的 Agent 回复消息。
+     */
+    public static HubMessage agentReply(
+            String roomId,
+            String runId,
+            String parentMessageId,
+            String agentId,
+            String agentName,
+            String agentRole,
+            String content
+    ) {
+        return agentReply(roomId, runId, parentMessageId, agentId, agentName, agentRole, content, null);
     }
 
     /**
@@ -97,6 +116,7 @@ public record HubMessage(
                 HubMessageType.SYSTEM,
                 requireContent(content),
                 List.of(),
+                null,
                 now()
         );
     }

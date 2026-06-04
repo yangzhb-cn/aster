@@ -9,11 +9,14 @@ import com.aster.app.room.RoomAgentRegistry;
 import com.aster.app.room.RoomAgentSessionCleaner;
 import com.aster.app.room.RoomCoordinator;
 import com.aster.app.room.RoomHub;
+import com.aster.app.room.RoomMembershipStore;
 import com.aster.app.room.RoomStore;
 import com.aster.app.room.model.ChatRoom;
 import com.aster.app.room.model.HubMessage;
 import com.aster.app.room.model.RoomAgentInput;
 import com.aster.app.room.model.RoomAgentProfile;
+import com.aster.app.room.model.RoomMemberView;
+import com.aster.app.room.model.RoomMembership;
 import com.aster.app.room.model.RoomSendResult;
 import com.aster.app.team.AgentTeamRunner;
 import com.aster.app.team.model.TeamRunOutput;
@@ -45,6 +48,7 @@ public class AgentRuntime implements AutoCloseable {
     private final RoomCoordinator roomCoordinator;
     private final RoomAgentRegistry roomAgentRegistry;
     private final RoomAgentPromptStore roomAgentPromptStore;
+    private final RoomMembershipStore roomMembershipStore;
     private final RoomAgentSessionCleaner roomAgentSessionCleaner;
     private final AgentEventPublisher eventPublisher;
     private final BackgroundTaskManager backgroundTaskManager;
@@ -71,6 +75,7 @@ public class AgentRuntime implements AutoCloseable {
             RoomCoordinator roomCoordinator,
             RoomAgentRegistry roomAgentRegistry,
             RoomAgentPromptStore roomAgentPromptStore,
+            RoomMembershipStore roomMembershipStore,
             RoomAgentSessionCleaner roomAgentSessionCleaner,
             AgentEventPublisher eventPublisher,
             BackgroundTaskManager backgroundTaskManager,
@@ -91,6 +96,7 @@ public class AgentRuntime implements AutoCloseable {
         this.roomCoordinator = Objects.requireNonNull(roomCoordinator);
         this.roomAgentRegistry = Objects.requireNonNull(roomAgentRegistry);
         this.roomAgentPromptStore = Objects.requireNonNull(roomAgentPromptStore);
+        this.roomMembershipStore = Objects.requireNonNull(roomMembershipStore);
         this.roomAgentSessionCleaner = Objects.requireNonNull(roomAgentSessionCleaner);
         this.eventPublisher = Objects.requireNonNull(eventPublisher);
         this.backgroundTaskManager = Objects.requireNonNull(backgroundTaskManager);
@@ -286,14 +292,18 @@ public class AgentRuntime implements AutoCloseable {
      * 确保存在默认聊天室。
      */
     public ChatRoom ensureDefaultRoom() throws IOException {
-        return roomStore.ensureDefault();
+        ChatRoom room = roomStore.ensureDefault();
+        roomMembershipStore.ensureRoomMembers(room.roomId(), roomAgentRegistry.listActive());
+        return room;
     }
 
     /**
      * 新建聊天室。
      */
     public ChatRoom createRoom(String name) throws IOException {
-        return roomStore.create(name);
+        ChatRoom room = roomStore.create(name);
+        roomMembershipStore.ensureRoomMembers(room.roomId(), roomAgentRegistry.listActive());
+        return room;
     }
 
     /**
@@ -323,6 +333,7 @@ public class AgentRuntime implements AutoCloseable {
     public ChatRoom deleteRoomPermanently(String roomId) throws IOException {
         ChatRoom deleted = roomStore.deletePermanently(roomId);
         roomHub.deleteRoom(roomId);
+        roomMembershipStore.deleteRoom(roomId);
         roomAgentSessionCleaner.deleteRoomSessions(roomId);
         return deleted;
     }
@@ -339,6 +350,63 @@ public class AgentRuntime implements AutoCloseable {
      */
     public RoomSendResult sendRoomMessage(String roomId, String text) throws IOException {
         return roomCoordinator.send(roomId, text);
+    }
+
+    /**
+     * 列出当前聊天室成员。
+     */
+    public List<RoomMemberView> listRoomMembers(String roomId) throws IOException {
+        ensureActiveRoom(roomId);
+        return memberViews(roomMembershipStore.ensureRoomMembers(roomId, roomAgentRegistry.listActive()));
+    }
+
+    /**
+     * 列出当前聊天室已移除成员。
+     */
+    public List<RoomMemberView> listArchivedRoomMembers(String roomId) throws IOException {
+        ensureActiveRoom(roomId);
+        return memberViews(roomMembershipStore.listArchived(roomId));
+    }
+
+    /**
+     * 列出可以加入当前聊天室的全局 Agent。
+     */
+    public List<RoomAgentProfile> listAvailableRoomAgents(String roomId) throws IOException {
+        ensureActiveRoom(roomId);
+        List<RoomMembership> active = roomMembershipStore.ensureRoomMembers(roomId, roomAgentRegistry.listActive());
+        List<RoomMembership> archived = roomMembershipStore.listArchived(roomId);
+        List<String> knownIds = new java.util.ArrayList<>();
+        knownIds.addAll(active.stream().map(RoomMembership::agentId).toList());
+        knownIds.addAll(archived.stream().map(RoomMembership::agentId).toList());
+        return roomAgentRegistry.listActive().stream()
+                .filter(agent -> !knownIds.contains(agent.agentId()))
+                .toList();
+    }
+
+    /**
+     * 把全局 Agent 加入当前聊天室。
+     */
+    public RoomMembership addRoomMember(String roomId, String agentId) throws IOException {
+        ensureActiveRoom(roomId);
+        ensureActiveRoomAgent(agentId);
+        return roomMembershipStore.add(roomId, agentId);
+    }
+
+    /**
+     * 从当前聊天室移除 Agent。
+     */
+    public RoomMembership archiveRoomMember(String roomId, String agentId) throws IOException {
+        ensureActiveRoom(roomId);
+        return roomMembershipStore.archive(roomId, agentId);
+    }
+
+    /**
+     * 恢复当前聊天室已移除的 Agent。
+     */
+    public RoomMembership restoreRoomMember(String roomId, String agentId) throws IOException {
+        ensureActiveRoom(roomId);
+        ensureActiveRoomAgent(agentId);
+        return roomMembershipStore.restore(roomId, agentId);
     }
 
     /**
@@ -389,6 +457,7 @@ public class AgentRuntime implements AutoCloseable {
     public RoomAgentProfile deleteRoomAgentPermanently(String agentId) throws IOException {
         RoomAgentProfile deleted = roomAgentRegistry.deletePermanently(agentId);
         roomAgentPromptStore.delete(deleted);
+        roomMembershipStore.deleteAgent(agentId);
         roomAgentSessionCleaner.deleteAgentSessions(agentId);
         return deleted;
     }
@@ -398,6 +467,33 @@ public class AgentRuntime implements AutoCloseable {
      */
     public String roomAgentPrompt(RoomAgentProfile profile) throws IOException {
         return roomAgentPromptStore.read(profile);
+    }
+
+    private List<RoomMemberView> memberViews(List<RoomMembership> memberships) throws IOException {
+        List<RoomAgentProfile> agents = roomAgentRegistry.listAll();
+        java.util.Map<String, RoomAgentProfile> agentById = new java.util.HashMap<>();
+        for (RoomAgentProfile agent : agents) {
+            agentById.put(agent.agentId(), agent);
+        }
+        return memberships.stream()
+                .map(membership -> {
+                    RoomAgentProfile agent = agentById.get(membership.agentId());
+                    return agent == null ? null : new RoomMemberView(membership, agent);
+                })
+                .filter(Objects::nonNull)
+                .toList();
+    }
+
+    private ChatRoom ensureActiveRoom(String roomId) throws IOException {
+        return roomStore.get(roomId)
+                .filter(room -> !room.archived())
+                .orElseThrow(() -> new IOException("room not found: " + roomId));
+    }
+
+    private RoomAgentProfile ensureActiveRoomAgent(String agentId) throws IOException {
+        return roomAgentRegistry.get(agentId)
+                .filter(agent -> !agent.archived())
+                .orElseThrow(() -> new IOException("room agent not found: " + agentId));
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.aster;
 
 import com.aster.app.room.JsonRoomAgentRegistry;
+import com.aster.app.room.JsonRoomMembershipStore;
 import com.aster.app.room.JsonRoomStore;
 import com.aster.app.room.RoomAgentPromptStore;
 import com.aster.app.room.RoomAgentTemplateSeeder;
@@ -11,6 +12,7 @@ import com.aster.app.room.model.ChatRoom;
 import com.aster.app.room.model.HubMessage;
 import com.aster.app.room.model.RoomAgentInput;
 import com.aster.app.room.model.RoomAgentProfile;
+import com.aster.app.room.model.RoomMembership;
 import com.aster.app.room.RoomAgentRunContext;
 import com.aster.core.agent.control.AgentRunControl;
 import com.aster.core.hook.BeforeLlmRequestContext;
@@ -207,6 +209,32 @@ class RoomChatTest {
 
         assertTrue(registry.listArchived().isEmpty());
         assertTrue(registry.get(created.agentId()).isEmpty());
+    }
+
+    /**
+     * 验证聊天室成员关系按顺序初始化，移除后恢复会递增 generation。
+     */
+    @Test
+    void archivesAndRestoresRoomMembershipWithNewGeneration() throws Exception {
+        JsonRoomMembershipStore store = new JsonRoomMembershipStore(objectMapper, tempDir.resolve("members.json"));
+        RoomAgentProfile pm = agent("agent_pm", "产品", List.of("pm"));
+        RoomAgentProfile fe = agent("agent_fe", "前端", List.of("fe"));
+
+        List<RoomMembership> initial = store.ensureRoomMembers("room_a", List.of(pm, fe));
+
+        assertEquals(2, initial.size());
+        assertEquals("agent_pm", initial.get(0).agentId());
+        assertEquals(0, initial.get(0).orderIndex());
+        assertEquals(1, initial.get(0).generation());
+
+        RoomMembership archived = store.archive("room_a", "agent_pm");
+        assertTrue(archived.archived());
+        assertEquals(List.of("agent_fe"), store.listActive("room_a").stream().map(RoomMembership::agentId).toList());
+
+        RoomMembership restored = store.restore("room_a", "agent_pm");
+        assertFalse(restored.archived());
+        assertEquals(2, restored.generation());
+        assertEquals(List.of("agent_pm", "agent_fe"), store.listActive("room_a").stream().map(RoomMembership::agentId).toList());
     }
 
     private RoomAgentProfile agent(String id, String name, List<String> aliases) {

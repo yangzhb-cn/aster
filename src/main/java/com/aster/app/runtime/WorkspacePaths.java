@@ -28,6 +28,7 @@ public final class WorkspacePaths {
     public static final Path TELEGRAM_SESSION_MAP = IM.resolve("telegram-sessions.json");
     public static final Path ROOMS = ROOT.resolve("rooms");
     public static final Path ROOM_INDEX = ROOMS.resolve("rooms.json");
+    public static final Path ROOM_MEMBERS = ROOMS.resolve("members.json");
     public static final Path ROOM_MESSAGES = ROOMS.resolve("messages");
     public static final Path ROOM_AGENTS = ROOMS.resolve("agents");
     public static final Path ROOM_AGENT_INDEX = ROOM_AGENTS.resolve("agents.json");

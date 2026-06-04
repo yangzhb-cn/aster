@@ -30,7 +30,7 @@ public class RoomAgentSessionCleaner {
      */
     public void deleteAgentSessions(String agentId) throws IOException {
         RoomIdValidator.requireSafeId(agentId, "agentId");
-        deleteMatching("__" + agentId + ".jsonl");
+        deleteMatching("__" + agentId);
     }
 
     private void deleteMatching(String token) throws IOException {

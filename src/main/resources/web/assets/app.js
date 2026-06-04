@@ -7,6 +7,9 @@ const state = {
   rooms: [],
   currentRoomId: "",
   roomAgents: [],
+  roomMembers: [],
+  removedRoomMembers: [],
+  availableRoomAgents: [],
   currentRoomAgentId: "",
   roomBusy: false,
   tools: new Map(),
@@ -47,6 +50,10 @@ const roomAgentDescription = $("#roomAgentDescription");
 const roomAgentPrompt = $("#roomAgentPrompt");
 const roomAgentEnabled = $("#roomAgentEnabled");
 const archiveRoomAgentButton = $("#archiveRoomAgentButton");
+const refreshRoomMembersButton = $("#refreshRoomMembersButton");
+const roomMemberList = $("#roomMemberList");
+const roomMemberSelect = $("#roomMemberSelect");
+const addRoomMemberButton = $("#addRoomMemberButton");
 const connectionState = $("#connectionState");
 const modelName = $("#modelName");
 const sessionName = $("#sessionName");
@@ -791,6 +798,7 @@ async function loadRooms() {
     renderRooms();
     if (state.view === "room" && state.currentRoomId) {
       await loadRoomMessages(state.currentRoomId);
+      await loadRoomMembers(state.currentRoomId);
     }
   } catch (error) {
     addMessage("error", error.message);
@@ -836,6 +844,7 @@ async function createRoom() {
     state.currentRoomId = state.rooms[0]?.roomId || "";
     renderRooms();
     await loadRoomMessages(state.currentRoomId);
+    await loadRoomMembers(state.currentRoomId);
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -846,6 +855,7 @@ async function switchRoom(roomId) {
   state.currentRoomId = roomId;
   renderRooms();
   await loadRoomMessages(roomId);
+  await loadRoomMembers(roomId);
 }
 
 async function updateRoom(roomId) {
@@ -858,6 +868,7 @@ async function updateRoom(roomId) {
     const payload = await postJson("/api/rooms/update", { roomId, name, topic });
     state.rooms = payload.rooms || [];
     renderRooms();
+    await loadRoomMembers(roomId);
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -872,7 +883,124 @@ async function archiveRoom(roomId) {
     state.currentRoomId = state.rooms[0]?.roomId || "";
     renderRooms();
     messagesEl.innerHTML = "";
-    if (state.currentRoomId) await loadRoomMessages(state.currentRoomId);
+    if (state.currentRoomId) {
+      await loadRoomMessages(state.currentRoomId);
+      await loadRoomMembers(state.currentRoomId);
+    } else {
+      applyRoomMemberPayload({});
+    }
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function loadRoomMembers(roomId = state.currentRoomId) {
+  if (!roomId) {
+    applyRoomMemberPayload({});
+    return;
+  }
+  try {
+    const payload = await requestJson(`/api/rooms/${encodeURIComponent(roomId)}/members`);
+    applyRoomMemberPayload(payload);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function applyRoomMemberPayload(payload = {}) {
+  state.roomMembers = Array.isArray(payload.members) ? payload.members : [];
+  state.removedRoomMembers = Array.isArray(payload.removed) ? payload.removed : [];
+  state.availableRoomAgents = Array.isArray(payload.availableAgents) ? payload.availableAgents : [];
+  renderRoomMembers();
+}
+
+function renderRoomMembers() {
+  roomMemberList.innerHTML = "";
+  const members = state.roomMembers || [];
+  const removed = state.removedRoomMembers || [];
+  if (!members.length && !removed.length) {
+    const empty = document.createElement("div");
+    empty.className = "session-empty";
+    empty.textContent = "暂无成员";
+    roomMemberList.append(empty);
+  }
+
+  for (const member of members) {
+    roomMemberList.append(roomMemberRow(member, "active"));
+  }
+  for (const member of removed) {
+    roomMemberList.append(roomMemberRow(member, "removed"));
+  }
+
+  roomMemberSelect.innerHTML = "";
+  if (!state.availableRoomAgents.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "没有可加入的 Agent";
+    roomMemberSelect.append(option);
+    addRoomMemberButton.disabled = true;
+    return;
+  }
+  for (const agent of state.availableRoomAgents) {
+    const option = document.createElement("option");
+    option.value = agent.agentId;
+    option.textContent = `${agent.name || agent.agentId} · ${agent.role || ""}`;
+    roomMemberSelect.append(option);
+  }
+  addRoomMemberButton.disabled = false;
+}
+
+function roomMemberRow(member, status) {
+  const agent = member.agent || {};
+  const row = document.createElement("article");
+  row.className = `member-row ${status}`;
+  row.dataset.agentId = member.agentId || agent.agentId || "";
+  row.innerHTML = `
+    <div class="member-main">
+      <strong></strong>
+      <span></span>
+    </div>
+    <div class="member-actions"></div>
+  `;
+  row.querySelector("strong").textContent = `${member.orderIndex ?? "-"} · @${agent.name || member.agentId || ""}`;
+  row.querySelector("span").textContent = `${agent.role || ""} · g${member.generation || 1}${status === "removed" ? " · 已移除" : ""}`;
+  const actions = row.querySelector(".member-actions");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.action = status === "removed" ? "restore-member" : "archive-member";
+  button.className = status === "removed" ? "session-action" : "session-action danger";
+  button.textContent = status === "removed" ? "↩" : "x";
+  button.title = status === "removed" ? "恢复到聊天室" : "从聊天室移除";
+  actions.append(button);
+  return row;
+}
+
+async function addRoomMember() {
+  const agentId = roomMemberSelect.value;
+  if (!state.currentRoomId || !agentId) return;
+  try {
+    applyRoomMemberPayload(await postJson(`/api/rooms/${encodeURIComponent(state.currentRoomId)}/members`, { agentId }));
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function archiveRoomMember(agentId) {
+  if (!state.currentRoomId || !agentId) return;
+  const member = state.roomMembers.find((item) => item.agentId === agentId);
+  const name = member?.agent?.name || agentId;
+  if (!window.confirm(`从当前聊天室移除「${name}」？恢复后会使用新的私有上下文。`)) return;
+  try {
+    applyRoomMemberPayload(await postJson(`/api/rooms/${encodeURIComponent(state.currentRoomId)}/members/archive`, { agentId }));
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function restoreRoomMember(agentId) {
+  if (!state.currentRoomId || !agentId) return;
+  try {
+    applyRoomMemberPayload(await postJson(`/api/rooms/${encodeURIComponent(state.currentRoomId)}/members/restore`, { agentId }));
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -947,6 +1075,9 @@ async function loadRoomAgents() {
       fillRoomAgentForm(state.roomAgents[0] || null);
     }
     renderRoomAgents();
+    if (state.view === "room" && state.currentRoomId) {
+      await loadRoomMembers(state.currentRoomId);
+    }
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -1026,6 +1157,7 @@ async function saveRoomAgent(event) {
       fillRoomAgentForm(state.roomAgents[0] || null);
     }
     renderRoomAgents();
+    if (state.currentRoomId) await loadRoomMembers(state.currentRoomId);
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -1041,6 +1173,7 @@ async function archiveRoomAgent() {
     state.currentRoomAgentId = state.roomAgents[0]?.agentId || "";
     fillRoomAgentForm(state.roomAgents[0] || null);
     renderRoomAgents();
+    if (state.currentRoomId) await loadRoomMembers(state.currentRoomId);
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -1427,6 +1560,8 @@ newRoomAgentButton.addEventListener("click", () => {
 });
 roomAgentForm.addEventListener("submit", saveRoomAgent);
 archiveRoomAgentButton.addEventListener("click", archiveRoomAgent);
+refreshRoomMembersButton.addEventListener("click", () => loadRoomMembers());
+addRoomMemberButton.addEventListener("click", addRoomMember);
 refreshTodosButton.addEventListener("click", loadTodos);
 todoForm.addEventListener("submit", createTodoFromForm);
 
@@ -1482,6 +1617,18 @@ roomAgentList.addEventListener("click", (event) => {
   state.currentRoomAgentId = agent?.agentId || "";
   fillRoomAgentForm(agent || null);
   renderRoomAgents();
+});
+
+roomMemberList.addEventListener("click", (event) => {
+  const actionButton = event.target.closest("[data-action]");
+  const row = event.target.closest(".member-row");
+  if (!actionButton || !row) return;
+
+  if (actionButton.dataset.action === "archive-member") {
+    archiveRoomMember(row.dataset.agentId);
+  } else if (actionButton.dataset.action === "restore-member") {
+    restoreRoomMember(row.dataset.agentId);
+  }
 });
 
 messagesEl.addEventListener("click", (event) => {

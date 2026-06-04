@@ -3,6 +3,7 @@ package com.aster.app.room;
 import com.aster.app.room.model.ChatRoom;
 import com.aster.app.room.model.HubMessage;
 import com.aster.app.room.model.RoomAgentProfile;
+import com.aster.app.room.model.RoomMembership;
 import com.aster.core.agent.AgentLoop;
 import com.aster.core.context.ContextBuilder;
 import com.aster.core.context.SimpleTokenEstimator;
@@ -60,11 +61,11 @@ public class RoomAgentRunner {
     /**
      * 让指定 Agent 回复当前房间消息。
      */
-    public String run(ChatRoom room, RoomAgentProfile agent, HubMessage triggerMessage) throws IOException {
+    public String run(ChatRoom room, RoomAgentProfile agent, RoomMembership membership, HubMessage triggerMessage) throws IOException {
         List<HubMessage> recentMessages = roomHub.recent(room.roomId(), ROOM_CONTEXT_MESSAGES);
         String agentPrompt = promptStore.read(agent);
         String systemPrompt = promptBuilder.systemPrompt(agent, agentPrompt);
-        SessionStore sessionStore = sessionFactory.open(room.roomId(), agent.agentId(), systemPrompt);
+        SessionStore sessionStore = sessionFactory.open(room.roomId(), agent.agentId(), membership.generation(), systemPrompt);
         ToolRegistry toolRegistry = toolRegistryFactory.create(agent);
         HookRegistry hookRegistry = new HookRegistry();
         hookRegistry.register(

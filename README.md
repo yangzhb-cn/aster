@@ -1,6 +1,6 @@
 # Aster
 
-Aster 是 Agent MVP，用来从 0-1 实现 Agent 主循环、流式 LLM、工具调用、上下文压缩、Session 持久化、HITL 审批、后台任务、TUI/Web/Telegram 入口，以及动态 DAG Plan。
+Aster 是 Agent MVP，用来从 0-1 实现 Agent 主循环、流式 LLM、工具调用、上下文压缩、Session 持久化、HITL 审批、后台任务、TUI/Web/Telegram 入口，以及动态 DAG Plan 和多智能体agent team。
 
 详细架构和开发规则见 [AGENTS.md](./AGENTS.md)。
 

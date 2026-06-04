@@ -19,6 +19,11 @@ public interface TodoStore {
     List<TodoItem> listActive() throws IOException;
 
     /**
+     * 列出全部已归档待办。
+     */
+    List<TodoItem> listArchived() throws IOException;
+
+    /**
      * 新增待办。
      */
     TodoItem add(String content, String priority, String dueAt) throws IOException;
@@ -37,6 +42,16 @@ public interface TodoStore {
      * 归档待办。
      */
     TodoItem archive(String id) throws IOException;
+
+    /**
+     * 从归档恢复待办。
+     */
+    TodoItem restore(String id) throws IOException;
+
+    /**
+     * 物理删除待办。
+     */
+    TodoItem deletePermanently(String id) throws IOException;
 
     /**
      * 找出已到期的待办。

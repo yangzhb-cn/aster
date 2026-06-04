@@ -4,6 +4,17 @@ import com.aster.core.agent.AgentLoop;
 import com.aster.app.background.BackgroundTaskManager;
 import com.aster.app.hitl.ToolApprovalManager;
 import com.aster.app.hitl.model.ToolApprovalRequest;
+import com.aster.app.room.RoomAgentPromptStore;
+import com.aster.app.room.RoomAgentRegistry;
+import com.aster.app.room.RoomAgentSessionCleaner;
+import com.aster.app.room.RoomCoordinator;
+import com.aster.app.room.RoomHub;
+import com.aster.app.room.RoomStore;
+import com.aster.app.room.model.ChatRoom;
+import com.aster.app.room.model.HubMessage;
+import com.aster.app.room.model.RoomAgentInput;
+import com.aster.app.room.model.RoomAgentProfile;
+import com.aster.app.room.model.RoomSendResult;
 import com.aster.app.team.AgentTeamRunner;
 import com.aster.app.team.model.TeamRunOutput;
 import com.aster.core.event.model.AgentEvent;
@@ -29,6 +40,12 @@ public class AgentRuntime implements AutoCloseable {
     private final AgentRunCoordinator runCoordinator;
     private final AgentTeamRunner agentTeamRunner;
     private final PlanModeCoordinator planModeCoordinator;
+    private final RoomStore roomStore;
+    private final RoomHub roomHub;
+    private final RoomCoordinator roomCoordinator;
+    private final RoomAgentRegistry roomAgentRegistry;
+    private final RoomAgentPromptStore roomAgentPromptStore;
+    private final RoomAgentSessionCleaner roomAgentSessionCleaner;
     private final AgentEventPublisher eventPublisher;
     private final BackgroundTaskManager backgroundTaskManager;
     private final ToolApprovalManager toolApprovalManager;
@@ -49,6 +66,12 @@ public class AgentRuntime implements AutoCloseable {
             AgentRunCoordinator runCoordinator,
             AgentTeamRunner agentTeamRunner,
             PlanModeCoordinator planModeCoordinator,
+            RoomStore roomStore,
+            RoomHub roomHub,
+            RoomCoordinator roomCoordinator,
+            RoomAgentRegistry roomAgentRegistry,
+            RoomAgentPromptStore roomAgentPromptStore,
+            RoomAgentSessionCleaner roomAgentSessionCleaner,
             AgentEventPublisher eventPublisher,
             BackgroundTaskManager backgroundTaskManager,
             ToolApprovalManager toolApprovalManager,
@@ -63,6 +86,12 @@ public class AgentRuntime implements AutoCloseable {
         this.runCoordinator = Objects.requireNonNull(runCoordinator);
         this.agentTeamRunner = Objects.requireNonNull(agentTeamRunner);
         this.planModeCoordinator = Objects.requireNonNull(planModeCoordinator);
+        this.roomStore = Objects.requireNonNull(roomStore);
+        this.roomHub = Objects.requireNonNull(roomHub);
+        this.roomCoordinator = Objects.requireNonNull(roomCoordinator);
+        this.roomAgentRegistry = Objects.requireNonNull(roomAgentRegistry);
+        this.roomAgentPromptStore = Objects.requireNonNull(roomAgentPromptStore);
+        this.roomAgentSessionCleaner = Objects.requireNonNull(roomAgentSessionCleaner);
         this.eventPublisher = Objects.requireNonNull(eventPublisher);
         this.backgroundTaskManager = Objects.requireNonNull(backgroundTaskManager);
         this.toolApprovalManager = Objects.requireNonNull(toolApprovalManager);
@@ -237,6 +266,138 @@ public class AgentRuntime implements AutoCloseable {
      */
     public int skillCount() {
         return skillCount;
+    }
+
+    /**
+     * 列出 Web 聊天室。
+     */
+    public List<ChatRoom> listRooms() throws IOException {
+        return roomStore.listActive();
+    }
+
+    /**
+     * 列出已归档聊天室。
+     */
+    public List<ChatRoom> listArchivedRooms() throws IOException {
+        return roomStore.listArchived();
+    }
+
+    /**
+     * 确保存在默认聊天室。
+     */
+    public ChatRoom ensureDefaultRoom() throws IOException {
+        return roomStore.ensureDefault();
+    }
+
+    /**
+     * 新建聊天室。
+     */
+    public ChatRoom createRoom(String name) throws IOException {
+        return roomStore.create(name);
+    }
+
+    /**
+     * 更新聊天室名称和主题。
+     */
+    public ChatRoom updateRoom(String roomId, String name, String topic) throws IOException {
+        return roomStore.update(roomId, name, topic);
+    }
+
+    /**
+     * 归档聊天室。
+     */
+    public ChatRoom archiveRoom(String roomId) throws IOException {
+        return roomStore.archive(roomId);
+    }
+
+    /**
+     * 从归档恢复聊天室。
+     */
+    public ChatRoom restoreRoom(String roomId) throws IOException {
+        return roomStore.restore(roomId);
+    }
+
+    /**
+     * 物理删除聊天室及其消息、私有 Agent session。
+     */
+    public ChatRoom deleteRoomPermanently(String roomId) throws IOException {
+        ChatRoom deleted = roomStore.deletePermanently(roomId);
+        roomHub.deleteRoom(roomId);
+        roomAgentSessionCleaner.deleteRoomSessions(roomId);
+        return deleted;
+    }
+
+    /**
+     * 读取聊天室共享消息。
+     */
+    public List<HubMessage> roomMessages(String roomId) throws IOException {
+        return roomCoordinator.messages(roomId);
+    }
+
+    /**
+     * 发送聊天室消息，并触发被 @ 的 Agent。
+     */
+    public RoomSendResult sendRoomMessage(String roomId, String text) throws IOException {
+        return roomCoordinator.send(roomId, text);
+    }
+
+    /**
+     * 列出聊天室 Agent。
+     */
+    public List<RoomAgentProfile> listRoomAgents() throws IOException {
+        return roomAgentRegistry.listActive();
+    }
+
+    /**
+     * 列出已归档聊天室 Agent。
+     */
+    public List<RoomAgentProfile> listArchivedRoomAgents() throws IOException {
+        return roomAgentRegistry.listArchived();
+    }
+
+    /**
+     * 新增聊天室 Agent。
+     */
+    public RoomAgentProfile createRoomAgent(RoomAgentInput input) throws IOException {
+        return roomAgentRegistry.create(input);
+    }
+
+    /**
+     * 更新聊天室 Agent。
+     */
+    public RoomAgentProfile updateRoomAgent(RoomAgentInput input) throws IOException {
+        return roomAgentRegistry.update(input);
+    }
+
+    /**
+     * 归档聊天室 Agent。
+     */
+    public RoomAgentProfile archiveRoomAgent(String agentId) throws IOException {
+        return roomAgentRegistry.archive(agentId);
+    }
+
+    /**
+     * 从归档恢复聊天室 Agent。
+     */
+    public RoomAgentProfile restoreRoomAgent(String agentId) throws IOException {
+        return roomAgentRegistry.restore(agentId);
+    }
+
+    /**
+     * 物理删除聊天室 Agent 配置、prompt 和私有 session。
+     */
+    public RoomAgentProfile deleteRoomAgentPermanently(String agentId) throws IOException {
+        RoomAgentProfile deleted = roomAgentRegistry.deletePermanently(agentId);
+        roomAgentPromptStore.delete(deleted);
+        roomAgentSessionCleaner.deleteAgentSessions(agentId);
+        return deleted;
+    }
+
+    /**
+     * 读取聊天室 Agent 的外部 system prompt。
+     */
+    public String roomAgentPrompt(RoomAgentProfile profile) throws IOException {
+        return roomAgentPromptStore.read(profile);
     }
 
     /**

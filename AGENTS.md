@@ -4,7 +4,7 @@
 
 ## 项目概述
 
-Aster 是一个教学版 Java Agent Runtime MVP，用来演示 AgentLoop、OpenAI-compatible SSE 流式 LLM、Tool Calling、上下文压缩、Session JSONL、HITL 工具审批、MCP、Skill、长期记忆、后台任务、动态 DAG Plan、固定 DAG Agent Team，以及 TUI/Web/Telegram 多入口。
+Aster 是一个教学版 Java Agent Runtime MVP，用来演示 AgentLoop、OpenAI-compatible SSE 流式 LLM、Tool Calling、上下文压缩、Session JSONL、HITL 工具审批、MCP、Skill、长期记忆、后台任务、动态 DAG Plan、固定 DAG Agent Team、Web 多 Agent 聊天室，以及 TUI/Web/Telegram 多入口。
 
 它不是生产级多租户平台。做改动时优先保持结构清晰、代码少、教学可读，不要为了“以后可能需要”提前堆复杂抽象。
 
@@ -33,6 +33,7 @@ Aster 是一个教学版 Java Agent Runtime MVP，用来演示 AgentLoop、OpenA
 - `src/main/java/com/aster/app/background/`：后台任务和定时扫描。
 - `src/main/java/com/aster/app/plan/`：动态 DAG Plan。
 - `src/main/java/com/aster/app/team/`：固定 DAG Agent Team。
+- `src/main/java/com/aster/app/room/`：Web 多 Agent 聊天室，包含房间消息、Agent 配置、mention 解析和房间上下文注入。
 - `src/main/java/com/aster/ui/`：TUI、Web、Telegram 表现层。
 - `src/main/resources/prompts/`：外部化 prompt。
 - `src/test/java/com/aster/`：JUnit 5 测试。
@@ -43,7 +44,7 @@ Aster 是一个教学版 Java Agent Runtime MVP，用来演示 AgentLoop、OpenA
 - 依赖方向保持 `ui -> app/runtime -> core -> llm`。
 - `llm` 不知道 AgentLoop、Tool、UI。
 - `core` 不反向依赖 `app`；核心层只放抽象和主流程。
-- `app` 实现具体能力，例如工具、MCP、Skill、HITL、Memory、Background、Plan、Team。
+- `app` 实现具体能力，例如工具、MCP、Skill、HITL、Memory、Background、Todo、Plan、Team、Room。
 - `ui` 只调用 `AgentRuntime` 并消费 `AgentEventEnvelope`，不要直接拼装或侵入 `AgentLoop`。
 - 新代码统一使用 `com.aster` 包名，不再使用旧包名。
 - 新增注释用中文；新增类要写类注释；核心方法要写方法注释。
@@ -55,6 +56,9 @@ Aster 是一个教学版 Java Agent Runtime MVP，用来演示 AgentLoop、OpenA
 - `bash/write/edit` 属于高影响工具，默认走 HITL 审批。
 - Team 当前是只读探索，不注册写工具、bash、todo、background_task 或 subagent。
 - Plan 子 Agent 复用主 ToolRegistry 和 HookRegistry，高影响工具仍走 HITL；`FILE_WRITE` 和 `COMMAND` 节点需要写锁串行。
+- Room Agent 当前只开放只读/检索类工具；不要给聊天室 Agent 注册 `write/edit/bash/todo/background_task/subagent`。
+- Room 共享消息只保存用户消息、Agent 最终回复和系统提示；工具过程、reasoning 和私有上下文不写入 hub message。
+- Room Agent 有独立 JSONL session；房间共享消息通过 `RoomContextInjectHook` 临时注入最后一条 user 消息，不要直接落入 Agent 私有 session。
 - 修改核心链路、工具协议、Plan/Team、Session、后台任务或 UI 事件映射后，至少运行 `mvn test`。
 - 纯文档修改可以不跑测试，但最终说明要写清楚。
 
@@ -66,12 +70,13 @@ Aster 是一个教学版 Java Agent Runtime MVP，用来演示 AgentLoop、OpenA
 - 架构：`docs/ai-readme/generated/architecture.md`
 - 开发指南：`docs/ai-readme/generated/development-guide.md`
 - 流程：`docs/ai-readme/generated/core-flows.md`
-- 业务（人工维护）：`docs/ai-readme/manual/business-knowledge.md`
-- 踩坑（人工维护）：`docs/ai-readme/manual/lessons-learned.md`
+- 业务（AI 与人工共同维护）：`docs/ai-readme/manual/business-knowledge.md`
+- 踩坑（AI 与人工共同维护）：`docs/ai-readme/manual/lessons-learned.md`
 
 执行任务前：
 
 - 涉及架构、跨模块修改或不熟悉的目录时，先读对应 `docs/ai-readme/generated/` 文档。
-- 涉及业务规则、术语、历史坑点时，先读对应 `docs/ai-readme/manual/` 文档。
+- 涉及业务规则、术语、历史坑点时，先读对应 `docs/ai-readme/manual/` 文档；用户和 AI 对话中形成的稳定共识要沉淀回 manual。
+- 涉及代码改动、架构变化、功能新增、入口能力变化、经验沉淀或用户指出文档过时时，交付前评估是否需要同步更新 `docs/ai-readme/README.md`、`generated/`、`manual/`。
 - 不确定的信息不要补全为事实，使用 `<!-- TODO -->` 标记并在交付时说明。
 - 维护本文件时，保留已有团队规则；详细分析优先放入 `docs/ai-readme/`，不要把所有内容塞回 `AGENTS.md`。

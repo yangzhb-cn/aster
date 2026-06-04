@@ -64,6 +64,10 @@ button {
     var(--bg);
 }
 
+.app-shell.archive-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .topbar {
   grid-column: 1 / -1;
   display: grid;
@@ -81,6 +85,29 @@ button {
   gap: 10px;
   font-weight: 800;
   color: var(--accent-strong);
+}
+
+.view-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+}
+
+.view-tab {
+  min-height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.view-tab.active {
+  color: var(--accent-strong);
+  border-color: #a8e3db;
+  background: var(--primary-weak);
 }
 
 .brand-mark {
@@ -180,6 +207,19 @@ button:disabled {
   padding: 18px;
 }
 
+.app-shell.archive-mode .left-rail,
+.app-shell.archive-mode .right-rail {
+  display: none;
+}
+
+.app-shell.archive-mode .chat-pane {
+  grid-column: 1 / -1;
+}
+
+.app-shell.archive-mode .composer {
+  display: none;
+}
+
 .right-rail {
   border-right: 0;
   border-left: 1px solid var(--line);
@@ -191,6 +231,10 @@ button:disabled {
   padding-bottom: 20px;
   margin-bottom: 20px;
   border-bottom: 1px solid var(--line);
+}
+
+.hidden {
+  display: none !important;
 }
 
 .eyebrow {
@@ -238,6 +282,14 @@ button:disabled {
 .session-row.active {
   border-color: #a8e3db;
   background: var(--primary-weak);
+}
+
+.session-row.agent-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.session-row.agent-row.disabled {
+  opacity: .62;
 }
 
 .session-main {
@@ -321,6 +373,26 @@ textarea {
   line-height: 1.5;
 }
 
+input {
+  font: inherit;
+}
+
+input[type="text"],
+input[type="datetime-local"] {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 12px;
+}
+
+input[type="text"]:focus,
+input[type="datetime-local"]:focus {
+  border-color: var(--accent);
+}
+
 textarea:focus {
   border-color: var(--accent);
 }
@@ -357,6 +429,7 @@ textarea:focus {
 }
 
 .message.assistant,
+.message.agent,
 .message.system,
 .message.team,
 .message.thinking,
@@ -396,6 +469,11 @@ textarea:focus {
   background: #134e4a;
   color: #fffdf8;
   box-shadow: 0 12px 24px rgba(19, 78, 74, .12);
+}
+
+.message.agent .message-body {
+  border-color: var(--line-strong);
+  border-left-color: var(--accent);
 }
 
 .message.assistant .message-body {
@@ -893,6 +971,123 @@ th {
   padding: 0;
   border-radius: 7px;
   color: var(--danger);
+}
+
+.room-agent-form {
+  display: grid;
+  gap: 10px;
+}
+
+.room-agent-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.room-agent-form label span {
+  color: var(--faint);
+}
+
+.room-agent-form textarea {
+  min-height: 74px;
+  resize: vertical;
+}
+
+.room-agent-form #roomAgentPrompt {
+  min-height: 220px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.room-agent-enabled {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+}
+
+.room-agent-enabled input {
+  accent-color: var(--accent);
+}
+
+.room-agent-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.room-agent-actions button {
+  flex: 1 1 96px;
+}
+
+.archive-board {
+  width: min(980px, 100%);
+  display: grid;
+  gap: 18px;
+  margin: 0 auto;
+}
+
+.archive-section {
+  display: grid;
+  gap: 10px;
+}
+
+.archive-section-title {
+  color: var(--faint);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .08em;
+}
+
+.archive-list {
+  display: grid;
+  gap: 8px;
+}
+
+.archive-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 12px;
+  box-shadow: 0 8px 20px rgba(19, 78, 74, .04);
+}
+
+.archive-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.archive-main strong {
+  min-width: 0;
+  color: var(--accent-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-main span {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.archive-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: end;
+}
+
+.archive-actions button {
+  min-height: 30px;
+  padding: 0 10px;
+  font-size: 12px;
 }
 
 @keyframes rise {

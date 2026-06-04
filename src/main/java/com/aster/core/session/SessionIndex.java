@@ -51,6 +51,16 @@ public class SessionIndex {
     }
 
     /**
+     * 列出已归档 session，按更新时间倒序。
+     */
+    public synchronized List<SessionRecord> listArchived() throws IOException {
+        return load().sessions().stream()
+                .filter(SessionRecord::archived)
+                .sorted(Comparator.comparing(SessionRecord::updatedAt).reversed())
+                .toList();
+    }
+
+    /**
      * 确保 session 在索引中存在；旧的 name.jsonl 会被懒加载成 displayName。
      */
     public synchronized SessionRecord ensure(String sessionId, String displayName) throws IOException {
@@ -111,6 +121,39 @@ public class SessionIndex {
      */
     public synchronized SessionRecord archive(String sessionId) throws IOException {
         return update(sessionId, record -> record.archived(now()));
+    }
+
+    /**
+     * 从归档恢复 session。
+     */
+    public synchronized SessionRecord restore(String sessionId) throws IOException {
+        return update(sessionId, record -> record.restored(now()));
+    }
+
+    /**
+     * 从索引和 JSONL 文件中物理删除已归档 session。
+     */
+    public synchronized SessionRecord deletePermanently(String sessionId) throws IOException {
+        SessionCatalog.requireValidName(sessionId);
+        SessionIndexData data = load();
+        List<SessionRecord> records = new ArrayList<>();
+        SessionRecord deleted = null;
+        for (SessionRecord record : data.sessions()) {
+            if (record.id().equals(sessionId)) {
+                deleted = record;
+            } else {
+                records.add(record);
+            }
+        }
+        if (deleted == null) {
+            throw new IOException("session not found: " + sessionId);
+        }
+        if (!deleted.archived()) {
+            throw new IOException("session must be archived before physical delete: " + sessionId);
+        }
+        Files.deleteIfExists(SessionCatalog.fileFor(sessionsDirectory, sessionId));
+        save(new SessionIndexData(records));
+        return deleted;
     }
 
     /**

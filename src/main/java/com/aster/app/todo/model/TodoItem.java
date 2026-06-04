@@ -71,6 +71,15 @@ public record TodoItem(
         return withStatus(TodoStatus.ARCHIVED, result);
     }
 
+    /**
+     * 返回从归档恢复后的待办项。
+     *
+     * <p>如果原先有完成结果，恢复为 completed；否则恢复为 pending。</p>
+     */
+    public TodoItem restored() {
+        return withStatus(result == null || result.isBlank() ? TodoStatus.PENDING : TodoStatus.COMPLETED, result);
+    }
+
     private TodoItem withStatus(TodoStatus nextStatus, String message) {
         return new TodoItem(
                 id,

@@ -1,8 +1,14 @@
 const state = {
+  view: "chat",
   busy: false,
   queuedCount: 0,
   currentSessionId: "",
   sessions: [],
+  rooms: [],
+  currentRoomId: "",
+  roomAgents: [],
+  currentRoomAgentId: "",
+  roomBusy: false,
   tools: new Map(),
   currentAssistant: null,
   currentReasoning: null,
@@ -13,12 +19,34 @@ const TOOL_PREVIEW_CHAR_LIMIT = 1200;
 const TOOL_PREVIEW_LINE_LIMIT = 12;
 
 const $ = (selector) => document.querySelector(selector);
+const appShell = $(".app-shell");
 const messagesEl = $("#messages");
 const promptEl = $("#prompt");
 const sendButton = $("#sendButton");
 const stopButton = $("#stopButton");
+const chatViewButton = $("#chatViewButton");
+const roomViewButton = $("#roomViewButton");
+const archiveViewButton = $("#archiveViewButton");
+const chatLeftPanel = $("#chatLeftPanel");
+const roomLeftPanel = $("#roomLeftPanel");
+const chatRightPanel = $("#chatRightPanel");
+const roomRightPanel = $("#roomRightPanel");
 const newSessionButton = $("#newSessionButton");
 const sessionList = $("#sessionList");
+const newRoomButton = $("#newRoomButton");
+const roomList = $("#roomList");
+const newRoomAgentButton = $("#newRoomAgentButton");
+const roomAgentList = $("#roomAgentList");
+const roomAgentForm = $("#roomAgentForm");
+const roomAgentId = $("#roomAgentId");
+const roomAgentName = $("#roomAgentName");
+const roomAgentRole = $("#roomAgentRole");
+const roomAgentAliases = $("#roomAgentAliases");
+const roomAgentTools = $("#roomAgentTools");
+const roomAgentDescription = $("#roomAgentDescription");
+const roomAgentPrompt = $("#roomAgentPrompt");
+const roomAgentEnabled = $("#roomAgentEnabled");
+const archiveRoomAgentButton = $("#archiveRoomAgentButton");
 const connectionState = $("#connectionState");
 const modelName = $("#modelName");
 const sessionName = $("#sessionName");
@@ -197,6 +225,7 @@ function addMessage(role, text = "") {
 
 function displayRole(role) {
   if (role === "assistant" || role === "system") return "Aster";
+  if (role === "agent") return "AGENT";
   if (role === "team") return "TEAM";
   if (role === "thinking") return "Thinking";
   if (role === "user") return "USER";
@@ -451,7 +480,7 @@ async function postJson(path, body = {}) {
   });
   if (data.status) {
     applyStatus(data.status);
-  } else {
+  } else if ("busy" in data || "model" in data || "sessionId" in data || "queuedCount" in data) {
     applyStatus(data);
   }
   return data;
@@ -611,6 +640,410 @@ function renderStoredMessage(message = {}) {
 function normalizeStoredRole(role) {
   if (role === "user" || role === "assistant") return role;
   return "system";
+}
+
+function setView(view) {
+  state.view = view;
+  const room = view === "room";
+  const archive = view === "archive";
+  chatViewButton.classList.toggle("active", !room);
+  chatViewButton.classList.toggle("active", view === "chat");
+  roomViewButton.classList.toggle("active", room);
+  archiveViewButton.classList.toggle("active", archive);
+  appShell.classList.toggle("archive-mode", archive);
+  chatLeftPanel.classList.toggle("hidden", room || archive);
+  roomLeftPanel.classList.toggle("hidden", !room || archive);
+  chatRightPanel.classList.toggle("hidden", room || archive);
+  roomRightPanel.classList.toggle("hidden", !room || archive);
+  promptEl.placeholder = room ? "输入房间消息，使用 @Agent 或 @all 触发回复" : "输入任务或问题";
+  messagesEl.innerHTML = "";
+  state.currentAssistant = null;
+  state.currentReasoning = null;
+  state.tools.clear();
+  if (archive) {
+    loadArchives();
+  } else if (room) {
+    loadRooms();
+    loadRoomAgents();
+  } else if (state.currentSessionId) {
+    loadSessionMessages(state.currentSessionId);
+  }
+}
+
+async function loadArchives() {
+  try {
+    renderArchives(await requestJson("/api/archives"));
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function renderArchives(payload = {}) {
+  messagesEl.innerHTML = "";
+  const board = document.createElement("section");
+  board.className = "archive-board";
+  board.append(
+    archiveSection("Sessions", payload.sessions || [], "session", (item) => ({
+      title: item.displayName || item.id,
+      meta: `${item.id || ""} · ${formatSessionTime(item.updatedAt)}`
+    })),
+    archiveSection("Todos", payload.todos || [], "todo", (item) => ({
+      title: item.content || item.id,
+      meta: `${item.status || ""} · ${item.priority || ""} · ${formatSessionTime(item.updatedAt)}`
+    })),
+    archiveSection("Rooms", payload.rooms || [], "room", (item) => ({
+      title: item.name || item.roomId,
+      meta: `${item.roomId || ""} · ${item.topic || "未设置主题"} · ${formatSessionTime(item.updatedAt)}`
+    })),
+    archiveSection("Room Agents", payload.roomAgents || [], "room-agent", (item) => ({
+      title: item.name || item.agentId,
+      meta: `${item.agentId || ""} · ${item.role || ""} · ${formatSessionTime(item.updatedAt)}`
+    }))
+  );
+  messagesEl.append(board);
+}
+
+function archiveSection(title, items, type, formatter) {
+  const section = document.createElement("section");
+  section.className = "archive-section";
+  section.innerHTML = `
+    <div class="archive-section-title">${escapeHtml(title)} · ${items.length}</div>
+    <div class="archive-list"></div>
+  `;
+  const list = section.querySelector(".archive-list");
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "session-empty";
+    empty.textContent = "暂无归档";
+    list.append(empty);
+    return section;
+  }
+  for (const item of items) {
+    const id = archiveItemId(type, item);
+    const view = formatter(item);
+    const row = document.createElement("article");
+    row.className = "archive-item";
+    row.dataset.type = type;
+    row.dataset.id = id;
+    row.innerHTML = `
+      <div class="archive-main">
+        <strong></strong>
+        <span></span>
+      </div>
+      <div class="archive-actions">
+        <button type="button" data-action="restore">恢复</button>
+        <button class="ghost-button danger" type="button" data-action="delete">物理删除</button>
+      </div>
+    `;
+    row.querySelector("strong").textContent = view.title;
+    row.querySelector("span").textContent = view.meta;
+    list.append(row);
+  }
+  return section;
+}
+
+function archiveItemId(type, item) {
+  if (type === "session" || type === "todo") return item.id || "";
+  if (type === "room") return item.roomId || "";
+  if (type === "room-agent") return item.agentId || "";
+  return "";
+}
+
+async function restoreArchive(type, id) {
+  if (!id) return;
+  try {
+    await postJson("/api/archives/restore", { type, id });
+    await afterArchiveChanged();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function deleteArchive(type, id) {
+  if (!id) return;
+  if (!window.confirm(`物理删除 ${type} ${id}？这个操作不可恢复。`)) return;
+  try {
+    await postJson("/api/archives/delete", { type, id });
+    await afterArchiveChanged();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function afterArchiveChanged() {
+  await loadArchives();
+  await loadSessions();
+  await loadTodos();
+  await loadRooms();
+  await loadRoomAgents();
+}
+
+async function loadRooms() {
+  try {
+    const payload = await requestJson("/api/rooms");
+    state.rooms = Array.isArray(payload.rooms) ? payload.rooms : [];
+    if (!state.currentRoomId && state.rooms.length) {
+      state.currentRoomId = state.rooms[0].roomId;
+    }
+    if (state.currentRoomId && !state.rooms.some((room) => room.roomId === state.currentRoomId)) {
+      state.currentRoomId = state.rooms[0]?.roomId || "";
+    }
+    renderRooms();
+    if (state.view === "room" && state.currentRoomId) {
+      await loadRoomMessages(state.currentRoomId);
+    }
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function renderRooms() {
+  roomList.innerHTML = "";
+  if (!state.rooms.length) {
+    const empty = document.createElement("div");
+    empty.className = "session-empty";
+    empty.textContent = "暂无房间";
+    roomList.append(empty);
+    return;
+  }
+
+  for (const room of state.rooms) {
+    const row = document.createElement("article");
+    row.className = `session-row${room.roomId === state.currentRoomId ? " active" : ""}`;
+    row.dataset.id = room.roomId;
+    row.innerHTML = `
+      <button class="session-main" type="button" data-action="use" title="切换房间">
+        <strong></strong>
+        <span></span>
+      </button>
+      <div class="session-actions">
+        <button class="session-action" type="button" data-action="rename" title="编辑" aria-label="编辑">R</button>
+        <button class="session-action danger" type="button" data-action="archive" title="归档" aria-label="归档">x</button>
+      </div>
+    `;
+    row.querySelector("strong").textContent = room.name || room.roomId;
+    row.querySelector("span").textContent = `${room.topic || "未设置主题"} · ${formatSessionTime(room.updatedAt)}`;
+    roomList.append(row);
+  }
+}
+
+async function createRoom() {
+  const name = window.prompt("聊天室名称", "");
+  if (name === null) return;
+  try {
+    const payload = await postJson("/api/rooms", { name });
+    state.rooms = payload.rooms || [];
+    state.currentRoomId = state.rooms[0]?.roomId || "";
+    renderRooms();
+    await loadRoomMessages(state.currentRoomId);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function switchRoom(roomId) {
+  if (!roomId || roomId === state.currentRoomId) return;
+  state.currentRoomId = roomId;
+  renderRooms();
+  await loadRoomMessages(roomId);
+}
+
+async function updateRoom(roomId) {
+  const room = state.rooms.find((item) => item.roomId === roomId);
+  const name = window.prompt("聊天室名称", room?.name || "");
+  if (name === null) return;
+  const topic = window.prompt("房间主题", room?.topic || "");
+  if (topic === null) return;
+  try {
+    const payload = await postJson("/api/rooms/update", { roomId, name, topic });
+    state.rooms = payload.rooms || [];
+    renderRooms();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function archiveRoom(roomId) {
+  const room = state.rooms.find((item) => item.roomId === roomId);
+  if (!window.confirm(`归档聊天室「${room?.name || roomId}」？`)) return;
+  try {
+    const payload = await postJson("/api/rooms/archive", { roomId });
+    state.rooms = payload.rooms || [];
+    state.currentRoomId = state.rooms[0]?.roomId || "";
+    renderRooms();
+    messagesEl.innerHTML = "";
+    if (state.currentRoomId) await loadRoomMessages(state.currentRoomId);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function loadRoomMessages(roomId) {
+  if (!roomId) return;
+  try {
+    const payload = await requestJson(`/api/rooms/${encodeURIComponent(roomId)}/messages`);
+    messagesEl.innerHTML = "";
+    for (const message of payload.messages || []) {
+      renderRoomMessage(message);
+    }
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function renderRoomMessage(message = {}) {
+  const type = String(message.speakerType || "").toLowerCase();
+  if (type === "agent") {
+    const block = addMessage("agent", message.content || "");
+    block.node.querySelector(".message-header").textContent = `${message.speakerName || "Agent"}${message.speakerRole ? ` · ${message.speakerRole}` : ""}`;
+    return;
+  }
+  if (type === "system") {
+    addMessage("system", message.content || "");
+    return;
+  }
+  addMessage("user", message.content || "");
+}
+
+async function sendRoomMessage(text) {
+  if (!state.currentRoomId) {
+    addMessage("error", "请先创建聊天室");
+    return;
+  }
+  renderRoomMessage({ speakerType: "USER", content: text });
+  state.roomBusy = true;
+  sendButton.disabled = true;
+  try {
+    const payload = await postJson(`/api/rooms/${encodeURIComponent(state.currentRoomId)}/messages`, { text });
+    for (const message of payload.messages || []) {
+      if (message.speakerType === "USER" && message.content === text) {
+        continue;
+      }
+      renderRoomMessage(message);
+    }
+    if (payload.room) {
+      const index = state.rooms.findIndex((room) => room.roomId === payload.room.roomId);
+      if (index >= 0) state.rooms[index] = payload.room;
+      renderRooms();
+    }
+  } catch (error) {
+    addMessage("error", error.message);
+  } finally {
+    state.roomBusy = false;
+    sendButton.disabled = false;
+  }
+}
+
+async function loadRoomAgents() {
+  try {
+    const payload = await requestJson("/api/room-agents");
+    state.roomAgents = Array.isArray(payload.agents) ? payload.agents : [];
+    if (!state.currentRoomAgentId && state.roomAgents.length) {
+      state.currentRoomAgentId = state.roomAgents[0].agentId;
+      fillRoomAgentForm(state.roomAgents[0]);
+    }
+    if (state.currentRoomAgentId && !state.roomAgents.some((agent) => agent.agentId === state.currentRoomAgentId)) {
+      state.currentRoomAgentId = state.roomAgents[0]?.agentId || "";
+      fillRoomAgentForm(state.roomAgents[0] || null);
+    }
+    renderRoomAgents();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function renderRoomAgents() {
+  roomAgentList.innerHTML = "";
+  if (!state.roomAgents.length) {
+    const empty = document.createElement("div");
+    empty.className = "session-empty";
+    empty.textContent = "暂无 Agent";
+    roomAgentList.append(empty);
+    return;
+  }
+
+  for (const agent of state.roomAgents) {
+    const row = document.createElement("article");
+    row.className = `session-row agent-row${agent.agentId === state.currentRoomAgentId ? " active" : ""}${agent.enabled ? "" : " disabled"}`;
+    row.dataset.id = agent.agentId;
+    row.innerHTML = `
+      <button class="session-main" type="button" data-action="select" title="编辑 Agent">
+        <strong></strong>
+        <span></span>
+      </button>
+    `;
+    row.querySelector("strong").textContent = `@${agent.name || agent.agentId}`;
+    row.querySelector("span").textContent = `${agent.role || ""} · ${(agent.mentionAliases || []).map((alias) => "@" + alias).join(" ")}`;
+    roomAgentList.append(row);
+  }
+}
+
+function fillRoomAgentForm(agent = null) {
+  roomAgentId.value = agent?.agentId || "";
+  roomAgentName.value = agent?.name || "";
+  roomAgentRole.value = agent?.role || "";
+  roomAgentAliases.value = (agent?.mentionAliases || []).join(", ");
+  roomAgentTools.value = (agent?.toolAllowlist || ["read", "ls", "glob", "grep", "web_fetch", "web_search"]).join(", ");
+  roomAgentDescription.value = agent?.description || "";
+  roomAgentPrompt.value = agent?.systemPrompt || "";
+  roomAgentEnabled.checked = agent?.enabled ?? true;
+  archiveRoomAgentButton.disabled = !agent?.agentId;
+}
+
+function roomAgentInput() {
+  return {
+    agentId: roomAgentId.value.trim(),
+    name: roomAgentName.value.trim(),
+    role: roomAgentRole.value.trim(),
+    description: roomAgentDescription.value.trim(),
+    systemPrompt: roomAgentPrompt.value.trim(),
+    mentionAliases: splitCsv(roomAgentAliases.value),
+    toolAllowlist: splitCsv(roomAgentTools.value),
+    enabled: roomAgentEnabled.checked,
+  };
+}
+
+function splitCsv(value) {
+  return String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+async function saveRoomAgent(event) {
+  event.preventDefault();
+  const input = roomAgentInput();
+  if (!input.name) {
+    addMessage("error", "Agent 名称不能为空");
+    return;
+  }
+  try {
+    const path = input.agentId ? "/api/room-agents/update" : "/api/room-agents";
+    const payload = await postJson(path, input);
+    state.roomAgents = payload.agents || [];
+    state.currentRoomAgentId = input.agentId || state.roomAgents[0]?.agentId || "";
+    if (!input.agentId) {
+      fillRoomAgentForm(state.roomAgents[0] || null);
+    }
+    renderRoomAgents();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function archiveRoomAgent() {
+  const agentId = roomAgentId.value.trim();
+  const agent = state.roomAgents.find((item) => item.agentId === agentId);
+  if (!agentId || !window.confirm(`归档 Agent「${agent?.name || agentId}」？`)) return;
+  try {
+    const payload = await postJson("/api/room-agents/archive", { agentId });
+    state.roomAgents = payload.agents || [];
+    state.currentRoomAgentId = state.roomAgents[0]?.agentId || "";
+    fillRoomAgentForm(state.roomAgents[0] || null);
+    renderRoomAgents();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
 }
 
 async function createSession() {
@@ -946,6 +1379,10 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
   const text = promptEl.value.trim();
   if (!text) return;
   promptEl.value = "";
+  if (state.view === "room") {
+    await sendRoomMessage(text);
+    return;
+  }
   addMessage("user", text);
   sendButton.disabled = true;
   try {
@@ -979,6 +1416,17 @@ promptEl.addEventListener("keydown", (event) => {
 });
 
 newSessionButton.addEventListener("click", createSession);
+chatViewButton.addEventListener("click", () => setView("chat"));
+roomViewButton.addEventListener("click", () => setView("room"));
+archiveViewButton.addEventListener("click", () => setView("archive"));
+newRoomButton.addEventListener("click", createRoom);
+newRoomAgentButton.addEventListener("click", () => {
+  state.currentRoomAgentId = "";
+  fillRoomAgentForm(null);
+  renderRoomAgents();
+});
+roomAgentForm.addEventListener("submit", saveRoomAgent);
+archiveRoomAgentButton.addEventListener("click", archiveRoomAgent);
 refreshTodosButton.addEventListener("click", loadTodos);
 todoForm.addEventListener("submit", createTodoFromForm);
 
@@ -1006,6 +1454,48 @@ sessionList.addEventListener("click", (event) => {
     renameSession(sessionId);
   } else if (action === "archive") {
     archiveSession(sessionId);
+  }
+});
+
+roomList.addEventListener("click", (event) => {
+  const actionButton = event.target.closest("[data-action]");
+  const row = event.target.closest(".session-row");
+  if (!actionButton || !row) return;
+
+  const roomId = row.dataset.id;
+  const action = actionButton.dataset.action;
+  if (action === "use") {
+    switchRoom(roomId);
+  } else if (action === "rename") {
+    updateRoom(roomId);
+  } else if (action === "archive") {
+    archiveRoom(roomId);
+  }
+});
+
+roomAgentList.addEventListener("click", (event) => {
+  const actionButton = event.target.closest("[data-action]");
+  const row = event.target.closest(".session-row");
+  if (!actionButton || !row) return;
+
+  const agent = state.roomAgents.find((item) => item.agentId === row.dataset.id);
+  state.currentRoomAgentId = agent?.agentId || "";
+  fillRoomAgentForm(agent || null);
+  renderRoomAgents();
+});
+
+messagesEl.addEventListener("click", (event) => {
+  if (state.view !== "archive") return;
+  const actionButton = event.target.closest("[data-action]");
+  const row = event.target.closest(".archive-item");
+  if (!actionButton || !row) return;
+
+  const type = row.dataset.type;
+  const id = row.dataset.id;
+  if (actionButton.dataset.action === "restore") {
+    restoreArchive(type, id);
+  } else if (actionButton.dataset.action === "delete") {
+    deleteArchive(type, id);
   }
 });
 

@@ -1,0 +1,58 @@
+{
+  "agents": [
+    {
+      "name": "产品经理",
+      "role": "产品需求与用户价值分析",
+      "description": "负责澄清目标用户、使用场景、需求边界、优先级和验收标准。",
+      "promptPath": "/prompts/room/templates/product-manager.md",
+      "mentionAliases": ["产品经理", "产品", "pm", "product"],
+      "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "enabled": true
+    },
+    {
+      "name": "前端",
+      "role": "前端体验与交互实现",
+      "description": "负责 UI 信息架构、交互状态、前端实现路径和可用性风险。",
+      "promptPath": "/prompts/room/templates/frontend.md",
+      "mentionAliases": ["前端", "fe", "frontend"],
+      "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "enabled": true
+    },
+    {
+      "name": "后端",
+      "role": "后端接口与数据流设计",
+      "description": "负责接口边界、数据模型、状态持久化、任务调度和错误处理。",
+      "promptPath": "/prompts/room/templates/backend.md",
+      "mentionAliases": ["后端", "be", "backend"],
+      "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "enabled": true
+    },
+    {
+      "name": "测试",
+      "role": "质量保障与验收验证",
+      "description": "负责测试场景、边界用例、回归风险和可验证验收标准。",
+      "promptPath": "/prompts/room/templates/tester.md",
+      "mentionAliases": ["测试", "qa", "tester", "test"],
+      "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "enabled": true
+    },
+    {
+      "name": "评审",
+      "role": "代码审查与风险评估",
+      "description": "负责识别实现缺陷、维护成本、协议风险、安全风险和遗漏测试。",
+      "promptPath": "/prompts/room/templates/reviewer.md",
+      "mentionAliases": ["评审", "review", "reviewer", "code-review"],
+      "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "enabled": true
+    },
+    {
+      "name": "架构师",
+      "role": "系统架构与边界治理",
+      "description": "负责分层边界、模块依赖、扩展点选择、长期演进和复杂度控制。",
+      "promptPath": "/prompts/room/templates/architect.md",
+      "mentionAliases": ["架构师", "架构", "architect", "arch"],
+      "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "enabled": true
+    }
+  ]
+}

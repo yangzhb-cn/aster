@@ -21,7 +21,7 @@ Aster/
 │   │   │   ├── app/                # 具体能力实现和运行时装配
 │   │   │   └── ui/                 # TUI / Web / Telegram 入口
 │   │   └── resources/
-│   │       ├── prompts/            # system、context、memory、plan、team prompt
+│   │       ├── prompts/            # system、context、memory、plan、team、room prompt
 │   │       └── web/                # Web 静态资源
 │   └── test/java/com/aster/        # JUnit 5 测试
 ├── docs/ai-readme/                 # AI + 人类共用项目上下文文档
@@ -49,18 +49,19 @@ Aster/
 | `src/main/java/com/aster/app/memory/` | 长期记忆存储和抽取 | `MarkdownMemoryStore.java`、`MemoryExtractionHook.java`、`MemoryExtractionTaskHandler.java` |
 | `src/main/java/com/aster/app/plan/` | 动态 DAG Plan 生成和执行 | `PlanPlannerAgent.java`、`PlanRunner.java`、`PlanTaskExecutor.java` |
 | `src/main/java/com/aster/app/team/` | 固定 DAG Agent Team | `AgentTeamRunner.java`、`TeamPlanFactory.java`、`TeamAgentFactory.java` |
+| `src/main/java/com/aster/app/room/` | Web 多 Agent 聊天室、房间消息、Agent 配置和上下文注入 | `RoomCoordinator.java`、`RoomAgentRunner.java`、`RoomContextInjectHook.java`、`JsonRoomStore.java` |
 | `src/main/java/com/aster/ui/tui/` | Lanterna 终端界面 | `TuiMain.java`、`AgentTuiWindow.java`、`command/SlashCommandRegistry.java` |
 | `src/main/java/com/aster/ui/web/` | JDK HttpServer Web Chat 和 SSE | `WebMain.java`、`WebServer.java`、`WebAgentEventMapper.java` |
 | `src/main/java/com/aster/ui/im/telegram/` | Telegram long polling IM 入口 | `TelegramMain.java`、`TelegramUpdatePoller.java`、`TelegramRuntimeManager.java` |
-| `src/main/resources/prompts/` | 外部化 prompt | `agent/system.md`、`plan/planner-system.md`、`team/code-researcher-system.md` |
-| `src/test/java/com/aster/` | 单元测试和协议测试 | `AgentLoopTest.java`、`PlanPlannerAgentTest.java`、`WebAgentEventMapperTest.java` |
+| `src/main/resources/prompts/` | 外部化 prompt | `agent/system.md`、`plan/planner-system.md`、`team/code-researcher-system.md`、`room/default-agents.json` |
+| `src/test/java/com/aster/` | 单元测试和协议测试 | `AgentLoopTest.java`、`PlanPlannerAgentTest.java`、`RoomChatTest.java`、`WebAgentEventMapperTest.java` |
 
 ## 模块依赖关系
 
 ```mermaid
 flowchart TD
     UI["ui/*\nTUI / Web / Telegram"] --> Runtime["app/runtime\nAgentRuntime"]
-    Runtime --> App["app/*\nTools / MCP / Memory / Plan / Team"]
+    Runtime --> App["app/*\nTools / MCP / Memory / Plan / Team / Room"]
     Runtime --> Core["core/*\nAgentLoop / Context / Tool / Event"]
     App --> Core
     Core --> LLM["llm/*\nOpenAI-compatible SSE"]
@@ -80,5 +81,6 @@ workspace/
 ├── skills/                   # 本地 Skill 文档
 ├── artifacts/tool-results/   # 大工具结果外部卸载
 ├── memory/                   # 长期记忆 Markdown
-└── im/                       # Telegram chat-session 映射
+├── im/                       # Telegram chat-session 映射
+└── rooms/                    # Web Room、hub message、Agent 配置和 Agent 私有 session
 ```

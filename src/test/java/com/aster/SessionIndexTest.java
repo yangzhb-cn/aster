@@ -83,4 +83,23 @@ class SessionIndexTest {
         assertEquals("默认会话", restored.displayName());
         assertEquals(created.id(), index.listActive().getFirst().id());
     }
+
+    /**
+     * 验证物理删除只允许已归档 session，并会删除 JSONL 文件。
+     */
+    @Test
+    void physicallyDeletesArchivedSession() throws Exception {
+        SessionIndex index = new SessionIndex(objectMapper, tempDir);
+        var created = index.create("待删除会话");
+        Path jsonl = tempDir.resolve(created.id() + ".jsonl");
+        Files.writeString(jsonl, "{}\n");
+
+        index.archive(created.id());
+        assertEquals(1, index.listArchived().size());
+
+        index.deletePermanently(created.id());
+
+        assertTrue(index.listArchived().isEmpty());
+        assertFalse(Files.exists(jsonl));
+    }
 }

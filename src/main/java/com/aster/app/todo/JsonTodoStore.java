@@ -53,6 +53,18 @@ public class JsonTodoStore implements TodoStore {
     }
 
     /**
+     * 列出全部已归档待办。
+     */
+    @Override
+    public List<TodoItem> listArchived() throws IOException {
+        synchronized (lock) {
+            return readAll().stream()
+                    .filter(item -> item.status() == TodoStatus.ARCHIVED)
+                    .toList();
+        }
+    }
+
+    /**
      * 新增待办。
      */
     @Override
@@ -111,6 +123,38 @@ public class JsonTodoStore implements TodoStore {
             items.set(index, archived);
             writeAll(items);
             return archived;
+        }
+    }
+
+    /**
+     * 从归档恢复待办。
+     */
+    @Override
+    public TodoItem restore(String id) throws IOException {
+        synchronized (lock) {
+            List<TodoItem> items = new ArrayList<>(readAll());
+            int index = indexOf(items, id);
+            TodoItem restored = items.get(index).restored();
+            items.set(index, restored);
+            writeAll(items);
+            return restored;
+        }
+    }
+
+    /**
+     * 从 todos.json 中物理删除待办。
+     */
+    @Override
+    public TodoItem deletePermanently(String id) throws IOException {
+        synchronized (lock) {
+            List<TodoItem> items = new ArrayList<>(readAll());
+            int index = indexOf(items, id);
+            TodoItem deleted = items.remove(index);
+            if (deleted.status() != TodoStatus.ARCHIVED) {
+                throw new IOException("todo must be archived before physical delete: " + id);
+            }
+            writeAll(items);
+            return deleted;
         }
     }
 

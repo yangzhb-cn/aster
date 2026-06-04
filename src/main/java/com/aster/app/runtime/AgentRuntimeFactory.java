@@ -39,6 +39,21 @@ import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.notification.NotificationSink;
 import com.aster.app.prompt.PromptLoader;
 import com.aster.app.prompt.PromptPaths;
+import com.aster.app.room.JsonRoomAgentRegistry;
+import com.aster.app.room.JsonRoomStore;
+import com.aster.app.room.JsonlRoomMessageStore;
+import com.aster.app.room.RoomAgentPromptStore;
+import com.aster.app.room.RoomAgentRegistry;
+import com.aster.app.room.RoomAgentRunner;
+import com.aster.app.room.RoomAgentSessionFactory;
+import com.aster.app.room.RoomAgentSessionCleaner;
+import com.aster.app.room.RoomAgentTemplateSeeder;
+import com.aster.app.room.RoomCoordinator;
+import com.aster.app.room.RoomHub;
+import com.aster.app.room.RoomMentionParser;
+import com.aster.app.room.RoomPromptBuilder;
+import com.aster.app.room.RoomStore;
+import com.aster.app.room.RoomToolRegistryFactory;
 import com.aster.core.session.BootstrappedSessionStore;
 import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionCatalog;
@@ -128,6 +143,7 @@ public class AgentRuntimeFactory {
         String planPlannerSystemPrompt = promptLoader.load(PromptPaths.PLAN_PLANNER_SYSTEM);
         String planTaskExecutorSystemPrompt = promptLoader.load(PromptPaths.PLAN_TASK_EXECUTOR_SYSTEM);
         String planFinalSummaryUserPrompt = promptLoader.load(PromptPaths.PLAN_FINAL_SUMMARY_USER);
+        String roomAgentWrapperSystemPrompt = promptLoader.load(PromptPaths.ROOM_AGENT_WRAPPER_SYSTEM);
 
         OkHttpClient httpClient = new OkHttpClient.Builder()
                 .connectTimeout(Duration.ofSeconds(30))
@@ -147,6 +163,16 @@ public class AgentRuntimeFactory {
         MarkdownMemoryStore memoryStore = new MarkdownMemoryStore(WorkspacePaths.LONG_TERM_MEMORY);
         MemoryPromptRenderer memoryPromptRenderer = new MemoryPromptRenderer(longTermMemorySystemPrompt);
         TodoStore todoStore = new JsonTodoStore(objectMapper, WorkspacePaths.TODO_FILE);
+        RoomStore roomStore = new JsonRoomStore(objectMapper, WorkspacePaths.ROOM_INDEX);
+        RoomHub roomHub = new RoomHub(new JsonlRoomMessageStore(objectMapper, WorkspacePaths.ROOM_MESSAGES));
+        RoomAgentPromptStore roomAgentPromptStore = new RoomAgentPromptStore(WorkspacePaths.ROOM_AGENT_PROMPTS);
+        RoomAgentSessionCleaner roomAgentSessionCleaner = new RoomAgentSessionCleaner(WorkspacePaths.ROOM_AGENT_SESSIONS);
+        RoomAgentRegistry roomAgentRegistry = new JsonRoomAgentRegistry(
+                objectMapper,
+                WorkspacePaths.ROOM_AGENT_INDEX,
+                roomAgentPromptStore
+        );
+        new RoomAgentTemplateSeeder(objectMapper, roomAgentRegistry).seedIfEmpty();
 
         List<Message> bootstrapMessages = new ArrayList<>();
         // 基础 system prompt 来自 jar 内置 resources/prompts/agent/system.md。
@@ -259,12 +285,34 @@ public class AgentRuntimeFactory {
                 eventPublisher,
                 planFinalSummaryUserPrompt
         );
+        RoomPromptBuilder roomPromptBuilder = new RoomPromptBuilder(roomAgentWrapperSystemPrompt);
+        RoomCoordinator roomCoordinator = new RoomCoordinator(
+                roomStore,
+                roomHub,
+                roomAgentRegistry,
+                new RoomMentionParser(),
+                new RoomAgentRunner(
+                        provider,
+                        streamingChatClient,
+                        roomHub,
+                        roomAgentPromptStore,
+                        new RoomAgentSessionFactory(objectMapper, WorkspacePaths.ROOM_AGENT_SESSIONS),
+                        new RoomToolRegistryFactory(Path.of("."), objectMapper, httpClient, skillRepository),
+                        roomPromptBuilder
+                )
+        );
 
         return new AgentRuntime(
                 agentLoop,
                 runCoordinator,
                 agentTeamRunner,
                 planModeCoordinator,
+                roomStore,
+                roomHub,
+                roomCoordinator,
+                roomAgentRegistry,
+                roomAgentPromptStore,
+                roomAgentSessionCleaner,
                 eventPublisher,
                 backgroundTaskManager,
                 toolApprovalManager,

@@ -36,6 +36,8 @@
 | `src/main/resources/prompts/memory/*.md` | 长期记忆抽取和注入 prompt |
 | `src/main/resources/prompts/plan/*.md` | 动态 Plan prompt |
 | `src/main/resources/prompts/team/*.md` | Agent Team prompt |
+| `src/main/resources/prompts/room/*.md` | Room Agent 包装 prompt 和默认 Agent 模板 |
+| `src/main/resources/prompts/room/default-agents.json` | Web Room 首次启动导入的示例 Agent 清单 |
 | `src/main/resources/web/index.html` | Web 页面 |
 | `src/main/resources/web/assets/app.js` | Web 前端逻辑 |
 | `src/main/resources/web/assets/app.css` | Web 样式 |
@@ -75,6 +77,7 @@ flowchart LR
 
 - 默认入口：`http://localhost:8081`
 - 默认脚本：`./aster2web`
+- 当前页面包含 Chat、Room、Archive 三个视图；Room 是 Web 独有的多 Agent 聊天室入口。
 - 如果端口被占用，`aster2web` 会打印占用进程，并提示：
   - `screen -S aster2web -X quit`
   - `ASTER_WEB_PORT=8082 ./aster2web`
@@ -108,7 +111,8 @@ workspace/
 ├── skills/                   # 本地 Skill
 ├── artifacts/tool-results/   # 大工具结果
 ├── memory/                   # 长期记忆 Markdown
-└── im/                       # Telegram session 映射
+├── im/                       # Telegram session 映射
+└── rooms/                    # Web Room、Agent 配置、hub message 和私有 session
 ```
 
 ## 修改规则
@@ -118,3 +122,4 @@ workspace/
 - 新增可选流程逻辑优先走 Hook；主流程必经步骤才考虑 Stage。
 - 修改 Agent 主链路后至少运行 `mvn test`。
 - 纯文档修改可以不跑测试，但交付时要说明。
+- 涉及代码改动、架构变化、功能新增或经验沉淀时，同步评估 `docs/ai-readme/README.md`、`generated/` 和 `manual/` 是否需要更新。

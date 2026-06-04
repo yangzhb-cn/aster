@@ -26,6 +26,13 @@ public final class WorkspacePaths {
     public static final Path TOOL_RESULTS = ARTIFACTS.resolve("tool-results");
     public static final Path IM = ROOT.resolve("im");
     public static final Path TELEGRAM_SESSION_MAP = IM.resolve("telegram-sessions.json");
+    public static final Path ROOMS = ROOT.resolve("rooms");
+    public static final Path ROOM_INDEX = ROOMS.resolve("rooms.json");
+    public static final Path ROOM_MESSAGES = ROOMS.resolve("messages");
+    public static final Path ROOM_AGENTS = ROOMS.resolve("agents");
+    public static final Path ROOM_AGENT_INDEX = ROOM_AGENTS.resolve("agents.json");
+    public static final Path ROOM_AGENT_PROMPTS = ROOM_AGENTS.resolve("prompts");
+    public static final Path ROOM_AGENT_SESSIONS = ROOMS.resolve("agent-sessions");
 
     private WorkspacePaths() {
     }
@@ -43,5 +50,10 @@ public final class WorkspacePaths {
         Files.createDirectories(ARTIFACTS);
         Files.createDirectories(TOOL_RESULTS);
         Files.createDirectories(IM);
+        Files.createDirectories(ROOMS);
+        Files.createDirectories(ROOM_MESSAGES);
+        Files.createDirectories(ROOM_AGENTS);
+        Files.createDirectories(ROOM_AGENT_PROMPTS);
+        Files.createDirectories(ROOM_AGENT_SESSIONS);
     }
 }

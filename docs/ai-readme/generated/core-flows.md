@@ -15,6 +15,8 @@
 | P1 | 固定 `/team` | `AgentRuntime.submitTeam()`、`AgentTeamRunner` | 只读并行探索，结果交主 Agent |
 | P1 | 后台任务 | `BackgroundTaskScheduler` | reminder、todo_scan、memory_extract |
 | P1 | 多入口事件消费 | TUI / Web / Telegram event handlers | 同一 AgentEvent，不同展示策略 |
+| P1 | Web Room 多 Agent 聊天 | `AgentRuntime.sendRoomMessage()`、`RoomCoordinator` | Web 独有；共享 hub message + Agent 私有上下文 |
+| P1 | 归档中心 | `WebServer.handleArchives()` | Web 独有；恢复或物理删除已归档对象 |
 
 ## 流程 1：普通 Agent Run
 
@@ -271,3 +273,97 @@ sequenceDiagram
 - 当前 handler 包括 `reminder`、`todo_scan`、`memory_extract`。
 - `todo_scan` 由 runtime 启动时确保存在。
 - 不支持任意到点自动运行 Agent；复杂定时 Agent 任务需要新增明确 handler。
+
+## 流程 7：Web Room 多 Agent 聊天
+
+```mermaid
+sequenceDiagram
+    participant Web as Web Room
+    participant Runtime as AgentRuntime
+    participant Coord as RoomCoordinator
+    participant Hub as RoomHub
+    participant Parser as RoomMentionParser
+    participant Runner as RoomAgentRunner
+    participant Hook as RoomContextInjectHook
+    participant Loop as AgentLoop
+
+    Web->>Runtime: sendRoomMessage(roomId, text)
+    Runtime->>Coord: send(roomId, text)
+    Coord->>Hub: publish user hub message
+    Coord->>Parser: parse @name/@alias/@all
+    loop each mentioned agent
+        Coord->>Runner: run(room, agent, triggerMessage)
+        Runner->>Hook: 注入最近 hub messages
+        Runner->>Loop: run(triggerMessage.content)
+        Loop-->>Runner: final answer
+        Runner-->>Coord: answer
+        Coord->>Hub: publish agent final reply
+    end
+    Coord-->>Web: emitted hub messages
+```
+
+### 调用链
+
+1. `src/main/resources/web/assets/app.js` Room 视图提交消息。
+2. `ui/web/WebServer.handleRoomMessages`
+3. `app/runtime/AgentRuntime.sendRoomMessage`
+4. `app/room/RoomCoordinator.send`
+5. `app/room/RoomHub.publish`
+6. `app/room/RoomMentionParser.parse`
+7. `app/room/RoomAgentRunner.run`
+8. `core/agent/AgentLoop.run`
+
+### 关键分支
+
+- 房间第一条用户消息会补成房间 topic 的默认来源。
+- 未命中 `@name`、`@alias` 或 `@all` 时，只写入用户 hub message，不触发 Agent。
+- Room Agent 的工具注册表由 `RoomToolRegistryFactory` 限制，只开放只读/检索类工具。
+- Room Agent 使用独立 JSONL session；共享房间消息通过 `RoomContextInjectHook` 临时注入，不写入私有 session。
+- Room Agent 事件总线是 noop，Web Room 只展示最终回复，不展示 token、reasoning、工具调用或工具结果。
+- 当前 Room 回复是同步 HTTP 请求，不是 SSE/WebSocket 流式聊天室。
+
+## 流程 8：归档中心
+
+```mermaid
+sequenceDiagram
+    participant Web as Web Archive
+    participant Server as WebServer
+    participant Runtime as AgentRuntime
+    participant Session as SessionIndex
+    participant Todo as TodoStore
+    participant Room as RoomStore/RoomHub
+    participant Agent as RoomAgentRegistry
+
+    Web->>Server: GET /api/archives
+    Server->>Session: listArchived()
+    Server->>Todo: listArchived()
+    Server->>Runtime: archivedRooms()/archivedRoomAgents()
+    Runtime->>Room: listArchived()
+    Runtime->>Agent: listArchived()
+    Server-->>Web: archived objects
+
+    alt restore
+        Web->>Server: POST /api/archives/restore
+        Server->>Runtime: restore by type
+    else physical delete
+        Web->>Server: POST /api/archives/delete
+        Server->>Runtime: deletePermanently by type
+    end
+```
+
+### 调用链
+
+1. `src/main/resources/web/assets/app.js` Archive 视图。
+2. `ui/web/WebServer.handleArchives`
+3. `core/session/SessionIndex`
+4. `app/todo/TodoStore`
+5. `app/runtime/AgentRuntime` Room/Room Agent archive 方法。
+6. `app/room/RoomStore`、`RoomHub`、`RoomAgentRegistry`、`RoomAgentPromptStore`、`RoomAgentSessionCleaner`
+
+### 关键分支
+
+- Archive 只展示已归档对象；普通 active 对象不在这里物理删除。
+- session 物理删除会删除索引记录和对应 JSONL。
+- todo 物理删除会从 JSON 状态文件中移除。
+- room 物理删除会删除房间记录、hub messages 和该 room 下的 Agent 私有 session。
+- room-agent 物理删除会删除 Agent 配置、外部 prompt 和相关私有 session。

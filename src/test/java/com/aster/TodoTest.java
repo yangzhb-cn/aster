@@ -84,6 +84,27 @@ class TodoTest {
         assertEquals(TodoStatus.COMPLETED, store.find(item.id()).orElseThrow().status());
     }
 
+    /**
+     * 验证归档待办可以恢复，也可以从 JSON 中物理删除。
+     */
+    @Test
+    void restoresAndPhysicallyDeletesArchivedTodos() throws Exception {
+        JsonTodoStore store = store();
+        TodoItem item = store.add("归档中心测试", "low", "");
+
+        store.archive(item.id());
+        assertTrue(store.listActive().isEmpty());
+        assertEquals(1, store.listArchived().size());
+
+        store.restore(item.id());
+        assertEquals(TodoStatus.PENDING, store.find(item.id()).orElseThrow().status());
+
+        store.archive(item.id());
+        store.deletePermanently(item.id());
+
+        assertTrue(store.find(item.id()).isEmpty());
+    }
+
     private JsonTodoStore store() throws Exception {
         return new JsonTodoStore(objectMapper, tempDir.resolve("todos.json"));
     }

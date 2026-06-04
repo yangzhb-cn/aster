@@ -13,6 +13,11 @@
         <div class="brand-lockup">
           <span class="brand-mark" aria-hidden="true"></span>
           <span>Aster</span>
+          <nav class="view-tabs" aria-label="视图切换">
+            <button id="chatViewButton" class="view-tab active" type="button">Chat</button>
+            <button id="roomViewButton" class="view-tab" type="button">Room</button>
+            <button id="archiveViewButton" class="view-tab" type="button">Archive</button>
+          </nav>
         </div>
         <div class="run-strip">
           <span id="connectionState" class="state-pill">connecting</span>
@@ -25,12 +30,24 @@
       </header>
 
       <aside class="left-rail">
-        <section class="rail-section sessions-section">
+        <section id="chatLeftPanel" class="rail-section sessions-section">
           <div class="session-head">
             <span class="eyebrow">SESSIONS</span>
             <button id="newSessionButton" class="icon-button" type="button" title="新建会话" aria-label="新建会话">+</button>
           </div>
           <div id="sessionList" class="session-list"></div>
+        </section>
+        <section id="roomLeftPanel" class="rail-section room-panel hidden">
+          <div class="session-head">
+            <span class="eyebrow">ROOMS</span>
+            <button id="newRoomButton" class="icon-button" type="button" title="新建聊天室" aria-label="新建聊天室">+</button>
+          </div>
+          <div id="roomList" class="session-list"></div>
+          <div class="session-head">
+            <span class="eyebrow">AGENTS</span>
+            <button id="newRoomAgentButton" class="icon-button" type="button" title="新增 Agent" aria-label="新增 Agent">+</button>
+          </div>
+          <div id="roomAgentList" class="session-list"></div>
         </section>
       </aside>
 
@@ -47,66 +64,108 @@
       </main>
 
       <aside class="right-rail">
-        <section class="rail-section">
-          <span class="eyebrow">TOKENS</span>
-          <div class="token-grid">
-            <div class="token-row">
-              <span>input</span>
-              <strong id="inputTokens">-</strong>
+        <div id="chatRightPanel">
+          <section class="rail-section">
+            <span class="eyebrow">TOKENS</span>
+            <div class="token-grid">
+              <div class="token-row">
+                <span>input</span>
+                <strong id="inputTokens">-</strong>
+              </div>
+              <div class="token-row">
+                <span>cache</span>
+                <strong id="cacheTokens">-</strong>
+              </div>
+              <div class="token-row">
+                <span>miss</span>
+                <strong id="missTokens">-</strong>
+              </div>
+              <div class="token-row">
+                <span>output</span>
+                <strong id="outputTokens">-</strong>
+              </div>
+              <div class="token-row strong">
+                <span>total</span>
+                <strong id="totalTokens">-</strong>
+              </div>
             </div>
-            <div class="token-row">
-              <span>cache</span>
-              <strong id="cacheTokens">-</strong>
+          </section>
+          <section class="rail-section">
+            <span class="eyebrow">CONTEXT</span>
+            <div class="token-grid">
+              <div class="token-row">
+                <span>before</span>
+                <strong id="contextBefore">-</strong>
+              </div>
+              <div class="token-row">
+                <span>after</span>
+                <strong id="contextAfter">-</strong>
+              </div>
+              <div class="token-row">
+                <span>max</span>
+                <strong id="contextMax">-</strong>
+              </div>
+              <div class="token-row strong">
+                <span>compressed</span>
+                <strong id="contextCompressed">-</strong>
+              </div>
             </div>
-            <div class="token-row">
-              <span>miss</span>
-              <strong id="missTokens">-</strong>
+          </section>
+          <section class="rail-section todo-section">
+            <div class="todo-head">
+              <span class="eyebrow">TODO</span>
+              <button id="refreshTodosButton" class="icon-button" type="button" title="刷新待办" aria-label="刷新待办">R</button>
             </div>
-            <div class="token-row">
-              <span>output</span>
-              <strong id="outputTokens">-</strong>
-            </div>
-            <div class="token-row strong">
-              <span>total</span>
-              <strong id="totalTokens">-</strong>
-            </div>
-          </div>
-        </section>
-        <section class="rail-section">
-          <span class="eyebrow">CONTEXT</span>
-          <div class="token-grid">
-            <div class="token-row">
-              <span>before</span>
-              <strong id="contextBefore">-</strong>
-            </div>
-            <div class="token-row">
-              <span>after</span>
-              <strong id="contextAfter">-</strong>
-            </div>
-            <div class="token-row">
-              <span>max</span>
-              <strong id="contextMax">-</strong>
-            </div>
-            <div class="token-row strong">
-              <span>compressed</span>
-              <strong id="contextCompressed">-</strong>
-            </div>
-          </div>
-        </section>
-        <section class="rail-section todo-section">
-          <div class="todo-head">
-            <span class="eyebrow">TODO</span>
-            <button id="refreshTodosButton" class="icon-button" type="button" title="刷新待办" aria-label="刷新待办">R</button>
-          </div>
-          <form id="todoForm" class="todo-form">
-            <label class="sr-only" for="todoContent">待办内容</label>
-            <textarea id="todoContent" rows="3" placeholder="写一个代办"></textarea>
-            <label class="sr-only" for="todoDueAt">到期时间</label>
-            <input id="todoDueAt" type="datetime-local" />
-            <button id="addTodoButton" type="submit">添加</button>
-          </form>
-          <div id="todoList" class="todo-list"></div>
-        </section>
+            <form id="todoForm" class="todo-form">
+              <label class="sr-only" for="todoContent">待办内容</label>
+              <textarea id="todoContent" rows="3" placeholder="写一个代办"></textarea>
+              <label class="sr-only" for="todoDueAt">到期时间</label>
+              <input id="todoDueAt" type="datetime-local" />
+              <button id="addTodoButton" type="submit">添加</button>
+            </form>
+            <div id="todoList" class="todo-list"></div>
+          </section>
+        </div>
+        <div id="roomRightPanel" class="hidden">
+          <section class="rail-section room-editor-section">
+            <span class="eyebrow">AGENT</span>
+            <form id="roomAgentForm" class="room-agent-form">
+              <input id="roomAgentId" type="hidden" />
+              <label>
+                <span>名称</span>
+                <input id="roomAgentName" type="text" placeholder="例如：产品经理" />
+              </label>
+              <label>
+                <span>角色</span>
+                <input id="roomAgentRole" type="text" placeholder="一句话描述角色" />
+              </label>
+              <label>
+                <span>别名</span>
+                <input id="roomAgentAliases" type="text" placeholder="逗号分隔，如 pm,产品" />
+              </label>
+              <label>
+                <span>工具</span>
+                <input id="roomAgentTools" type="text" placeholder="read,ls,glob,grep,web_fetch,web_search" />
+              </label>
+              <label>
+                <span>描述</span>
+                <textarea id="roomAgentDescription" rows="3" placeholder="展示给用户和 Agent 自己看的描述"></textarea>
+              </label>
+              <label>
+                <span>系统提示词</span>
+                <textarea id="roomAgentPrompt" rows="10" placeholder="这个 Agent 的专属 system prompt"></textarea>
+              </label>
+              <label class="room-agent-enabled">
+                <input id="roomAgentEnabled" type="checkbox" checked />
+                <span>启用</span>
+              </label>
+              <div class="room-agent-actions">
+                <button id="saveRoomAgentButton" type="submit">保存</button>
+                <button id="archiveRoomAgentButton" class="ghost-button danger" type="button">归档</button>
+              </div>
+            </form>
+          </section>
+        </div>
       </aside>
     </div>
 

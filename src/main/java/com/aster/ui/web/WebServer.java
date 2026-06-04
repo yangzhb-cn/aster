@@ -4,6 +4,11 @@ import com.aster.app.runtime.AgentRuntime;
 import com.aster.app.runtime.AgentRuntimeFactory;
 import com.aster.app.runtime.WorkspacePaths;
 import com.aster.app.hitl.model.ToolApprovalRequest;
+import com.aster.app.room.model.ChatRoom;
+import com.aster.app.room.model.HubMessage;
+import com.aster.app.room.model.RoomAgentInput;
+import com.aster.app.room.model.RoomAgentProfile;
+import com.aster.app.room.model.RoomSendResult;
 import com.aster.app.todo.JsonTodoStore;
 import com.aster.app.todo.TodoStore;
 import com.aster.app.todo.model.TodoItem;
@@ -100,6 +105,9 @@ public class WebServer implements AutoCloseable {
         server.createContext("/api/status", this::handleStatus);
         server.createContext("/api/sessions", this::handleSessions);
         server.createContext("/api/todos", this::handleTodos);
+        server.createContext("/api/rooms", this::handleRooms);
+        server.createContext("/api/room-agents", this::handleRoomAgents);
+        server.createContext("/api/archives", this::handleArchives);
     }
 
     private void handleEvents(HttpExchange exchange) throws IOException {
@@ -335,6 +343,96 @@ public class WebServer implements AutoCloseable {
         }
     }
 
+    /**
+     * 处理 Web 聊天室 CRUD 和房间消息。
+     */
+    private void handleRooms(HttpExchange exchange) throws IOException {
+        try {
+            String path = exchange.getRequestURI().getPath();
+            String messageRoomId = roomMessageId(path);
+            if (messageRoomId != null) {
+                handleRoomMessages(exchange, messageRoomId);
+                return;
+            }
+
+            if ("/api/rooms".equals(path)) {
+                if ("GET".equals(exchange.getRequestMethod())) {
+                    sendJson(exchange, 200, roomsPayload());
+                    return;
+                }
+                if ("POST".equals(exchange.getRequestMethod())) {
+                    createRoom(exchange);
+                    return;
+                }
+            }
+            if ("/api/rooms/update".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                updateRoom(exchange);
+                return;
+            }
+            if ("/api/rooms/archive".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                archiveRoom(exchange);
+                return;
+            }
+            sendJson(exchange, 404, Map.of("error", "Not Found"));
+        } catch (IOException e) {
+            sendJson(exchange, roomErrorStatus(e), Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 处理房间 Agent CRUD。
+     */
+    private void handleRoomAgents(HttpExchange exchange) throws IOException {
+        try {
+            String path = exchange.getRequestURI().getPath();
+            if ("/api/room-agents".equals(path)) {
+                if ("GET".equals(exchange.getRequestMethod())) {
+                    sendJson(exchange, 200, roomAgentsPayload());
+                    return;
+                }
+                if ("POST".equals(exchange.getRequestMethod())) {
+                    createRoomAgent(exchange);
+                    return;
+                }
+            }
+            if ("/api/room-agents/update".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                updateRoomAgent(exchange);
+                return;
+            }
+            if ("/api/room-agents/archive".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                archiveRoomAgent(exchange);
+                return;
+            }
+            sendJson(exchange, 404, Map.of("error", "Not Found"));
+        } catch (IOException e) {
+            sendJson(exchange, roomErrorStatus(e), Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 处理归档中心。
+     */
+    private void handleArchives(HttpExchange exchange) throws IOException {
+        try {
+            String path = exchange.getRequestURI().getPath();
+            if ("/api/archives".equals(path) && "GET".equals(exchange.getRequestMethod())) {
+                sendJson(exchange, 200, archivesPayload());
+                return;
+            }
+            if ("/api/archives/restore".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                restoreArchive(exchange);
+                return;
+            }
+            if ("/api/archives/delete".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                deleteArchive(exchange);
+                return;
+            }
+            sendJson(exchange, 404, Map.of("error", "Not Found"));
+        } catch (IOException e) {
+            sendJson(exchange, archiveErrorStatus(e), Map.of("error", e.getMessage()));
+        }
+    }
+
     private void createTodo(HttpExchange exchange) throws IOException {
         Map<?, ?> payload = readPayload(exchange);
         todoStore.add(
@@ -366,6 +464,114 @@ public class WebServer implements AutoCloseable {
         Map<?, ?> payload = readPayload(exchange);
         todoStore.archive(requiredValue(payload, "id"));
         sendJson(exchange, 200, todosPayload());
+    }
+
+    private void createRoom(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        synchronized (runtimeLock) {
+            runtime.createRoom(stringValue(payload, "name"));
+        }
+        sendJson(exchange, 201, roomsPayload());
+    }
+
+    private void updateRoom(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        synchronized (runtimeLock) {
+            runtime.updateRoom(
+                    requiredValue(payload, "roomId"),
+                    stringValue(payload, "name"),
+                    stringValue(payload, "topic")
+            );
+        }
+        sendJson(exchange, 200, roomsPayload());
+    }
+
+    private void archiveRoom(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        synchronized (runtimeLock) {
+            runtime.archiveRoom(requiredValue(payload, "roomId"));
+        }
+        sendJson(exchange, 200, roomsPayload());
+    }
+
+    private void handleRoomMessages(HttpExchange exchange, String roomId) throws IOException {
+        if ("GET".equals(exchange.getRequestMethod())) {
+            synchronized (runtimeLock) {
+                sendJson(exchange, 200, Map.of("messages", runtime.roomMessages(roomId).stream()
+                        .map(this::hubMessagePayload)
+                        .toList()));
+            }
+            return;
+        }
+        if ("POST".equals(exchange.getRequestMethod())) {
+            String text = readTextPayload(exchange);
+            RoomSendResult result;
+            synchronized (runtimeLock) {
+                result = runtime.sendRoomMessage(roomId, text);
+            }
+            sendJson(exchange, 202, Map.of(
+                    "room", roomPayload(result.room()),
+                    "messages", result.messages().stream().map(this::hubMessagePayload).toList()
+            ));
+            return;
+        }
+        sendJson(exchange, 405, Map.of("error", "Method Not Allowed"));
+    }
+
+    private void createRoomAgent(HttpExchange exchange) throws IOException {
+        RoomAgentInput input = objectMapper.convertValue(readPayload(exchange), RoomAgentInput.class);
+        synchronized (runtimeLock) {
+            runtime.createRoomAgent(input);
+        }
+        sendJson(exchange, 201, roomAgentsPayload());
+    }
+
+    private void updateRoomAgent(HttpExchange exchange) throws IOException {
+        RoomAgentInput input = objectMapper.convertValue(readPayload(exchange), RoomAgentInput.class);
+        synchronized (runtimeLock) {
+            runtime.updateRoomAgent(input);
+        }
+        sendJson(exchange, 200, roomAgentsPayload());
+    }
+
+    private void archiveRoomAgent(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        synchronized (runtimeLock) {
+            runtime.archiveRoomAgent(requiredValue(payload, "agentId"));
+        }
+        sendJson(exchange, 200, roomAgentsPayload());
+    }
+
+    private void restoreArchive(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        String type = requiredValue(payload, "type");
+        String id = requiredValue(payload, "id");
+        synchronized (runtimeLock) {
+            switch (type) {
+                case "session" -> sessionIndex.restore(id);
+                case "todo" -> todoStore.restore(id);
+                case "room" -> runtime.restoreRoom(id);
+                case "room-agent" -> runtime.restoreRoomAgent(id);
+                default -> throw new IOException("unknown archive type: " + type);
+            }
+        }
+        sendJson(exchange, 200, archivesPayload());
+    }
+
+    private void deleteArchive(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        String type = requiredValue(payload, "type");
+        String id = requiredValue(payload, "id");
+        synchronized (runtimeLock) {
+            switch (type) {
+                case "session" -> sessionIndex.deletePermanently(id);
+                case "todo" -> todoStore.deletePermanently(id);
+                case "room" -> runtime.deleteRoomPermanently(id);
+                case "room-agent" -> runtime.deleteRoomAgentPermanently(id);
+                default -> throw new IOException("unknown archive type: " + type);
+            }
+        }
+        sendJson(exchange, 200, archivesPayload());
     }
 
     private void createSession(HttpExchange exchange) throws IOException {
@@ -528,6 +734,91 @@ public class WebServer implements AutoCloseable {
                 .toList());
     }
 
+    private Map<String, Object> archivesPayload() throws IOException {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        synchronized (runtimeLock) {
+            payload.put("sessions", sessionIndex.listArchived().stream()
+                    .map(this::sessionPayload)
+                    .toList());
+            payload.put("todos", todoStore.listArchived().stream()
+                    .map(this::todoPayload)
+                    .toList());
+            payload.put("rooms", runtime.listArchivedRooms().stream()
+                    .map(this::roomPayload)
+                    .toList());
+            payload.put("roomAgents", runtime.listArchivedRoomAgents().stream()
+                    .map(this::roomAgentPayload)
+                    .toList());
+        }
+        return payload;
+    }
+
+    private Map<String, Object> roomsPayload() throws IOException {
+        synchronized (runtimeLock) {
+            runtime.ensureDefaultRoom();
+            return Map.of("rooms", runtime.listRooms().stream()
+                    .map(this::roomPayload)
+                    .toList());
+        }
+    }
+
+    private Map<String, Object> roomAgentsPayload() throws IOException {
+        synchronized (runtimeLock) {
+            return Map.of("agents", runtime.listRoomAgents().stream()
+                    .map(this::roomAgentPayload)
+                    .toList());
+        }
+    }
+
+    private Map<String, Object> roomPayload(ChatRoom room) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("roomId", room.roomId());
+        payload.put("name", room.name());
+        payload.put("topic", room.topic());
+        payload.put("createdAt", room.createdAt());
+        payload.put("updatedAt", room.updatedAt());
+        payload.put("archived", room.archived());
+        return payload;
+    }
+
+    private Map<String, Object> hubMessagePayload(HubMessage message) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("roomId", message.roomId());
+        payload.put("messageId", message.messageId());
+        payload.put("runId", message.runId());
+        payload.put("parentMessageId", message.parentMessageId());
+        payload.put("speakerType", message.speakerType().name());
+        payload.put("speakerId", message.speakerId());
+        payload.put("speakerName", message.speakerName());
+        payload.put("speakerRole", message.speakerRole());
+        payload.put("type", message.type().name());
+        payload.put("content", message.content());
+        payload.put("mentions", message.mentions());
+        payload.put("createdAt", message.createdAt());
+        return payload;
+    }
+
+    private Map<String, Object> roomAgentPayload(RoomAgentProfile agent) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("agentId", agent.agentId());
+        payload.put("name", agent.name());
+        payload.put("role", agent.role());
+        payload.put("description", agent.description());
+        payload.put("systemPromptPath", agent.systemPromptPath());
+        payload.put("mentionAliases", agent.mentionAliases());
+        payload.put("toolAllowlist", agent.toolAllowlist());
+        payload.put("enabled", agent.enabled());
+        payload.put("archived", agent.archived());
+        payload.put("createdAt", agent.createdAt());
+        payload.put("updatedAt", agent.updatedAt());
+        try {
+            payload.put("systemPrompt", runtime.roomAgentPrompt(agent));
+        } catch (IOException e) {
+            payload.put("systemPrompt", "");
+        }
+        return payload;
+    }
+
     private Map<String, Object> todoPayload(TodoItem item) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", item.id());
@@ -538,6 +829,16 @@ public class WebServer implements AutoCloseable {
         payload.put("result", item.result());
         payload.put("createdAt", item.createdAt());
         payload.put("updatedAt", item.updatedAt());
+        return payload;
+    }
+
+    private Map<String, Object> sessionPayload(SessionRecord session) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", session.id());
+        payload.put("displayName", session.displayName());
+        payload.put("createdAt", session.createdAt());
+        payload.put("updatedAt", session.updatedAt());
+        payload.put("archived", session.archived());
         return payload;
     }
 
@@ -578,6 +879,19 @@ public class WebServer implements AutoCloseable {
 
     private String messageSessionId(String path) {
         String prefix = "/api/sessions/";
+        String suffix = "/messages";
+        if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+            return null;
+        }
+        String raw = path.substring(prefix.length(), path.length() - suffix.length());
+        if (raw.isBlank() || raw.contains("/")) {
+            return null;
+        }
+        return URLDecoder.decode(raw, StandardCharsets.UTF_8);
+    }
+
+    private String roomMessageId(String path) {
+        String prefix = "/api/rooms/";
         String suffix = "/messages";
         if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
             return null;
@@ -648,6 +962,28 @@ public class WebServer implements AutoCloseable {
         }
         if (message.startsWith("session not found")) {
             return 404;
+        }
+        return 400;
+    }
+
+    private int roomErrorStatus(IOException error) {
+        String message = error.getMessage() == null ? "" : error.getMessage();
+        if (message.startsWith("room not found") || message.startsWith("room agent not found")) {
+            return 404;
+        }
+        if (message.startsWith("room archived")) {
+            return 409;
+        }
+        return 400;
+    }
+
+    private int archiveErrorStatus(IOException error) {
+        String message = error.getMessage() == null ? "" : error.getMessage();
+        if (message.contains("not found")) {
+            return 404;
+        }
+        if (message.contains("must be archived")) {
+            return 409;
         }
         return 400;
     }

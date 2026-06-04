@@ -13,12 +13,16 @@ flowchart TD
     Runtime --> Coordinator["AgentRunCoordinator\nfollow-up / steer / stop"]
     Runtime --> PlanMode["PlanModeCoordinator\n/plan /start /cancel"]
     Runtime --> Team["AgentTeamRunner\n/team"]
+    Runtime --> Room["RoomCoordinator\nWeb Room / @Agent"]
     Runtime --> Background["BackgroundTaskManager"]
+    Runtime --> Archive["Archive APIs\nrestore / physical delete"]
 
     Coordinator --> AgentLoop["AgentLoop"]
     PlanMode --> PlanRunner["PlanRunner"]
     Team --> PlanRunner
     PlanRunner --> ChildAgents["临时子 Agent"]
+    Room --> RoomAgents["RoomAgentRunner\n独立私有 session"]
+    Room --> RoomHub["RoomHub\n共享 hub messages"]
 
     AgentLoop --> Context["ContextPipeline\nStage + ContextBuilder"]
     AgentLoop --> Hooks["HookRegistry"]
@@ -33,8 +37,8 @@ flowchart TD
 | 分层 | 职责 | 主要类/文件 |
 | --- | --- | --- |
 | UI | 用户输入、事件渲染、命令分流 | `TuiMain`、`WebMain`、`TelegramMain`、`SlashCommandRegistry` |
-| app/runtime | Runtime 创建、入口互斥、普通 run / Team / Plan 调度 | `AgentRuntimeFactory`、`AgentRuntime`、`AgentRunCoordinator`、`PlanModeCoordinator` |
-| app capabilities | 具体工具、MCP、Skill、Memory、HITL、Todo、Background、Plan、Team | `app/tool/*`、`app/mcp/*`、`app/memory/*`、`app/plan/*`、`app/team/*` |
+| app/runtime | Runtime 创建、入口互斥、普通 run / Team / Plan / Room 调度 | `AgentRuntimeFactory`、`AgentRuntime`、`AgentRunCoordinator`、`PlanModeCoordinator` |
+| app capabilities | 具体工具、MCP、Skill、Memory、HITL、Todo、Background、Plan、Team、Room | `app/tool/*`、`app/mcp/*`、`app/memory/*`、`app/plan/*`、`app/team/*`、`app/room/*` |
 | core | AgentLoop、Context、Tool、Hook、Event、Session、Stage 抽象 | `AgentLoop`、`ContextPipeline`、`ToolRegistry`、`HookRegistry`、`AgentEventBus` |
 | llm | OpenAI-compatible provider 配置、请求、SSE 解析 | `OpenAiCompatibleChatClient`、`OpenAiCompatibleStreamParser`、`ProviderStreamEvent` |
 | resources | Prompt 和 Web 静态资源 | `src/main/resources/prompts/`、`src/main/resources/web/` |
@@ -63,6 +67,8 @@ flowchart TD
 | 高影响工具走 HITL | `ToolApprovalHook` 审批 `bash/write/edit` | 工具执行前可见、可拒绝，拒绝仍保持 tool_result 协议闭环 |
 | Session 保存原始历史 | `JsonlSessionStore` | 压缩只影响请求，不污染可审计历史 |
 | Plan / Team 共用 DAG runner | `PlanRunner` | 复用依赖调度、并发执行、失败停止等逻辑 |
+| Room 共享消息与私有上下文分离 | `RoomHub` + `RoomAgentSessionFactory` + `RoomContextInjectHook` | 后加入 Agent 能看到房间上下文，同时每个 Agent 保持独立历史 |
+| 归档先软删再物理删除 | `SessionIndex`、`TodoStore`、`RoomStore`、`RoomAgentRegistry` | 普通删除保留审计；物理删除只允许已归档对象 |
 
 ## 事件流架构
 
@@ -115,10 +121,41 @@ flowchart TD
     TeamAgent --> MainAgent
 ```
 
+## Room 架构
+
+```mermaid
+flowchart TD
+    WebRoom["Web Room 视图"] --> WebApi["WebServer\n/api/rooms /api/room-agents"]
+    WebApi --> RuntimeRoom["AgentRuntime Room methods"]
+    RuntimeRoom --> Store["RoomStore / RoomAgentRegistry"]
+    RuntimeRoom --> Hub["RoomHub\n共享 JSONL 消息"]
+    RuntimeRoom --> Coordinator["RoomCoordinator\n写 user hub message + 解析 @"]
+    Coordinator --> Runner["RoomAgentRunner"]
+    Runner --> PrivateSession["RoomAgentSessionFactory\n每个 room-agent 独立 JSONL"]
+    Runner --> Hook["RoomContextInjectHook\n注入最近 hub messages"]
+    Runner --> Tools["RoomToolRegistryFactory\nread/ls/glob/grep/web_fetch/web_search/load_skill"]
+    Runner --> Loop["AgentLoop + noop event bus"]
+    Loop --> HubReply["Agent 最终回复写回 RoomHub"]
+```
+
+## Archive 架构
+
+```mermaid
+flowchart LR
+    WebArchive["Web Archive 视图"] --> ArchiveApi["/api/archives"]
+    ArchiveApi --> Sessions["SessionIndex\nrestore/deletePermanently"]
+    ArchiveApi --> Todos["TodoStore\nrestore/deletePermanently"]
+    ArchiveApi --> Rooms["RoomStore + RoomHub + RoomAgentSessionCleaner"]
+    ArchiveApi --> Agents["RoomAgentRegistry + RoomAgentPromptStore + RoomAgentSessionCleaner"]
+```
+
 ## 当前边界
 
 - Aster 是教学版 MVP，不是生产级多租户 Agent 平台。
 - Web 前端当前使用静态资源和原生 JS，没有前端构建链路。
+- Web Room 当前是同步 HTTP 回复，不是 token 流式聊天室；Room Agent 事件总线使用 noop，页面只展示最终回复。
+- Room 当前只在 Web 入口实现；TUI 和 Telegram 没有 Room 页面或 Agent CRUD。
+- Archive Center 当前只在 Web 入口实现，集中处理已归档 session、todo、room、room-agent。
 - 长期记忆当前是 Markdown 存储，不是向量检索系统。
 - 后台任务当前只支持明确 handler，例如 `reminder`、`todo_scan`、`memory_extract`，不支持任意到点自动执行 Agent。
 - Team 当前是只读探索；会修改文件的是普通 Agent 或 Plan 子 Agent，并且高影响工具需要 HITL。

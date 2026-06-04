@@ -28,3 +28,6 @@ workspace/
 # 日志
 *.log
 logs/
+
+# 知识文档
+docs/

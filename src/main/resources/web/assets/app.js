@@ -17,6 +17,7 @@ const state = {
   currentReasoning: null,
   teamMembers: new Map(),
   approvals: new Map(),
+  archiveSelections: new Set(),
 };
 const TOOL_PREVIEW_CHAR_LIMIT = 1200;
 const TOOL_PREVIEW_LINE_LIMIT = 12;
@@ -687,8 +688,10 @@ async function loadArchives() {
 
 function renderArchives(payload = {}) {
   messagesEl.innerHTML = "";
+  state.archiveSelections.clear();
   const board = document.createElement("section");
   board.className = "archive-board";
+  board.append(archiveToolbar());
   board.append(
     archiveSection("Sessions", payload.sessions || [], "session", (item) => ({
       title: item.displayName || item.id,
@@ -708,6 +711,19 @@ function renderArchives(payload = {}) {
     }))
   );
   messagesEl.append(board);
+}
+
+function archiveToolbar() {
+  const toolbar = document.createElement("section");
+  toolbar.className = "archive-toolbar";
+  toolbar.innerHTML = `
+    <div>
+      <strong>Archive</strong>
+      <span id="archiveSelectedCount">已选 0</span>
+    </div>
+    <button id="deleteSelectedArchivesButton" class="ghost-button danger" type="button" data-action="delete-selected" disabled>批量物理删除</button>
+  `;
+  return toolbar;
 }
 
 function archiveSection(title, items, type, formatter) {
@@ -733,6 +749,9 @@ function archiveSection(title, items, type, formatter) {
     row.dataset.type = type;
     row.dataset.id = id;
     row.innerHTML = `
+      <label class="archive-select" title="选择归档项">
+        <input type="checkbox" data-action="select-archive" />
+      </label>
       <div class="archive-main">
         <strong></strong>
         <span></span>
@@ -747,6 +766,28 @@ function archiveSection(title, items, type, formatter) {
     list.append(row);
   }
   return section;
+}
+
+function archiveKey(type, id) {
+  return `${type}:${id}`;
+}
+
+function updateArchiveSelectionView() {
+  const count = state.archiveSelections.size;
+  const countEl = $("#archiveSelectedCount");
+  const button = $("#deleteSelectedArchivesButton");
+  if (countEl) countEl.textContent = `已选 ${count}`;
+  if (button) button.disabled = count === 0;
+}
+
+function toggleArchiveSelection(type, id, checked) {
+  const key = archiveKey(type, id);
+  if (checked) {
+    state.archiveSelections.add(key);
+  } else {
+    state.archiveSelections.delete(key);
+  }
+  updateArchiveSelectionView();
 }
 
 function archiveItemId(type, item) {
@@ -771,6 +812,24 @@ async function deleteArchive(type, id) {
   if (!window.confirm(`物理删除 ${type} ${id}？这个操作不可恢复。`)) return;
   try {
     await postJson("/api/archives/delete", { type, id });
+    await afterArchiveChanged();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function deleteSelectedArchives() {
+  const items = Array.from(state.archiveSelections)
+    .map((key) => {
+      const index = key.indexOf(":");
+      return index < 0 ? null : { type: key.slice(0, index), id: key.slice(index + 1) };
+    })
+    .filter((item) => item && item.type && item.id);
+  if (!items.length) return;
+  if (!window.confirm(`物理删除选中的 ${items.length} 个归档项？这个操作不可恢复。`)) return;
+  try {
+    await postJson("/api/archives/delete-batch", { items });
+    state.archiveSelections.clear();
     await afterArchiveChanged();
   } catch (error) {
     addMessage("error", error.message);
@@ -1634,12 +1693,18 @@ roomMemberList.addEventListener("click", (event) => {
 messagesEl.addEventListener("click", (event) => {
   if (state.view !== "archive") return;
   const actionButton = event.target.closest("[data-action]");
+  if (actionButton?.dataset.action === "delete-selected") {
+    deleteSelectedArchives();
+    return;
+  }
   const row = event.target.closest(".archive-item");
   if (!actionButton || !row) return;
 
   const type = row.dataset.type;
   const id = row.dataset.id;
-  if (actionButton.dataset.action === "restore") {
+  if (actionButton.dataset.action === "select-archive") {
+    toggleArchiveSelection(type, id, actionButton.checked);
+  } else if (actionButton.dataset.action === "restore") {
     restoreArchive(type, id);
   } else if (actionButton.dataset.action === "delete") {
     deleteArchive(type, id);

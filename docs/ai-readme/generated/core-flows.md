@@ -16,7 +16,7 @@
 | P1 | 后台任务 | `BackgroundTaskScheduler` | reminder、todo_scan、memory_extract |
 | P1 | 多入口事件消费 | TUI / Web / Telegram event handlers | 同一 AgentEvent，不同展示策略 |
 | P1 | Web Room 多 Agent 聊天 | `AgentRuntime.sendRoomMessage()`、`RoomCoordinator` | Web 独有；成员关系 + 共享 hub message + Agent 私有上下文 |
-| P1 | 归档中心 | `WebServer.handleArchives()` | Web 独有；恢复或物理删除已归档对象 |
+| P1 | 归档中心 | `WebServer.handleArchives()` | Web 独有；恢复、单个物理删除或批量物理删除已归档对象 |
 
 ## 流程 1：普通 Agent Run
 
@@ -357,6 +357,9 @@ sequenceDiagram
     else physical delete
         Web->>Server: POST /api/archives/delete
         Server->>Runtime: deletePermanently by type
+    else batch physical delete
+        Web->>Server: POST /api/archives/delete-batch
+        Server->>Runtime: loop deletePermanently by type
     end
 ```
 
@@ -372,6 +375,7 @@ sequenceDiagram
 ### 关键分支
 
 - Archive 只展示已归档对象；普通 active 对象不在这里物理删除。
+- 批量物理删除使用同一套删除逻辑，只是把多个 `{type,id}` 一次提交。
 - session 物理删除会删除索引记录和对应 JSONL。
 - todo 物理删除会从 JSON 状态文件中移除。
 - room 物理删除会删除房间记录、hub messages 和该 room 下的 Agent 私有 session。

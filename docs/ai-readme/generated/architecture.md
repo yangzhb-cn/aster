@@ -144,7 +144,7 @@ flowchart TD
 
 ```mermaid
 flowchart LR
-    WebArchive["Web Archive 视图"] --> ArchiveApi["/api/archives"]
+    WebArchive["Web Archive 视图"] --> ArchiveApi["/api/archives\nrestore / delete / delete-batch"]
     ArchiveApi --> Sessions["SessionIndex\nrestore/deletePermanently"]
     ArchiveApi --> Todos["TodoStore\nrestore/deletePermanently"]
     ArchiveApi --> Rooms["RoomStore + RoomHub + RoomAgentSessionCleaner"]
@@ -158,7 +158,7 @@ flowchart LR
 - Web Room 当前是同步 HTTP 回复，不是 token 流式聊天室；Room Agent 事件总线使用 noop，页面只展示最终回复。
 - Room 当前只在 Web 入口实现；TUI 和 Telegram 没有 Room 页面或 Agent CRUD。
 - Room `@all` 只触发当前聊天室成员。Agent 并行执行，回复按成员顺序写回，避免完成时间影响消息顺序。
-- Archive Center 当前只在 Web 入口实现，集中处理已归档 session、todo、room、room-agent。
+- Archive Center 当前只在 Web 入口实现，集中处理已归档 session、todo、room、room-agent，并支持批量物理删除。
 - 长期记忆当前是 Markdown 存储，不是向量检索系统。
 - 后台任务当前只支持明确 handler，例如 `reminder`、`todo_scan`、`memory_extract`，不支持任意到点自动执行 Agent。
 - Team 当前是只读探索；会修改文件的是普通 Agent 或 Plan 子 Agent，并且高影响工具需要 HITL。

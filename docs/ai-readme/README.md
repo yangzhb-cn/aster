@@ -37,7 +37,7 @@ flowchart LR
 | `/plan` 动态 DAG | 已实现 | 已实现 | 已实现 | 支持 `/plan` 生成、`/start` 执行、`/plan cancel` 取消。 |
 | Web 多 Agent 聊天室 | 未实现 | 已实现 | 未实现 | 只有 Web 有 Room 页面、房间 CRUD、成员管理、Agent CRUD、`@name`/`@all` 触发。 |
 | Room Agent 配置管理 | 未实现 | 已实现 | 未实现 | Agent 的 name、role、alias、工具白名单、system prompt 在 Web 中维护；加入/移出聊天室由成员关系管理。 |
-| 归档中心 | 未实现 | 已实现 | 未实现 | Web Archive 页面集中恢复或物理删除已归档 session、todo、room、room-agent。 |
+| 归档中心 | 未实现 | 已实现 | 未实现 | Web Archive 页面集中恢复、单个物理删除或批量物理删除已归档 session、todo、room、room-agent。 |
 
 ## 快速导航
 

@@ -433,6 +433,10 @@ public class WebServer implements AutoCloseable {
                 deleteArchive(exchange);
                 return;
             }
+            if ("/api/archives/delete-batch".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                deleteArchiveBatch(exchange);
+                return;
+            }
             sendJson(exchange, 404, Map.of("error", "Not Found"));
         } catch (IOException e) {
             sendJson(exchange, archiveErrorStatus(e), Map.of("error", e.getMessage()));
@@ -535,12 +539,11 @@ public class WebServer implements AutoCloseable {
         }
 
         Map<?, ?> payload = readPayload(exchange);
-        String agentId = requiredValue(payload, "agentId");
         synchronized (runtimeLock) {
             switch (route.action()) {
-                case "" -> runtime.addRoomMember(route.roomId(), agentId);
-                case "archive" -> runtime.archiveRoomMember(route.roomId(), agentId);
-                case "restore" -> runtime.restoreRoomMember(route.roomId(), agentId);
+                case "" -> runtime.addRoomMember(route.roomId(), requiredValue(payload, "agentId"));
+                case "archive" -> runtime.archiveRoomMember(route.roomId(), requiredValue(payload, "agentId"));
+                case "restore" -> runtime.restoreRoomMember(route.roomId(), requiredValue(payload, "agentId"));
                 default -> {
                     sendJson(exchange, 404, Map.of("error", "Not Found"));
                     return;
@@ -595,15 +598,29 @@ public class WebServer implements AutoCloseable {
         String type = requiredValue(payload, "type");
         String id = requiredValue(payload, "id");
         synchronized (runtimeLock) {
-            switch (type) {
-                case "session" -> sessionIndex.deletePermanently(id);
-                case "todo" -> todoStore.deletePermanently(id);
-                case "room" -> runtime.deleteRoomPermanently(id);
-                case "room-agent" -> runtime.deleteRoomAgentPermanently(id);
-                default -> throw new IOException("unknown archive type: " + type);
+            deleteArchiveItem(type, id);
+        }
+        sendJson(exchange, 200, archivesPayload());
+    }
+
+    private void deleteArchiveBatch(HttpExchange exchange) throws IOException {
+        List<ArchiveDeleteItem> items = archiveDeleteItems(readPayload(exchange));
+        synchronized (runtimeLock) {
+            for (ArchiveDeleteItem item : items) {
+                deleteArchiveItem(item.type(), item.id());
             }
         }
         sendJson(exchange, 200, archivesPayload());
+    }
+
+    private void deleteArchiveItem(String type, String id) throws IOException {
+        switch (type) {
+            case "session" -> sessionIndex.deletePermanently(id);
+            case "todo" -> todoStore.deletePermanently(id);
+            case "room" -> runtime.deleteRoomPermanently(id);
+            case "room-agent" -> runtime.deleteRoomAgentPermanently(id);
+            default -> throw new IOException("unknown archive type: " + type);
+        }
     }
 
     private void createSession(HttpExchange exchange) throws IOException {
@@ -730,6 +747,27 @@ public class WebServer implements AutoCloseable {
     private String stringValue(Map<?, ?> payload, String key) {
         Object value = payload.get(key);
         return value == null ? "" : value.toString().trim();
+    }
+
+    private List<ArchiveDeleteItem> archiveDeleteItems(Map<?, ?> payload) throws IOException {
+        String key = "items";
+        Object value = payload.get(key);
+        if (!(value instanceof List<?> rawList)) {
+            throw new IOException(key + " is required");
+        }
+        List<ArchiveDeleteItem> result = new java.util.ArrayList<>();
+        for (Object item : rawList) {
+            if (!(item instanceof Map<?, ?> itemMap)) {
+                throw new IOException(key + " must contain objects");
+            }
+            String type = requiredValue(itemMap, "type");
+            String id = requiredValue(itemMap, "id");
+            result.add(new ArchiveDeleteItem(type, id));
+        }
+        if (result.isEmpty()) {
+            throw new IOException(key + " is required");
+        }
+        return result;
     }
 
     private Map<String, Object> statusPayload() {
@@ -1040,6 +1078,9 @@ public class WebServer implements AutoCloseable {
     }
 
     private record RoomMemberRoute(String roomId, String action) {
+    }
+
+    private record ArchiveDeleteItem(String type, String id) {
     }
 
     private void sendJson(HttpExchange exchange, int status, Object body) throws IOException {

@@ -86,6 +86,9 @@ public record Message(
      * <p>DeepSeek V4 thinking mode 下，如果 assistant 这一轮发起了工具调用，
      * 后续请求必须把这条 assistant 消息里的 {@code reasoning_content} 原样带回 API。
      * 否则 DeepSeek 会认为上一轮推理上下文丢失，可能直接返回 400。</p>
+     *
+     * <p>TODO：后续评估是否在进入下一轮用户请求或压缩旧 turn 前，清理已完成历史轮次里的
+     * {@code reasoning_content}。当前轮工具调用链路不能清理，否则可能破坏 DeepSeek 协议。</p>
      */
     public static Message assistantToolCalls(String content, String reasoningContent, List<ToolCall> toolCalls) {
         // 工具调用型 assistant 消息通常没有正文，只通过 tool_calls 表达动作。

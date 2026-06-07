@@ -107,6 +107,7 @@ flowchart LR
 ```text
 workspace/
 ├── sessions/                 # Session JSONL 和 index.json
+├── context-windows/          # 上下文窗口快照 JSON，恢复压缩进度用
 ├── tasks/                    # 后台任务 JSONL
 ├── todos/                    # Todo JSON
 ├── skills/                   # 本地 Skill

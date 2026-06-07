@@ -5,6 +5,7 @@ import com.aster.llm.model.Message;
 import com.aster.core.session.model.SessionBranch;
 import com.aster.core.session.model.SessionEvent;
 import com.aster.core.session.model.SessionEventType;
+import com.aster.core.session.model.SessionMessageRecord;
 import com.aster.core.session.model.SessionReplayResult;
 
 import java.util.ArrayList;
@@ -109,38 +110,48 @@ public class SessionReplayer {
      * 校验工具协议；如果尾部是不完整的 tool_call，就回退到最后一个合法点。
      */
     private SessionReplayResult validateOrTrim(List<SessionEvent> messageEvents) {
-        List<Message> messages = toMessages(messageEvents, messageEvents.size());
+        List<SessionMessageRecord> records = toRecords(messageEvents, messageEvents.size());
+        List<Message> messages = toMessages(records);
         try {
             ToolProtocolValidator.validate(messages);
             return new SessionReplayResult(
                     messages,
+                    records,
                     messageEvents.isEmpty() ? 0 : messageEvents.getLast().seq(),
                     false,
                     null
             );
         } catch (RuntimeException error) {
             for (int end = messageEvents.size() - 1; end >= 0; end--) {
-                List<Message> candidate = toMessages(messageEvents, end);
+                List<SessionMessageRecord> candidateRecords = toRecords(messageEvents, end);
+                List<Message> candidate = toMessages(candidateRecords);
                 try {
                     ToolProtocolValidator.validate(candidate);
                     long lastSeq = end == 0 ? 0 : messageEvents.get(end - 1).seq();
-                    return new SessionReplayResult(candidate, lastSeq, true, error.getMessage());
+                    return new SessionReplayResult(candidate, candidateRecords, lastSeq, true, error.getMessage());
                 } catch (RuntimeException ignored) {
                     // 继续向前找最后一个合法协议点。
                 }
             }
-            return new SessionReplayResult(List.of(), 0, true, error.getMessage());
+            return new SessionReplayResult(List.of(), List.of(), 0, true, error.getMessage());
         }
     }
 
-    private List<Message> toMessages(List<SessionEvent> messageEvents, int endExclusive) {
-        List<Message> messages = new ArrayList<>();
+    private List<SessionMessageRecord> toRecords(List<SessionEvent> messageEvents, int endExclusive) {
+        List<SessionMessageRecord> records = new ArrayList<>();
         for (int i = 0; i < endExclusive; i++) {
-            Message message = messageEvents.get(i).message();
+            SessionEvent event = messageEvents.get(i);
+            Message message = event.message();
             if (message != null) {
-                messages.add(message);
+                records.add(new SessionMessageRecord(event.seq(), event.hash(), message));
             }
         }
-        return List.copyOf(messages);
+        return List.copyOf(records);
+    }
+
+    private List<Message> toMessages(List<SessionMessageRecord> records) {
+        return records.stream()
+                .map(SessionMessageRecord::message)
+                .toList();
     }
 }

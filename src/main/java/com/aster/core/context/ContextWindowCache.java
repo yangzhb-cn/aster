@@ -2,12 +2,15 @@ package com.aster.core.context;
 
 import com.aster.core.context.model.ContextBuildResult;
 import com.aster.core.context.model.ContextOptions;
+import com.aster.core.context.model.ContextWindowSnapshot;
 import com.aster.core.context.model.Turn;
 import com.aster.core.context.model.TurnType;
+import com.aster.core.session.model.SessionMessageRecord;
 import com.aster.core.session.SessionStore;
 import com.aster.llm.model.Message;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -82,6 +85,18 @@ public class ContextWindowCache {
     }
 
     /**
+     * 用启动消息和 JSONL message records 初始化缓存。
+     *
+     * <p>启动消息没有 JSONL seq/hash，但它们仍然参与上下文；records 则代表
+     * session 文件中真正可见的用户/assistant/tool 历史。</p>
+     */
+    public synchronized void initialize(List<Message> bootstrapMessages, List<SessionMessageRecord> records) {
+        List<Message> messages = new ArrayList<>(bootstrapMessages);
+        messages.addAll(records.stream().map(SessionMessageRecord::message).toList());
+        initialize(messages);
+    }
+
+    /**
      * 增量追加一条已经成功写入 SessionStore 的消息。
      *
      * <p>写入顺序很重要：先持久化原始消息，再更新运行态缓存。
@@ -121,6 +136,52 @@ public class ContextWindowCache {
      */
     public synchronized int processedMessageCount() {
         return processedMessageCount;
+    }
+
+    /**
+     * 从快照恢复运行态窗口。
+     *
+     * <p>system prompt 使用当前启动时的内容，而不是快照里的旧内容。
+     * 如果 system prompt 已经变化，外层会通过 hash 校验让快照失效。</p>
+     */
+    public synchronized void restore(List<Message> bootstrapMessages, ContextWindowSnapshot snapshot) {
+        Objects.requireNonNull(snapshot);
+        systemMessages.clear();
+        systemMessages.addAll(bootstrapMessages);
+        recentTurns.clear();
+        recentTurns.addAll(copyTurns(snapshot.recentTurns()));
+        runningSummary = snapshot.runningSummary();
+        processedMessageCount = systemMessages.size() + countMessages(recentTurns);
+        ToolProtocolValidator.validate(currentRequestMessages());
+    }
+
+    /**
+     * 导出当前运行态窗口快照。
+     */
+    public synchronized ContextWindowSnapshot snapshot(
+            String sessionId,
+            String branchId,
+            long lastSeq,
+            String lastHash,
+            String systemPromptHash,
+            String summaryPromptHash,
+            String summarizer,
+            String model
+    ) {
+        return new ContextWindowSnapshot(
+                ContextWindowSnapshot.CURRENT_VERSION,
+                sessionId,
+                branchId,
+                lastSeq,
+                lastHash,
+                systemPromptHash,
+                summaryPromptHash,
+                summarizer,
+                model,
+                runningSummary,
+                copyTurns(recentTurns),
+                Instant.now().toString()
+        );
     }
 
     /**
@@ -227,5 +288,21 @@ public class ContextWindowCache {
             messages.addAll(turn.messages());
         }
         return messages;
+    }
+
+    private List<Turn> copyTurns(List<Turn> turns) {
+        List<Turn> copies = new ArrayList<>();
+        for (Turn turn : turns) {
+            copies.add(new Turn(turn.type(), List.copyOf(turn.messages())));
+        }
+        return List.copyOf(copies);
+    }
+
+    private int countMessages(List<Turn> turns) {
+        int count = 0;
+        for (Turn turn : turns) {
+            count += turn.messages().size();
+        }
+        return count;
     }
 }

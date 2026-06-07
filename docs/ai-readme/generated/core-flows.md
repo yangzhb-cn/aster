@@ -104,20 +104,35 @@ sequenceDiagram
 - 运行中 session 归档或物理删除会返回 409，避免关闭仍在执行的 runtime。
 - 前端收到 SSE 后必须使用 `meta.sessionName` 判断是否渲染到当前窗口；非当前 session 只更新 running/queued/approval 状态。
 
-## 流程 2：Context 窗口缓存和 `<system-reminder>`
+## 流程 2：Context 窗口快照、LLM 摘要和 `<system-reminder>`
 
 ```mermaid
 sequenceDiagram
+    participant Runtime as AgentRuntimeFactory
+    participant Jsonl as JsonlSessionStore
+    participant Snapshot as ContextWindowSnapshotStore
     participant Loop as AgentLoop
     participant Pipeline as ContextPipeline
     participant Cache as ContextWindowCache
-    participant Store as SessionStore
+    participant Store as ContextWindowSnapshotSessionStore
+    participant Summarizer as LlmSummarizer
     participant Hook as SystemReminderInjectHook
     participant LLM as StreamingChatClient
 
-    Store-->>Cache: runtime 启动时 loadMessages 一次
+    Runtime->>Jsonl: replay() -> records(seq/hash/message)
+    Runtime->>Snapshot: load(sessionId, branch)
+    alt snapshot valid
+        Runtime->>Cache: restore(bootstrap, snapshot)
+        Runtime->>Cache: append records after lastSeq
+    else no snapshot or invalid
+        Runtime->>Cache: initialize(bootstrap, records)
+        Cache->>Summarizer: summarize(old turns) when trim
+        Summarizer->>LLM: stream(summary request without tools)
+    end
+    Runtime->>Snapshot: save current snapshot
     Loop->>Store: append(user / assistant / tool)
     Store-->>Cache: append 成功后增量更新 window
+    Store-->>Snapshot: overwrite snapshot(lastSeq,lastHash)
     Loop->>Pipeline: build()
     Pipeline->>Cache: build()
     Cache-->>Pipeline: recent turns + runningSummary
@@ -129,21 +144,29 @@ sequenceDiagram
 
 ### 调用链
 
-1. `core/context/ContextPipeline.build`
-2. `core/context/ContextWindowCache.build`
-3. `core/session/ContextWindowSessionStore.append`
-4. `core/context/ToolProtocolValidator`
-5. `app/extension/SystemReminderInjectHook`
-6. `app/memory/MemoryPromptRenderer`
-7. `app/skill/SkillIndexRenderer`
+1. `app/runtime/AgentRuntimeFactory.restoreOrBuildContextWindowCache`
+2. `core/session/JsonlSessionStore.replay`
+3. `app/runtime/JsonContextWindowSnapshotStore.load/save`
+4. `core/context/ContextWindowCache.restore/initialize/append/build`
+5. `app/runtime/ContextWindowSnapshotSessionStore.append`
+6. `core/context/LlmSummarizer.summarize`
+7. `core/context/ToolProtocolValidator`
+8. `app/extension/SystemReminderInjectHook`
+9. `app/memory/MemoryPromptRenderer`
+10. `app/skill/SkillIndexRenderer`
 
 ### 关键分支
 
-- 主 runtime 启动时从 JSONL 完整恢复一次；后续每条消息 append 成功后增量进入 `ContextWindowCache`。
+- JSONL session 仍是事实源；`workspace/context-windows/*.json` 是可覆盖缓存，用来保存上一轮压缩进度。
+- 主 runtime 启动时先 replay JSONL 得到 `SessionMessageRecord(seq/hash/message)`，再校验 snapshot 的版本、session、branch、prompt hash、summarizer、model 和 last seq/hash。
+- snapshot 有效时直接恢复 `runningSummary + recentTurns`，并只追加 snapshot 之后新增的 JSONL 消息；snapshot 缺失、损坏或配置变化时才全量重建窗口。
+- 每条消息 append 成功后，`ContextWindowSnapshotSessionStore` 先写 JSONL，再更新 `ContextWindowCache`，最后覆盖保存最新 snapshot。
+- 触发压缩时优先用 `LlmSummarizer` 请求流式 LLM 生成语义摘要；摘要请求不带 tools、不带 thinking，不写 session，失败时回退 `TranscriptSummarizer`。
 - 压缩按 user turn，而不是字符串硬切。
 - 内存窗口只保留 `runningSummary + 最近完整 turn`，完整原始历史仍在 `SessionStore`。
 - 当前时间、时区、长期记忆、Skill 索引和旧对话摘要只进入本轮 request messages。
 - 压缩摘要不写回 `SessionStore`。
+- Web 右栏通过 `ContextBuilt` 事件展示自动压缩状态、before/after/max 和当前上下文使用比例。
 
 ## 流程 3：Tool Calling + HITL
 

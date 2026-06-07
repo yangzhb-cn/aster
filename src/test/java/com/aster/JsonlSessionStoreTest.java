@@ -59,6 +59,11 @@ class JsonlSessionStoreTest {
                 Message.user("你好"),
                 Message.assistant("你好，我在。")
         ), reopened.loadMessages());
+        var records = reopened.loadMessageRecords();
+        assertEquals(2, records.size());
+        assertEquals("你好", records.get(0).message().content());
+        assertTrue(records.get(0).seq() > 0);
+        assertTrue(records.get(0).hash() != null && !records.get(0).hash().isBlank());
 
         String jsonl = Files.readString(file);
         assertTrue(jsonl.contains("\"type\":\"run_started\""));

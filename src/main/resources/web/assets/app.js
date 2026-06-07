@@ -36,6 +36,7 @@ const chatLeftPanel = $("#chatLeftPanel");
 const roomLeftPanel = $("#roomLeftPanel");
 const chatRightPanel = $("#chatRightPanel");
 const roomRightPanel = $("#roomRightPanel");
+const roomEditorDetails = $("#roomEditorDetails");
 const newSessionButton = $("#newSessionButton");
 const sessionList = $("#sessionList");
 const newRoomButton = $("#newRoomButton");
@@ -68,6 +69,9 @@ const contextBefore = $("#contextBefore");
 const contextAfter = $("#contextAfter");
 const contextMax = $("#contextMax");
 const contextCompressed = $("#contextCompressed");
+const contextUsedPercent = $("#contextUsedPercent");
+const contextUsedTokens = $("#contextUsedTokens");
+const contextTotalTokens = $("#contextTotalTokens");
 const todoForm = $("#todoForm");
 const todoContent = $("#todoContent");
 const todoDueAt = $("#todoDueAt");
@@ -533,6 +537,16 @@ function setMetric(node, value) {
   node.textContent = value === undefined || value === null ? "-" : String(value);
 }
 
+function compactNumber(value) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  if (Math.abs(number) >= 1000) {
+    const rounded = number / 1000;
+    return `${Number.isInteger(rounded) ? rounded.toFixed(0) : rounded.toFixed(1)}k`;
+  }
+  return String(number);
+}
+
 function applyUsage(usage = {}) {
   setMetric(inputTokens, usage.inputTokens);
   setMetric(cacheTokens, usage.inputCacheTokens);
@@ -545,7 +559,18 @@ function applyContext(payload = {}) {
   setMetric(contextBefore, payload.beforeTokens);
   setMetric(contextAfter, payload.afterTokens);
   setMetric(contextMax, payload.maxContextTokens);
-  setMetric(contextCompressed, payload.compressed ? "yes" : "no");
+  setMetric(contextCompressed, payload.compressed ? "compressed" : "watching");
+  const used = Number(payload.afterTokens ?? payload.beforeTokens);
+  const max = Number(payload.maxContextTokens);
+  if (Number.isFinite(used) && Number.isFinite(max) && max > 0) {
+    contextUsedPercent.textContent = `${Math.min(100, Math.round((used / max) * 100))}%`;
+    contextUsedTokens.textContent = compactNumber(used);
+    contextTotalTokens.textContent = compactNumber(max);
+    return;
+  }
+  contextUsedPercent.textContent = "-";
+  contextUsedTokens.textContent = "-";
+  contextTotalTokens.textContent = "-";
 }
 
 async function loadSessions() {
@@ -1708,6 +1733,7 @@ newRoomAgentButton.addEventListener("click", () => {
   state.currentRoomAgentId = "";
   fillRoomAgentForm(null);
   renderRoomAgents();
+  roomEditorDetails.open = true;
 });
 roomAgentForm.addEventListener("submit", saveRoomAgent);
 archiveRoomAgentButton.addEventListener("click", archiveRoomAgent);
@@ -1768,6 +1794,7 @@ roomAgentList.addEventListener("click", (event) => {
   state.currentRoomAgentId = agent?.agentId || "";
   fillRoomAgentForm(agent || null);
   renderRoomAgents();
+  roomEditorDetails.open = true;
 });
 
 roomMemberList.addEventListener("click", (event) => {

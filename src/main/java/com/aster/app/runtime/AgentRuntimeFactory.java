@@ -22,11 +22,13 @@ import com.aster.app.extension.RuntimeExtensionContext;
 import com.aster.app.extension.RuntimeExtensionRegistry;
 import com.aster.core.context.ContextPipeline;
 import com.aster.core.context.ContextWindowCache;
+import com.aster.core.context.LlmSummarizer;
 import com.aster.core.context.SimpleTokenEstimator;
 import com.aster.core.context.Summarizer;
 import com.aster.core.context.TokenEstimator;
 import com.aster.core.context.TranscriptSummarizer;
 import com.aster.core.context.model.ContextOptions;
+import com.aster.core.context.model.ContextWindowSnapshot;
 import com.aster.core.hook.HookRegistry;
 import com.aster.llm.OpenAiCompatibleChatClient;
 import com.aster.llm.OpenAiCompatibleProviderFactory;
@@ -61,12 +63,13 @@ import com.aster.app.room.RoomToolRegistryFactory;
 import com.aster.app.schedule.JsonScheduledUserMessageStore;
 import com.aster.app.schedule.ScheduledUserMessageManager;
 import com.aster.app.schedule.ScheduledUserMessageStore;
-import com.aster.core.session.BootstrappedSessionStore;
-import com.aster.core.session.ContextWindowSessionStore;
 import com.aster.core.session.JsonlSessionStore;
+import com.aster.core.session.SessionReplayer;
 import com.aster.core.session.SessionCatalog;
 import com.aster.core.session.SessionIndex;
 import com.aster.core.session.SessionStore;
+import com.aster.core.session.model.SessionMessageRecord;
+import com.aster.core.session.model.SessionReplayResult;
 import com.aster.app.skill.SkillRepository;
 import com.aster.core.tool.LocalToolExecutor;
 import com.aster.core.tool.ParallelToolExecutor;
@@ -85,11 +88,15 @@ import okhttp3.OkHttpClient;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * 创建 Agent 运行时。
@@ -105,6 +112,7 @@ public class AgentRuntimeFactory {
      * “LLM -> tool_calls -> tool results -> LLM”的最大循环次数。</p>
      */
     private static final int MAX_TOOL_ROUNDS = 100;
+    private static final String CONTEXT_SUMMARIZER_ID = "llm";
 
     /**
      * 使用默认配置创建 Agent 运行时。
@@ -189,20 +197,51 @@ public class AgentRuntimeFactory {
         // 基础 system prompt 来自 jar 内置 resources/prompts/agent/system.md。
         bootstrapMessages.add(Message.system(systemPrompt));
 
-        SessionStore persistentSessionStore = new BootstrappedSessionStore(
-                bootstrapMessages,
-                JsonlSessionStore.openNamed(objectMapper, WorkspacePaths.SESSIONS, sessionName)
+        JsonlSessionStore persistentSessionStore = JsonlSessionStore.openNamed(
+                objectMapper,
+                WorkspacePaths.SESSIONS,
+                sessionName
         );
         TokenEstimator tokenEstimator = new SimpleTokenEstimator();
-        Summarizer contextSummarizer = new TranscriptSummarizer(contextSummaryPrompt, 8_000);
+        Summarizer transcriptFallback = new TranscriptSummarizer(contextSummaryPrompt, 8_000);
+        Summarizer contextSummarizer = new LlmSummarizer(
+                provider.defaultModel(),
+                streamingChatClient,
+                contextSummaryPrompt,
+                8_000,
+                transcriptFallback
+        );
         ContextOptions contextOptions = ContextOptions.defaults();
-        ContextWindowCache contextWindowCache = ContextWindowCache.from(
-                persistentSessionStore,
+        ContextWindowSnapshotStore contextWindowSnapshotStore = new JsonContextWindowSnapshotStore(
+                objectMapper,
+                WorkspacePaths.CONTEXT_WINDOWS
+        );
+        ContextWindowSnapshotSessionStore.SnapshotMetadata snapshotMetadata = new ContextWindowSnapshotSessionStore.SnapshotMetadata(
+                sessionName,
+                SessionReplayer.MAIN_BRANCH,
+                sha256(systemPrompt),
+                sha256(contextSummaryPrompt),
+                CONTEXT_SUMMARIZER_ID,
+                provider.defaultModel()
+        );
+        SessionReplayResult replayResult = persistentSessionStore.replay();
+        ContextWindowCache contextWindowCache = restoreOrBuildContextWindowCache(
+                bootstrapMessages,
+                replayResult,
+                contextWindowSnapshotStore,
+                snapshotMetadata,
                 tokenEstimator,
                 contextSummarizer,
                 contextOptions
         );
-        SessionStore sessionStore = new ContextWindowSessionStore(persistentSessionStore, contextWindowCache);
+        saveContextWindowSnapshot(contextWindowCache, contextWindowSnapshotStore, snapshotMetadata, replayResult.messageRecords());
+        SessionStore sessionStore = new ContextWindowSnapshotSessionStore(
+                bootstrapMessages,
+                persistentSessionStore,
+                contextWindowCache,
+                contextWindowSnapshotStore,
+                snapshotMetadata
+        );
         MemoryExtractionAgent memoryExtractionAgent = new MemoryExtractionAgent(
                 provider.defaultModel(),
                 sessionStore,
@@ -342,6 +381,109 @@ public class AgentRuntimeFactory {
                 teamFinalSummaryUserPrompt,
                 skillRepository.listMetadata().size()
         );
+    }
+
+    /**
+     * 从 snapshot 恢复上下文窗口；无效时回退到 JSONL 全量重建。
+     */
+    private ContextWindowCache restoreOrBuildContextWindowCache(
+            List<Message> bootstrapMessages,
+            SessionReplayResult replayResult,
+            ContextWindowSnapshotStore snapshotStore,
+            ContextWindowSnapshotSessionStore.SnapshotMetadata metadata,
+            TokenEstimator tokenEstimator,
+            Summarizer summarizer,
+            ContextOptions contextOptions
+    ) {
+        ContextWindowCache cache = new ContextWindowCache(tokenEstimator, summarizer, contextOptions);
+        Optional<ContextWindowSnapshot> snapshot = loadSnapshotQuietly(snapshotStore, metadata);
+        if (snapshot.isPresent() && isSnapshotValid(snapshot.get(), metadata, replayResult.messageRecords())) {
+            try {
+                cache.restore(bootstrapMessages, snapshot.get());
+                appendRecordsAfter(cache, replayResult.messageRecords(), snapshot.get().lastSeq());
+                return cache;
+            } catch (RuntimeException ignored) {
+                // 快照内容损坏或协议不合法时，直接回退到 JSONL 全量重建。
+            }
+        }
+
+        cache.initialize(bootstrapMessages, replayResult.messageRecords());
+        return cache;
+    }
+
+    private Optional<ContextWindowSnapshot> loadSnapshotQuietly(
+            ContextWindowSnapshotStore snapshotStore,
+            ContextWindowSnapshotSessionStore.SnapshotMetadata metadata
+    ) {
+        try {
+            return snapshotStore.load(metadata.sessionId(), metadata.branchId());
+        } catch (IOException ignored) {
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * 校验快照是否还能对应当前 session 历史和 prompt 配置。
+     */
+    private boolean isSnapshotValid(
+            ContextWindowSnapshot snapshot,
+            ContextWindowSnapshotSessionStore.SnapshotMetadata metadata,
+            List<SessionMessageRecord> records
+    ) {
+        if (snapshot.version() != ContextWindowSnapshot.CURRENT_VERSION) {
+            return false;
+        }
+        if (!Objects.equals(snapshot.sessionId(), metadata.sessionId())
+                || !Objects.equals(snapshot.branchId(), metadata.branchId())
+                || !Objects.equals(snapshot.systemPromptHash(), metadata.systemPromptHash())
+                || !Objects.equals(snapshot.summaryPromptHash(), metadata.summaryPromptHash())
+                || !Objects.equals(snapshot.summarizer(), metadata.summarizer())
+                || !Objects.equals(snapshot.model(), metadata.model())) {
+            return false;
+        }
+        if (snapshot.lastSeq() == 0) {
+            return snapshot.lastHash() == null || snapshot.lastHash().isBlank();
+        }
+        return records.stream()
+                .anyMatch(record -> record.seq() == snapshot.lastSeq()
+                        && Objects.equals(record.hash(), snapshot.lastHash()));
+    }
+
+    private void appendRecordsAfter(ContextWindowCache cache, List<SessionMessageRecord> records, long lastSeq) {
+        records.stream()
+                .filter(record -> record.seq() > lastSeq)
+                .forEach(record -> cache.append(record.message()));
+    }
+
+    /**
+     * 保存当前上下文窗口快照。
+     */
+    private void saveContextWindowSnapshot(
+            ContextWindowCache cache,
+            ContextWindowSnapshotStore snapshotStore,
+            ContextWindowSnapshotSessionStore.SnapshotMetadata metadata,
+            List<SessionMessageRecord> records
+    ) throws IOException {
+        SessionMessageRecord lastRecord = records.isEmpty() ? null : records.getLast();
+        snapshotStore.save(cache.snapshot(
+                metadata.sessionId(),
+                metadata.branchId(),
+                lastRecord == null ? 0 : lastRecord.seq(),
+                lastRecord == null ? "" : lastRecord.hash(),
+                metadata.systemPromptHash(),
+                metadata.summaryPromptHash(),
+                metadata.summarizer(),
+                metadata.model()
+        ));
+    }
+
+    private String sha256(String value) throws IOException {
+        try {
+            byte[] bytes = MessageDigest.getInstance("SHA-256").digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(bytes);
+        } catch (NoSuchAlgorithmException error) {
+            throw new IOException("SHA-256 not available", error);
+        }
     }
 
     /**

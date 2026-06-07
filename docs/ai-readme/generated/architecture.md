@@ -18,6 +18,7 @@ flowchart TD
     Runtime --> Background["BackgroundTaskManager"]
     Runtime --> Schedule["ScheduledUserMessageManager\nschedule -> user input"]
     Runtime --> Archive["Archive APIs\nrestore / physical delete"]
+    Runtime --> Snapshot["ContextWindowSnapshotStore\nworkspace/context-windows"]
 
     Coordinator --> AgentLoop["AgentLoop"]
     PlanMode --> PlanRunner["PlanRunner"]
@@ -26,12 +27,15 @@ flowchart TD
     Room --> RoomAgents["RoomAgentRunner\n独立私有 session"]
     Room --> RoomHub["RoomHub\n共享 hub messages"]
 
-    AgentLoop --> Context["ContextPipeline\nContextWindowCache + ContextBuilder"]
+    Snapshot --> Context["ContextPipeline\nContextWindowCache + ContextBuilder"]
+    AgentLoop --> Context
     AgentLoop --> Hooks["HookRegistry"]
     AgentLoop --> Tools["ToolRegistry + ParallelToolExecutor"]
     AgentLoop --> Session["SessionStore JSONL"]
     AgentLoop --> Events["AgentEventBus"]
     AgentLoop --> LLM["StreamingChatClient\nOpenAI-compatible SSE"]
+    Context --> Summary["LlmSummarizer\n无工具流式摘要"]
+    Summary --> LLM
 ```
 
 ## 分层说明
@@ -63,11 +67,13 @@ flowchart TD
 | 决策 | 当前实现 | 原因 |
 | --- | --- | --- |
 | 只保留流式 LLM 主路径 | `StreamingChatClient` + SSE parser | TUI/Web/Telegram 都消费流式事件，避免维护流式和非流式两套路径 |
-| Context 压缩使用运行态窗口 | `ContextWindowCache` + `ContextPipeline` | 主 runtime 启动时恢复一次 JSONL，之后增量维护摘要和最近 turn，避免每轮请求全量 replay |
+| Context 压缩使用运行态窗口 | `ContextWindowCache` + `ContextPipeline` | 请求上下文只保留旧摘要和最近完整 turn，避免每轮请求全量 replay |
+| Context 快照恢复压缩进度 | `JsonContextWindowSnapshotStore` + `ContextWindowSnapshotSessionStore` | 快照保存到 `workspace/context-windows/*.json`；启动时校验版本、session、prompt hash、summarizer、model、last seq/hash，有效则恢复并只补齐新增 JSONL 消息 |
+| Context 摘要优先使用 LLM | `LlmSummarizer` + `TranscriptSummarizer` | 压缩时走无工具、无 thinking 的流式 LLM 语义摘要；失败或空摘要时回退确定性转写摘要 |
 | 可选能力走 Hook / Extension | `HookRegistry`、`RuntimeExtensionRegistry` | 避免 `AgentLoop` 堆业务 if-else |
 | Tool 统一抽象 | `ToolRegistry`、`ToolHandler`、`ToolResult` | 本地工具、MCP 工具、扩展工具统一给 LLM 暴露 |
 | 高影响工具走 HITL | `ToolApprovalHook` 审批 `bash/write/edit` | 工具执行前可见、可拒绝，拒绝仍保持 tool_result 协议闭环 |
-| Session 保存原始历史 | `JsonlSessionStore` | 压缩只影响请求，不污染可审计历史 |
+| Session 保存原始历史 | `JsonlSessionStore` | JSONL 是事实源；压缩摘要和快照只影响请求上下文，不污染可审计历史 |
 | Web 普通 session 可并行运行 | `WebSessionRuntimePool` | 每个 session 保留独立 `AgentRuntime`，切换会话不关闭旧 runtime；SSE 事件按 `sessionName` 分流 |
 | Background 与 Schedule 分离 | `BackgroundTaskManager` + `ScheduledUserMessageManager` | 后台任务处理系统维护和简单提醒；schedule 到点提交 user 消息，让 Agent 按普通链路执行 |
 | Plan / Team 共用 DAG runner | `PlanRunner` | 复用依赖调度、并发执行、失败停止等逻辑 |

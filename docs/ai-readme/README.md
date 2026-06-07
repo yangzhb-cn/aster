@@ -16,7 +16,7 @@ flowchart LR
 
 - 生成时间：2026-06-04 14:24
 - 生成分支：master
-- 最近同步：2026-06-05，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、ContextWindowCache 和文档维护规则
+- 最近同步：2026-06-07，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照和 Web context 进度展示
 
 ## 入口功能矩阵
 
@@ -31,7 +31,7 @@ flowchart LR
 | follow-up 排队 | 已实现 | 已实现 | 已实现 | 忙碌时普通输入进入 `AgentRunCoordinator` 队列。 |
 | Session CRUD | 部分实现 | 已实现 | 部分实现 | TUI 支持 list/new/use/delete/current；Web 支持列表、新建、切换、重命名、归档、历史读取；Telegram 支持当前 session 和新建。 |
 | 多 session 并行运行 | 未实现 | 已实现 | 已实现 | Web 用 `WebSessionRuntimePool` 保留每个 session 的 `AgentRuntime`，切换会话不打断旧会话；Telegram 每个 chat 也持有独立 runtime。 |
-| Token/Context 状态 | 已实现 | 已实现 | 未实现 | TUI footer 和 Web 右栏展示；Telegram 不展示指标面板。 |
+| Token/Context 状态 | 已实现 | 已实现 | 未实现 | TUI footer 和 Web 右栏展示；Web 额外显示自动压缩状态和上下文使用进度；Telegram 不展示指标面板。 |
 | Todo 便签 | 通过工具可用 | 已实现 | 通过工具可用 | Web 有右侧便签 CRUD；普通 Agent 可用 todo 工具；TUI/IM 没有专门面板。 |
 | 后台任务通知 | 已实现 | 已实现 | 已实现 | 通过各入口的 `NotificationSink` 展示长期记忆抽取、Todo 扫描等通知。 |
 | 自动化用户消息 schedule | 通过工具可用 | 通过工具可用 | 通过工具可用 | `schedule` 到点后向当前 session 提交 user 消息；不是后台 handler，后续仍走普通 Agent 链路。 |

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aster.llm.model.Message;
 import com.aster.core.session.model.SessionEvent;
 import com.aster.core.session.model.SessionEventType;
+import com.aster.core.session.model.SessionMessageRecord;
 import com.aster.core.session.model.SessionReplayResult;
 
 import java.io.IOException;
@@ -36,6 +37,7 @@ public class JsonlSessionStore implements SessionStore {
     private long nextSeq;
     private String lastHash;
     private String activeRunId;
+    private SessionMessageRecord lastAppendedMessageRecord;
 
     public JsonlSessionStore(ObjectMapper objectMapper, Path file, String sessionId, String branchId) throws IOException {
         this.objectMapper = Objects.requireNonNull(objectMapper);
@@ -71,7 +73,7 @@ public class JsonlSessionStore implements SessionStore {
      */
     @Override
     public synchronized void append(Message message) throws IOException {
-        appendEvent(SessionEvent.draft(
+        SessionEvent event = appendEvent(SessionEvent.draft(
                 sessionId,
                 branchId,
                 SessionEventType.MESSAGE_APPENDED,
@@ -81,6 +83,7 @@ public class JsonlSessionStore implements SessionStore {
                 message,
                 null
         ));
+        lastAppendedMessageRecord = new SessionMessageRecord(event.seq(), event.hash(), message);
     }
 
     /**
@@ -96,6 +99,22 @@ public class JsonlSessionStore implements SessionStore {
      */
     public synchronized SessionReplayResult replay() throws IOException {
         return replayer.replay(readEvents(), branchId);
+    }
+
+    /**
+     * 返回当前分支可见消息及其 JSONL 进度信息。
+     */
+    public synchronized List<SessionMessageRecord> loadMessageRecords() throws IOException {
+        return replay().messageRecords();
+    }
+
+    /**
+     * 返回最近一次 append 写入的 message record。
+     *
+     * <p>只记录 message_appended 事件；run_started/run_finished 不影响上下文窗口。</p>
+     */
+    public synchronized SessionMessageRecord lastAppendedMessageRecord() {
+        return lastAppendedMessageRecord;
     }
 
     /**
@@ -221,7 +240,7 @@ public class JsonlSessionStore implements SessionStore {
         return events;
     }
 
-    private void appendEvent(SessionEvent draft) throws IOException {
+    private SessionEvent appendEvent(SessionEvent draft) throws IOException {
         SessionEvent base = draft.withAuditBase(
                 nextSeq,
                 UUID.randomUUID().toString(),
@@ -238,6 +257,7 @@ public class JsonlSessionStore implements SessionStore {
         );
         nextSeq++;
         lastHash = event.hash();
+        return event;
     }
 
     private String hash(SessionEvent event) throws IOException {

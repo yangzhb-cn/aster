@@ -6,6 +6,7 @@ import com.aster.core.context.SimpleTokenEstimator;
 import com.aster.core.context.ToolProtocolValidator;
 import com.aster.core.context.model.ContextBuildResult;
 import com.aster.core.context.model.ContextOptions;
+import com.aster.core.context.model.ContextWindowSnapshot;
 import com.aster.core.session.ContextWindowSessionStore;
 import com.aster.core.session.SessionStore;
 import com.aster.llm.model.Message;
@@ -84,6 +85,43 @@ class ContextWindowCacheTest {
                 .anyMatch(call -> "call_old".equals(call.id())));
         assertFalse(result.messages().stream().anyMatch(message -> "call_old".equals(message.toolCallId())));
         ToolProtocolValidator.validate(result.messages());
+    }
+
+    @Test
+    void restoresRuntimeWindowFromSnapshot() {
+        ContextWindowCache cache = new ContextWindowCache(
+                new SimpleTokenEstimator(),
+                ignored -> "summary",
+                new ContextOptions(100, 0.9, 3)
+        );
+        cache.initialize(List.of(
+                Message.system("系统提示"),
+                Message.user("最近问题"),
+                Message.assistant("最近回答")
+        ));
+        ContextWindowSnapshot snapshot = cache.snapshot(
+                "default",
+                "main",
+                2,
+                "hash-2",
+                "system-hash",
+                "summary-hash",
+                "llm",
+                "model"
+        );
+
+        ContextWindowCache restored = new ContextWindowCache(
+                new SimpleTokenEstimator(),
+                ignored -> "summary",
+                new ContextOptions(100, 0.9, 3)
+        );
+        restored.restore(List.of(Message.system("系统提示")), snapshot);
+
+        ContextBuildResult result = restored.build();
+        assertEquals(3, result.messages().size());
+        assertTrue(result.messages().stream().anyMatch(message ->
+                "user".equals(message.role()) && message.content().contains("最近问题")
+        ));
     }
 
     private static class CountingSessionStore implements SessionStore {

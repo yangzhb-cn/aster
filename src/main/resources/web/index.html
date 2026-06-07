@@ -92,6 +92,15 @@
           </section>
           <section class="rail-section">
             <span class="eyebrow">CONTEXT</span>
+            <div class="context-meter">
+              <div class="context-meter-main">
+                <strong id="contextUsedPercent">-</strong>
+                <span>已用</span>
+              </div>
+              <div class="context-meter-sub">
+                已用 <strong id="contextUsedTokens">-</strong> 标记，共 <strong id="contextTotalTokens">-</strong>
+              </div>
+            </div>
             <div class="token-grid">
               <div class="token-row">
                 <span>before</span>
@@ -106,7 +115,7 @@
                 <strong id="contextMax">-</strong>
               </div>
               <div class="token-row strong">
-                <span>compressed</span>
+                <span>auto</span>
                 <strong id="contextCompressed">-</strong>
               </div>
             </div>
@@ -127,56 +136,71 @@
           </section>
         </div>
         <div id="roomRightPanel" class="hidden">
-          <section class="rail-section room-members-section">
-            <div class="todo-head">
+          <details id="roomMembersDetails" class="rail-section collapsible-section room-members-section" open>
+            <summary class="collapsible-head">
               <span class="eyebrow">MEMBERS</span>
-              <button id="refreshRoomMembersButton" class="icon-button" type="button" title="刷新成员" aria-label="刷新成员">R</button>
-            </div>
-            <div id="roomMemberList" class="member-list"></div>
-            <label class="member-add">
-              <span>加入 Agent</span>
-              <select id="roomMemberSelect"></select>
-            </label>
-            <button id="addRoomMemberButton" type="button">加入聊天室</button>
-          </section>
-          <section class="rail-section room-editor-section">
-            <span class="eyebrow">AGENT</span>
-            <form id="roomAgentForm" class="room-agent-form">
-              <input id="roomAgentId" type="hidden" />
-              <label>
-                <span>名称</span>
-                <input id="roomAgentName" type="text" placeholder="例如：产品经理" />
-              </label>
-              <label>
-                <span>角色</span>
-                <input id="roomAgentRole" type="text" placeholder="一句话描述角色" />
-              </label>
-              <label>
-                <span>别名</span>
-                <input id="roomAgentAliases" type="text" placeholder="逗号分隔，如 pm,产品" />
-              </label>
-              <label>
-                <span>工具</span>
-                <input id="roomAgentTools" type="text" placeholder="read,ls,glob,grep,web_fetch,web_search" />
-              </label>
-              <label>
-                <span>描述</span>
-                <textarea id="roomAgentDescription" rows="3" placeholder="展示给用户和 Agent 自己看的描述"></textarea>
-              </label>
-              <label>
-                <span>系统提示词</span>
-                <textarea id="roomAgentPrompt" rows="10" placeholder="这个 Agent 的专属 system prompt"></textarea>
-              </label>
-              <label class="room-agent-enabled">
-                <input id="roomAgentEnabled" type="checkbox" checked />
-                <span>启用</span>
-              </label>
-              <div class="room-agent-actions">
-                <button id="saveRoomAgentButton" type="submit">保存</button>
-                <button id="archiveRoomAgentButton" class="ghost-button danger" type="button">归档</button>
+            </summary>
+            <div class="collapsible-body">
+              <div class="room-section-toolbar">
+                <button id="refreshRoomMembersButton" class="soft-button" type="button">刷新成员</button>
               </div>
-            </form>
-          </section>
+              <div id="roomMemberList" class="member-list"></div>
+            </div>
+          </details>
+          <details id="roomJoinDetails" class="rail-section collapsible-section room-join-section">
+            <summary class="collapsible-head">
+              <span class="eyebrow">JOIN</span>
+            </summary>
+            <div class="collapsible-body">
+              <label class="member-add">
+                <span>加入 Agent</span>
+                <select id="roomMemberSelect"></select>
+              </label>
+              <button id="addRoomMemberButton" class="primary-action" type="button">加入聊天室</button>
+            </div>
+          </details>
+          <details id="roomEditorDetails" class="rail-section collapsible-section room-editor-section">
+            <summary class="collapsible-head">
+              <span class="eyebrow">AGENT 设置</span>
+            </summary>
+            <div class="collapsible-body">
+              <form id="roomAgentForm" class="room-agent-form">
+                <input id="roomAgentId" type="hidden" />
+                <label>
+                  <span>名称</span>
+                  <input id="roomAgentName" type="text" placeholder="例如：产品经理" />
+                </label>
+                <label>
+                  <span>角色</span>
+                  <input id="roomAgentRole" type="text" placeholder="一句话描述角色" />
+                </label>
+                <label>
+                  <span>别名</span>
+                  <input id="roomAgentAliases" type="text" placeholder="逗号分隔，如 pm,产品" />
+                </label>
+                <label>
+                  <span>工具</span>
+                  <input id="roomAgentTools" type="text" placeholder="read,ls,glob,grep,web_fetch,web_search" />
+                </label>
+                <label>
+                  <span>描述</span>
+                  <textarea id="roomAgentDescription" rows="3" placeholder="展示给用户和 Agent 自己看的描述"></textarea>
+                </label>
+                <label>
+                  <span>系统提示词</span>
+                  <textarea id="roomAgentPrompt" rows="10" placeholder="这个 Agent 的专属 system prompt"></textarea>
+                </label>
+                <label class="room-agent-enabled">
+                  <input id="roomAgentEnabled" type="checkbox" checked />
+                  <span>启用</span>
+                </label>
+                <div class="room-agent-actions">
+                  <button id="saveRoomAgentButton" class="primary-action" type="submit">保存</button>
+                  <button id="archiveRoomAgentButton" class="danger-action" type="button">归档</button>
+                </div>
+              </form>
+            </div>
+          </details>
         </div>
       </aside>
     </div>

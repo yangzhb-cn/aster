@@ -34,13 +34,13 @@ Aster/
 | --- | --- | --- |
 | `src/main/java/com/aster/llm/` | 模型供应商适配和 SSE 解析 | `OpenAiCompatibleChatClient.java`、`OpenAiCompatibleStreamParser.java`、`OpenAiCompatibleProviderFactory.java` |
 | `src/main/java/com/aster/core/agent/` | Agent 流式主循环和 assistant message 拼接 | `AgentLoop.java`、`AssistantMessageBuilder.java`、`control/AgentRunControl.java` |
-| `src/main/java/com/aster/core/context/` | 上下文构建、运行态窗口缓存、压缩、工具协议校验 | `ContextWindowCache.java`、`ContextBuilder.java`、`ContextPipeline.java`、`TranscriptSummarizer.java`、`ToolProtocolValidator.java` |
+| `src/main/java/com/aster/core/context/` | 上下文构建、运行态窗口缓存、LLM/回退摘要、快照模型、工具协议校验 | `ContextWindowCache.java`、`ContextBuilder.java`、`ContextPipeline.java`、`LlmSummarizer.java`、`TranscriptSummarizer.java`、`model/ContextWindowSnapshot.java`、`ToolProtocolValidator.java` |
 | `src/main/java/com/aster/core/event/` | Agent 事件总线和事件模型 | `AgentEventBus.java`、`AgentEventHandler.java`、`model/AgentEvent.java` |
 | `src/main/java/com/aster/core/hook/` | Hook 扩展点和上下文对象 | `HookRegistry.java`、`AgentHookPoints.java`、`BeforeToolCallContext.java` |
-| `src/main/java/com/aster/core/session/` | JSONL Session 存储、索引、回放、上下文窗口写入装饰 | `JsonlSessionStore.java`、`ContextWindowSessionStore.java`、`SessionIndex.java`、`SessionCatalog.java` |
+| `src/main/java/com/aster/core/session/` | JSONL Session 存储、索引、回放、消息 seq/hash 记录、上下文窗口写入装饰 | `JsonlSessionStore.java`、`SessionReplayer.java`、`model/SessionMessageRecord.java`、`ContextWindowSessionStore.java`、`SessionIndex.java`、`SessionCatalog.java` |
 | `src/main/java/com/aster/core/stage/` | Agent 必经 Stage 流水线 | `LoadSessionMessagesStage.java`、`ContextCompressionStage.java` |
 | `src/main/java/com/aster/core/tool/` | Tool 抽象、注册和并发执行 | `ToolRegistry.java`、`ParallelToolExecutor.java`、`LocalToolExecutor.java` |
-| `src/main/java/com/aster/app/runtime/` | Runtime 装配、run 调度、Plan 模式协调 | `AgentRuntimeFactory.java`、`AgentRuntime.java`、`AgentRunCoordinator.java`、`PlanModeCoordinator.java` |
+| `src/main/java/com/aster/app/runtime/` | Runtime 装配、run 调度、Plan 模式协调、上下文快照恢复/保存 | `AgentRuntimeFactory.java`、`AgentRuntime.java`、`AgentRunCoordinator.java`、`PlanModeCoordinator.java`、`ContextWindowSnapshotSessionStore.java`、`JsonContextWindowSnapshotStore.java` |
 | `src/main/java/com/aster/app/extension/` | 可选能力注册入口 | `AsterRuntimeExtension.java`、`RuntimeExtensionRegistry.java`、`ToolApprovalExtension.java` |
 | `src/main/java/com/aster/app/tool/` | 内置工具、开发者工具、Todo/后台/schedule 工具、结果卸载 | `builtin/BuiltinTools.java`、`developer/DeveloperTools.java`、`result/ToolResultOffloadHook.java` |
 | `src/main/java/com/aster/app/hitl/` | 人工审批 | `ToolApprovalHook.java`、`ToolApprovalManager.java` |
@@ -77,6 +77,7 @@ flowchart TD
 ```text
 workspace/
 ├── sessions/                 # JSONL 会话历史和 index.json
+├── context-windows/          # 可覆盖上下文窗口快照，恢复压缩进度用
 ├── tasks/                    # 后台任务定义和运行记录
 ├── schedules/                # 自动化用户消息定义
 ├── todos/                    # Web/Agent 共享 Todo 清单

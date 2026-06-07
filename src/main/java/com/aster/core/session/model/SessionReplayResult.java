@@ -12,8 +12,13 @@ import java.util.List;
  */
 public record SessionReplayResult(
         List<Message> messages,
+        List<SessionMessageRecord> messageRecords,
         long lastSeq,
         boolean recovered,
         String recoveryReason
 ) {
+    public SessionReplayResult {
+        messages = List.copyOf(messages);
+        messageRecords = List.copyOf(messageRecords);
+    }
 }

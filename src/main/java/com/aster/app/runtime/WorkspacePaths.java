@@ -15,6 +15,7 @@ public final class WorkspacePaths {
     public static final Path MCP_CONFIG = ROOT.resolve("mcp.json");
     public static final Path SKILLS = ROOT.resolve("skills");
     public static final Path SESSIONS = ROOT.resolve("sessions");
+    public static final Path CONTEXT_WINDOWS = ROOT.resolve("context-windows");
     public static final Path MEMORY = ROOT.resolve("memory");
     public static final Path LONG_TERM_MEMORY = MEMORY.resolve("long-term-memory.md");
     public static final Path TASKS = ROOT.resolve("tasks");
@@ -47,6 +48,7 @@ public final class WorkspacePaths {
         Files.createDirectories(ROOT);
         Files.createDirectories(SKILLS);
         Files.createDirectories(SESSIONS);
+        Files.createDirectories(CONTEXT_WINDOWS);
         Files.createDirectories(MEMORY);
         Files.createDirectories(TASKS);
         Files.createDirectories(SCHEDULES);

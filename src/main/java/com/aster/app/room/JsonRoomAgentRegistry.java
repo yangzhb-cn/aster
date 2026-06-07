@@ -3,6 +3,7 @@ package com.aster.app.room;
 import com.aster.app.room.model.RoomAgentIndexData;
 import com.aster.app.room.model.RoomAgentInput;
 import com.aster.app.room.model.RoomAgentProfile;
+import com.aster.llm.DeepSeekModels;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -116,6 +117,7 @@ public class JsonRoomAgentRegistry implements RoomAgentRegistry {
                 "",
                 normalizeAliases(input.mentionAliases(), input.name()),
                 normalizeTools(input.toolAllowlist()),
+                normalizeModel(input.model()),
                 input.enabled() == null || input.enabled()
         );
         String promptPath = promptStore.write(draft.agentId(), input.systemPrompt());
@@ -126,6 +128,7 @@ public class JsonRoomAgentRegistry implements RoomAgentRegistry {
                 promptPath,
                 draft.mentionAliases(),
                 draft.toolAllowlist(),
+                draft.model(),
                 draft.enabled()
         );
 
@@ -157,6 +160,7 @@ public class JsonRoomAgentRegistry implements RoomAgentRegistry {
                         promptPath,
                         normalizeAliases(input.mentionAliases(), input.name()),
                         normalizeTools(input.toolAllowlist()),
+                        normalizeModel(input.model()),
                         input.enabled() == null ? agent.enabled() : input.enabled()
                 );
                 agents.add(updated);
@@ -298,6 +302,14 @@ public class JsonRoomAgentRegistry implements RoomAgentRegistry {
                 .filter(value -> !FORBIDDEN_TOOLS.contains(value))
                 .distinct()
                 .toList();
+    }
+
+    private String normalizeModel(String model) throws IOException {
+        String selected = model == null || model.isBlank() ? DeepSeekModels.V4_FLASH : model.trim();
+        if (!DeepSeekModels.switchableChatModels().contains(selected)) {
+            throw new IOException("unsupported room agent model: " + selected);
+        }
+        return selected;
     }
 
     private void validateMentionUniqueness(List<RoomAgentProfile> agents) throws IOException {

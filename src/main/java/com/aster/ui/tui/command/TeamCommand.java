@@ -1,6 +1,7 @@
 package com.aster.ui.tui.command;
 
 import com.aster.app.runtime.AgentRuntime;
+import com.aster.app.team.model.TeamRunRequest;
 
 import java.util.List;
 
@@ -35,15 +36,16 @@ public class TeamCommand implements SlashCommand {
             return;
         }
 
-        String task = input.length() <= PREFIX.length() ? "" : input.substring(PREFIX.length()).trim();
-        if (task.isBlank()) {
-            context.window().addErrorBlock("用法：/team 要探索的问题");
+        String raw = input.length() <= PREFIX.length() ? "" : input.substring(PREFIX.length()).trim();
+        TeamRunRequest request = TeamRunRequest.parse(raw);
+        if (request.task().isBlank()) {
+            context.window().addErrorBlock("用法：/team [--model 模型名] 要探索的问题");
             context.window().setStatus("team command requires task");
             return;
         }
 
-        runtime.submitTeam(task);
-        context.window().addSystemBlock("Agent Team 探索开始：" + task);
+        String selectedModel = runtime.submitTeam(request.task(), request.model());
+        context.window().addSystemBlock("Agent Team 探索开始：" + request.task() + "\nmodel=" + selectedModel);
         context.window().setStatus("agent team running");
     }
 }

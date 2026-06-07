@@ -5,8 +5,11 @@ const state = {
   currentSessionId: "",
   model: "",
   availableModels: [],
+  mcpServers: [],
+  skills: [],
   sessions: [],
   sessionStatuses: {},
+  schedules: [],
   rooms: [],
   currentRoomId: "",
   roomAgents: [],
@@ -20,6 +23,7 @@ const state = {
   currentReasoning: null,
   teamMembers: new Map(),
   approvals: new Map(),
+  approvalMode: "manual",
   archiveSelections: new Set(),
 };
 const TOOL_PREVIEW_CHAR_LIMIT = 1200;
@@ -40,6 +44,10 @@ const chatRightPanel = $("#chatRightPanel");
 const roomRightPanel = $("#roomRightPanel");
 const roomEditorDetails = $("#roomEditorDetails");
 const newSessionButton = $("#newSessionButton");
+const toggleMcpButton = $("#toggleMcpButton");
+const toggleSkillButton = $("#toggleSkillButton");
+const mcpCapabilityPanel = $("#mcpCapabilityPanel");
+const skillCapabilityPanel = $("#skillCapabilityPanel");
 const sessionList = $("#sessionList");
 const newRoomButton = $("#newRoomButton");
 const roomList = $("#roomList");
@@ -49,6 +57,7 @@ const roomAgentForm = $("#roomAgentForm");
 const roomAgentId = $("#roomAgentId");
 const roomAgentName = $("#roomAgentName");
 const roomAgentRole = $("#roomAgentRole");
+const roomAgentModel = $("#roomAgentModel");
 const roomAgentAliases = $("#roomAgentAliases");
 const roomAgentTools = $("#roomAgentTools");
 const roomAgentDescription = $("#roomAgentDescription");
@@ -61,7 +70,6 @@ const roomMemberSelect = $("#roomMemberSelect");
 const addRoomMemberButton = $("#addRoomMemberButton");
 const connectionState = $("#connectionState");
 const modelSelect = $("#modelSelect");
-const sessionName = $("#sessionName");
 const inputTokens = $("#inputTokens");
 const cacheTokens = $("#cacheTokens");
 const missTokens = $("#missTokens");
@@ -70,11 +78,30 @@ const totalTokens = $("#totalTokens");
 const contextUsedPercent = $("#contextUsedPercent");
 const contextUsedTokens = $("#contextUsedTokens");
 const contextTotalTokens = $("#contextTotalTokens");
+const approvalManualButton = $("#approvalManualButton");
+const approvalAutoButton = $("#approvalAutoButton");
+const mcpServerList = $("#mcpServerList");
+const skillList = $("#skillList");
 const todoForm = $("#todoForm");
 const todoContent = $("#todoContent");
 const todoDueAt = $("#todoDueAt");
+const newTodoButton = $("#newTodoButton");
 const refreshTodosButton = $("#refreshTodosButton");
 const todoList = $("#todoList");
+const scheduleForm = $("#scheduleForm");
+const scheduleName = $("#scheduleName");
+const scheduleContent = $("#scheduleContent");
+const scheduleType = $("#scheduleType");
+const scheduleDailyFields = $("#scheduleDailyFields");
+const scheduleOnceFields = $("#scheduleOnceFields");
+const scheduleIntervalFields = $("#scheduleIntervalFields");
+const scheduleDailyTime = $("#scheduleDailyTime");
+const scheduleTimezone = $("#scheduleTimezone");
+const scheduleRunAt = $("#scheduleRunAt");
+const scheduleIntervalSeconds = $("#scheduleIntervalSeconds");
+const newScheduleButton = $("#newScheduleButton");
+const refreshSchedulesButton = $("#refreshSchedulesButton");
+const scheduleList = $("#scheduleList");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -377,6 +404,34 @@ async function resolveApproval(approvalId, approved, sessionId = state.currentSe
   }
 }
 
+async function approveAllPendingApprovals(sessionId = state.currentSessionId, silent = false) {
+  if (!sessionId) return;
+  try {
+    const payload = await postJson("/api/approvals/approve", { id: "", sessionId });
+    if (!silent) addMessage("system", `已批量通过待审批工具：${payload.count || 0}`);
+    if (payload.status) applyStatus(payload.status);
+  } catch (error) {
+    if (!silent) addMessage("error", error.message);
+  }
+}
+
+function setApprovalMode(mode) {
+  state.approvalMode = mode === "auto" ? "auto" : "manual";
+  window.localStorage.setItem("asterApprovalMode", state.approvalMode);
+  renderApprovalMode();
+  if (state.approvalMode === "auto") {
+    approveAllPendingApprovals(state.currentSessionId, true);
+  }
+}
+
+function renderApprovalMode() {
+  const auto = state.approvalMode === "auto";
+  approvalManualButton.classList.toggle("active", !auto);
+  approvalAutoButton.classList.toggle("active", auto);
+  approvalManualButton.setAttribute("aria-pressed", String(!auto));
+  approvalAutoButton.setAttribute("aria-pressed", String(auto));
+}
+
 function updateToolBlock(block, payload = {}, status = "running") {
   block.payload = {
     ...block.payload,
@@ -520,22 +575,41 @@ async function refreshStatus() {
 
 function applyStatus(status) {
   if (!status || !Object.keys(status).length) return;
-  state.currentSessionId = status.currentSessionId || status.sessionId || status.sessionName || state.currentSessionId;
+  if (Object.prototype.hasOwnProperty.call(status, "currentSessionId")) {
+    state.currentSessionId = status.currentSessionId || "";
+  } else {
+    state.currentSessionId = status.sessionId || status.sessionName || state.currentSessionId;
+  }
   state.sessionStatuses = status.sessionStatuses || state.sessionStatuses;
   const current = sessionRuntimeStatus(state.currentSessionId);
   state.busy = Boolean(current.busy ?? status.busy);
   state.queuedCount = Number(current.queuedCount ?? status.queuedCount ?? 0);
-  state.model = status.model || state.model;
+  if (Object.prototype.hasOwnProperty.call(status, "model")) {
+    state.model = status.model || "";
+  }
   state.availableModels = Array.isArray(status.availableModels) ? status.availableModels : state.availableModels;
+  state.mcpServers = Array.isArray(status.mcpServers) ? status.mcpServers : state.mcpServers;
+  state.skills = Array.isArray(status.skills) ? status.skills : state.skills;
   renderModelSelect();
-  sessionName.textContent = status.displayName || status.sessionName || "session";
+  renderRoomAgentModelOptions();
+  renderMcpServers();
+  renderSkills();
+  if (state.approvalMode === "auto" && Array.isArray(status.pendingApprovals) && status.pendingApprovals.length) {
+    approveAllPendingApprovals(state.currentSessionId, true);
+  }
   sendButton.disabled = false;
   renderSessions();
 }
 
 function renderModelSelect() {
-  const models = state.availableModels.length ? state.availableModels : [state.model || "model"];
+  const models = state.availableModels.length ? state.availableModels : (state.model ? [state.model] : []);
   const signature = models.join("|");
+  if (!models.length) {
+    modelSelect.innerHTML = '<option value="">选择模型</option>';
+    modelSelect.dataset.signature = "";
+    modelSelect.value = "";
+    return;
+  }
   if (modelSelect.dataset.signature !== signature) {
     modelSelect.innerHTML = models
       .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
@@ -543,6 +617,21 @@ function renderModelSelect() {
     modelSelect.dataset.signature = signature;
   }
   modelSelect.value = state.model || models[0] || "";
+}
+
+function renderRoomAgentModelOptions() {
+  if (!roomAgentModel) return;
+  const models = state.availableModels.length ? state.availableModels : [state.model || "deepseek-v4-flash"];
+  const signature = models.join("|");
+  if (roomAgentModel.dataset.signature !== signature) {
+    roomAgentModel.innerHTML = models
+      .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+      .join("");
+    roomAgentModel.dataset.signature = signature;
+  }
+  if (!roomAgentModel.value && models.length) {
+    roomAgentModel.value = state.model || models[0];
+  }
 }
 
 function setMetric(node, value) {
@@ -581,6 +670,57 @@ function applyContext(payload = {}) {
   contextTotalTokens.textContent = "-";
 }
 
+function renderMcpServers() {
+  if (!mcpServerList) return;
+  mcpServerList.innerHTML = "";
+  if (!state.mcpServers.length) {
+    const empty = document.createElement("div");
+    empty.className = "mcp-empty";
+    empty.textContent = "未加载 MCP";
+    mcpServerList.append(empty);
+    return;
+  }
+  for (const server of state.mcpServers) {
+    const row = document.createElement("div");
+    row.className = `mcp-row ${server.loaded ? "loaded" : "failed"}`;
+    const detail = server.loaded
+      ? "loaded"
+      : (server.errorMessage || "load failed");
+    row.innerHTML = `
+      <strong>${escapeHtml(server.serverId || "mcp")}</strong>
+      <small>${escapeHtml(detail)}</small>
+    `;
+    mcpServerList.append(row);
+  }
+}
+
+function renderSkills() {
+  if (!skillList) return;
+  skillList.innerHTML = "";
+  if (!state.skills.length) {
+    const empty = document.createElement("div");
+    empty.className = "mcp-empty";
+    empty.textContent = "未加载 Skill";
+    skillList.append(empty);
+    return;
+  }
+  for (const skill of state.skills) {
+    const row = document.createElement("div");
+    row.className = "mcp-row loaded";
+    row.innerHTML = `
+      <strong>${escapeHtml(skill.name || "skill")}</strong>
+      <small>${escapeHtml(skill.description || "loaded")}</small>
+    `;
+    skillList.append(row);
+  }
+}
+
+function toggleCapability(panel, button) {
+  if (!panel || !button) return;
+  const open = panel.classList.toggle("hidden");
+  button.classList.toggle("active", !open);
+}
+
 async function loadSessions() {
   try {
     applySessionPayload(await requestJson("/api/sessions"));
@@ -591,7 +731,9 @@ async function loadSessions() {
 
 function applySessionPayload(payload = {}) {
   if (payload.status) applyStatus(payload.status);
-  state.currentSessionId = payload.currentSessionId || state.currentSessionId;
+  if (Object.prototype.hasOwnProperty.call(payload, "currentSessionId")) {
+    state.currentSessionId = payload.currentSessionId || "";
+  }
   state.sessions = Array.isArray(payload.sessions) ? payload.sessions : state.sessions;
   renderSessions();
 }
@@ -601,8 +743,9 @@ function renderSessions() {
   if (!state.sessions.length) {
     const empty = document.createElement("div");
     empty.className = "session-empty";
-    empty.textContent = "暂无会话";
+    empty.textContent = "暂无会话。输入消息发送后会自动创建，也可以点 + 新建。";
     sessionList.append(empty);
+    renderNoSessionHint();
     return;
   }
 
@@ -631,6 +774,15 @@ function renderSessions() {
   }
 }
 
+function renderNoSessionHint() {
+  if (state.view !== "chat" || state.currentSessionId || state.sessions.length) return;
+  messagesEl.innerHTML = "";
+  state.currentAssistant = null;
+  state.currentReasoning = null;
+  state.tools.clear();
+  addMessage("system", "暂无会话。输入消息并发送会自动创建，也可以点击左侧 + 新建。");
+}
+
 function sessionRuntimeStatus(sessionId) {
   return state.sessionStatuses?.[sessionId] || { sessionId, active: false, busy: false, queuedCount: 0, pendingApprovalCount: 0 };
 }
@@ -656,6 +808,10 @@ function formatSessionTime(timestamp) {
 }
 
 async function loadSessionMessages(sessionId) {
+  if (!sessionId) {
+    renderNoSessionHint();
+    return;
+  }
   try {
     const payload = await requestJson(`/api/sessions/${encodeURIComponent(sessionId)}/messages`);
     messagesEl.innerHTML = "";
@@ -731,6 +887,8 @@ function setView(view) {
     loadRoomAgents();
   } else if (state.currentSessionId) {
     loadSessionMessages(state.currentSessionId);
+  } else {
+    renderNoSessionHint();
   }
 }
 
@@ -896,6 +1054,7 @@ async function afterArchiveChanged() {
   await loadArchives();
   await loadSessions();
   await loadTodos();
+  await loadSchedules();
   await loadRooms();
   await loadRoomAgents();
 }
@@ -1219,15 +1378,17 @@ function renderRoomAgents() {
       </button>
     `;
     row.querySelector("strong").textContent = `@${agent.name || agent.agentId}`;
-    row.querySelector("span").textContent = `${agent.role || ""} · ${(agent.mentionAliases || []).map((alias) => "@" + alias).join(" ")}`;
+    row.querySelector("span").textContent = `${agent.role || ""} · ${agent.model || ""} · ${(agent.mentionAliases || []).map((alias) => "@" + alias).join(" ")}`;
     roomAgentList.append(row);
   }
 }
 
 function fillRoomAgentForm(agent = null) {
+  renderRoomAgentModelOptions();
   roomAgentId.value = agent?.agentId || "";
   roomAgentName.value = agent?.name || "";
   roomAgentRole.value = agent?.role || "";
+  roomAgentModel.value = agent?.model || state.model || "deepseek-v4-flash";
   roomAgentAliases.value = (agent?.mentionAliases || []).join(", ");
   roomAgentTools.value = (agent?.toolAllowlist || ["read", "ls", "glob", "grep", "web_fetch", "web_search"]).join(", ");
   roomAgentDescription.value = agent?.description || "";
@@ -1245,6 +1406,7 @@ function roomAgentInput() {
     systemPrompt: roomAgentPrompt.value.trim(),
     mentionAliases: splitCsv(roomAgentAliases.value),
     toolAllowlist: splitCsv(roomAgentTools.value),
+    model: roomAgentModel.value,
     enabled: roomAgentEnabled.checked,
   };
 }
@@ -1301,6 +1463,7 @@ async function createSession() {
     const payload = await postJson("/api/sessions", { displayName });
     applySessionPayload(payload);
     await loadSessionMessages(payload.currentSessionId);
+    await loadSchedules();
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -1312,6 +1475,7 @@ async function switchSession(sessionId) {
     const payload = await postJson("/api/sessions/use", { id: sessionId });
     applySessionPayload(payload);
     await loadSessionMessages(sessionId);
+    await loadSchedules();
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -1334,7 +1498,12 @@ async function archiveSession(sessionId) {
   try {
     const payload = await postJson("/api/sessions/archive", { id: sessionId });
     applySessionPayload(payload);
-    await loadSessionMessages(payload.currentSessionId);
+    if (payload.currentSessionId) {
+      await loadSessionMessages(payload.currentSessionId);
+    } else {
+      renderNoSessionHint();
+    }
+    await loadSchedules();
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -1361,16 +1530,26 @@ function renderTodos(todos) {
     const item = document.createElement("article");
     item.className = `todo-item ${String(todo.status || "").toLowerCase()}`;
     item.dataset.id = todo.id;
+    const content = todo.content || "";
+    const meta = formatTodoMeta(todo);
     item.innerHTML = `
-      <label class="todo-check">
-        <input type="checkbox" data-action="complete" ${todo.status === "COMPLETED" ? "checked" : ""} />
-        <span></span>
-      </label>
-      <button class="todo-archive" type="button" data-action="archive" title="归档" aria-label="归档">x</button>
-    `;
-    item.querySelector("span").innerHTML = `
-      <strong>${escapeHtml(todo.content || "")}</strong>
-      <small>${escapeHtml(formatTodoMeta(todo))}</small>
+      <div class="todo-item-main">
+        <label class="todo-check">
+          <input type="checkbox" data-action="complete" ${todo.status === "COMPLETED" ? "checked" : ""} />
+          <span>
+            <strong title="${escapeHtml(content)}">${escapeHtml(compactRailText(content, 42))}</strong>
+            ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
+          </span>
+        </label>
+        <div class="rail-item-actions">
+          <button class="rail-item-toggle" type="button" data-action="toggle" title="展开详情" aria-label="展开详情" aria-expanded="false">+</button>
+          <button class="todo-archive" type="button" data-action="archive" title="归档" aria-label="归档">x</button>
+        </div>
+      </div>
+      <div class="collapsible-item-body">
+        <p>${escapeHtml(content)}</p>
+        ${meta ? `<small>${escapeHtml(meta)}</small>` : ""}
+      </div>
     `;
     todoList.append(item);
   }
@@ -1395,6 +1574,39 @@ function formatDateTime(value) {
   }).format(date);
 }
 
+function compactRailText(value, limit = 72) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
+
+function setTodoFormOpen(open) {
+  todoForm.classList.toggle("hidden", !open);
+  newTodoButton.classList.toggle("active", open);
+  newTodoButton.textContent = open ? "-" : "+";
+  newTodoButton.setAttribute("aria-expanded", String(open));
+  if (open) todoContent.focus();
+}
+
+function setScheduleFormOpen(open) {
+  scheduleForm.classList.toggle("hidden", !open);
+  newScheduleButton.classList.toggle("active", open);
+  newScheduleButton.textContent = open ? "-" : "+";
+  newScheduleButton.setAttribute("aria-expanded", String(open));
+  if (open) scheduleName.focus();
+}
+
+function toggleRailItem(item) {
+  const expanded = !item.classList.contains("expanded");
+  const button = item.querySelector('[data-action="toggle"]');
+  item.classList.toggle("expanded", expanded);
+  if (button) {
+    button.textContent = expanded ? "-" : "+";
+    button.setAttribute("aria-expanded", String(expanded));
+    button.setAttribute("title", expanded ? "收起详情" : "展开详情");
+    button.setAttribute("aria-label", expanded ? "收起详情" : "展开详情");
+  }
+}
+
 function todoDueAtValue() {
   if (!todoDueAt.value) return "";
   const date = new Date(todoDueAt.value);
@@ -1417,6 +1629,7 @@ async function createTodoFromForm(event) {
     renderTodos(payload.todos || []);
     todoContent.value = "";
     todoDueAt.value = "";
+    setTodoFormOpen(false);
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -1433,6 +1646,140 @@ async function completeTodo(todoId) {
 async function archiveTodo(todoId) {
   try {
     renderTodos((await postJson("/api/todos/archive", { id: todoId })).todos || []);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function loadSchedules() {
+  try {
+    const payload = await requestJson("/api/schedules");
+    state.schedules = Array.isArray(payload.schedules) ? payload.schedules : [];
+    renderSchedules();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function renderSchedules() {
+  scheduleList.innerHTML = "";
+  if (!state.schedules.length) {
+    const empty = document.createElement("div");
+    empty.className = "todo-empty";
+    empty.textContent = "暂无定时任务";
+    scheduleList.append(empty);
+    return;
+  }
+  for (const schedule of state.schedules) {
+    const item = document.createElement("article");
+    item.className = "schedule-item";
+    item.dataset.id = schedule.id;
+    const content = schedule.content || "";
+    const meta = formatScheduleMeta(schedule);
+    item.innerHTML = `
+      <div class="schedule-item-head">
+        <div class="schedule-main">
+          <strong title="${escapeHtml(schedule.name || "定时任务")}">${escapeHtml(compactRailText(schedule.name || "定时任务", 28))}</strong>
+          <small>${escapeHtml(meta)}</small>
+        </div>
+        <div class="rail-item-actions">
+          <button class="rail-item-toggle" type="button" data-action="toggle" title="展开详情" aria-label="展开详情" aria-expanded="false">+</button>
+          <button class="todo-archive" type="button" data-action="cancel" title="取消定时任务" aria-label="取消定时任务">x</button>
+        </div>
+      </div>
+      <div class="collapsible-item-body">
+        <p>${escapeHtml(content)}</p>
+      </div>
+    `;
+    scheduleList.append(item);
+  }
+}
+
+function formatScheduleMeta(schedule = {}) {
+  const trigger = schedule.trigger || {};
+  const parts = [formatScheduleTrigger(trigger)];
+  if (schedule.nextRunAt) parts.push(`next ${formatDateTime(schedule.nextRunAt)}`);
+  if (schedule.status) parts.push(schedule.status);
+  return parts.filter(Boolean).join(" · ");
+}
+
+function formatScheduleTrigger(trigger = {}) {
+  if (trigger.type === "daily") {
+    return `每日 ${trigger.dailyTime || ""}${trigger.timezone ? ` ${trigger.timezone}` : ""}`.trim();
+  }
+  if (trigger.type === "once") {
+    return `一次性 ${formatDateTime(trigger.runAt || "")}`.trim();
+  }
+  if (trigger.type === "interval") {
+    return `每 ${trigger.intervalSeconds || "-"} 秒`;
+  }
+  return trigger.type || "schedule";
+}
+
+function updateScheduleFields() {
+  const type = scheduleType.value;
+  scheduleDailyFields.classList.toggle("hidden", type !== "daily");
+  scheduleOnceFields.classList.toggle("hidden", type !== "once");
+  scheduleIntervalFields.classList.toggle("hidden", type !== "interval");
+}
+
+function scheduleRunAtValue() {
+  if (!scheduleRunAt.value) return "";
+  const date = new Date(scheduleRunAt.value);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+function scheduleInput() {
+  const type = scheduleType.value;
+  const input = {
+    type,
+    name: scheduleName.value.trim(),
+    content: scheduleContent.value.trim(),
+  };
+  if (type === "daily") {
+    input.dailyTime = scheduleDailyTime.value;
+    input.timezone = scheduleTimezone.value.trim();
+  } else if (type === "once") {
+    input.runAt = scheduleRunAtValue();
+  } else if (type === "interval") {
+    input.intervalSeconds = Number(scheduleIntervalSeconds.value || 0);
+  }
+  return input;
+}
+
+async function createScheduleFromForm(event) {
+  event.preventDefault();
+  if (!state.currentSessionId) {
+    addMessage("error", "请先创建或选择一个会话，再添加定时任务。");
+    return;
+  }
+  const input = scheduleInput();
+  if (!input.content) return;
+  try {
+    const payload = await requestJson("/api/schedules", {
+      method: "POST",
+      body: input,
+    });
+    state.schedules = payload.schedules || [];
+    renderSchedules();
+    scheduleName.value = "";
+    scheduleContent.value = "";
+    scheduleRunAt.value = "";
+    scheduleIntervalSeconds.value = "";
+    setScheduleFormOpen(false);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function cancelSchedule(scheduleId) {
+  if (!scheduleId) return;
+  const schedule = state.schedules.find((item) => item.id === scheduleId);
+  if (!window.confirm(`取消定时任务「${schedule?.name || scheduleId}」？`)) return;
+  try {
+    const payload = await postJson("/api/schedules/cancel", { id: scheduleId });
+    state.schedules = payload.schedules || [];
+    renderSchedules();
   } catch (error) {
     addMessage("error", error.message);
   }
@@ -1545,6 +1892,9 @@ function handleAgentEvent(event) {
   if (type === "ToolApprovalRequested") {
     const block = addApprovalBlock(payload);
     if (payload.approvalId) state.approvals.set(payload.approvalId, block);
+    if (state.approvalMode === "auto") {
+      resolveApproval(payload.approvalId, true, payload.sessionId);
+    }
     return;
   }
   if (type === "ToolApprovalResolved") {
@@ -1684,6 +2034,7 @@ function connectEvents() {
     const data = JSON.parse(event.data);
     addMessage("system", data.run?.message || data.type);
     loadTodos();
+    loadSchedules();
   });
   source.onerror = () => {
     connectionState.textContent = "reconnecting";
@@ -1703,7 +2054,12 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
   addMessage("user", text);
   sendButton.disabled = true;
   try {
+    const hadSession = Boolean(state.currentSessionId);
     await postJson("/api/messages", { sessionId: state.currentSessionId, text });
+    if (!hadSession && state.currentSessionId) {
+      await loadSessions();
+      await loadSchedules();
+    }
   } catch (error) {
     addMessage("error", error.message);
   } finally {
@@ -1745,6 +2101,8 @@ promptEl.addEventListener("keydown", (event) => {
 });
 
 newSessionButton.addEventListener("click", createSession);
+toggleMcpButton.addEventListener("click", () => toggleCapability(mcpCapabilityPanel, toggleMcpButton));
+toggleSkillButton.addEventListener("click", () => toggleCapability(skillCapabilityPanel, toggleSkillButton));
 chatViewButton.addEventListener("click", () => setView("chat"));
 roomViewButton.addEventListener("click", () => setView("room"));
 archiveViewButton.addEventListener("click", () => setView("archive"));
@@ -1759,17 +2117,37 @@ roomAgentForm.addEventListener("submit", saveRoomAgent);
 archiveRoomAgentButton.addEventListener("click", archiveRoomAgent);
 refreshRoomMembersButton.addEventListener("click", () => loadRoomMembers());
 addRoomMemberButton.addEventListener("click", addRoomMember);
+approvalManualButton.addEventListener("click", () => setApprovalMode("manual"));
+approvalAutoButton.addEventListener("click", () => setApprovalMode("auto"));
+newTodoButton.addEventListener("click", () => setTodoFormOpen(todoForm.classList.contains("hidden")));
 refreshTodosButton.addEventListener("click", loadTodos);
 todoForm.addEventListener("submit", createTodoFromForm);
+newScheduleButton.addEventListener("click", () => setScheduleFormOpen(scheduleForm.classList.contains("hidden")));
+refreshSchedulesButton.addEventListener("click", loadSchedules);
+scheduleType.addEventListener("change", updateScheduleFields);
+scheduleForm.addEventListener("submit", createScheduleFromForm);
 
 todoList.addEventListener("click", (event) => {
   const actionTarget = event.target.closest("[data-action]");
   const item = event.target.closest(".todo-item");
   if (!actionTarget || !item) return;
-  if (actionTarget.dataset.action === "complete") {
+  if (actionTarget.dataset.action === "toggle") {
+    toggleRailItem(item);
+  } else if (actionTarget.dataset.action === "complete") {
     completeTodo(item.dataset.id);
   } else if (actionTarget.dataset.action === "archive") {
     archiveTodo(item.dataset.id);
+  }
+});
+
+scheduleList.addEventListener("click", (event) => {
+  const actionTarget = event.target.closest("[data-action]");
+  const item = event.target.closest(".schedule-item");
+  if (!actionTarget || !item) return;
+  if (actionTarget.dataset.action === "toggle") {
+    toggleRailItem(item);
+  } else if (actionTarget.dataset.action === "cancel") {
+    cancelSchedule(item.dataset.id);
   }
 });
 
@@ -1851,8 +2229,14 @@ messagesEl.addEventListener("click", (event) => {
 });
 
 refreshStatus();
+state.approvalMode = window.localStorage.getItem("asterApprovalMode") === "auto" ? "auto" : "manual";
+renderApprovalMode();
 loadSessions();
 loadTodos();
+loadSchedules();
+scheduleTimezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
+updateScheduleFields();
 connectEvents();
 setInterval(refreshStatus, 3000);
 setInterval(loadSessions, 5000);
+setInterval(loadSchedules, 10000);

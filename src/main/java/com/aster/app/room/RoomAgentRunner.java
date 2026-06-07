@@ -77,7 +77,9 @@ public class RoomAgentRunner {
         );
 
         try (ParallelToolExecutor toolExecutor = ParallelToolExecutor.fixedPool(toolRegistry, 4)) {
+            String model = agent.model();
             AgentLoop agentLoop = new AgentLoop(
+                    () -> model,
                     provider,
                     sessionStore,
                     new ContextBuilder(

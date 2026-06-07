@@ -14,19 +14,23 @@ public record Tool(
         String description,
         Map<String, Object> inputSchema,
         ToolSource source,
-        String serverId
+        String serverId,
+        String remoteName
 ) {
     /**
      * 创建本地 Java 工具定义。
      */
     public static Tool local(String name, String title, String description, Map<String, Object> inputSchema) {
-        return new Tool(name, title, description, inputSchema, ToolSource.LOCAL, null);
+        return new Tool(name, title, description, inputSchema, ToolSource.LOCAL, null, null);
     }
 
     /**
-     * 创建来自 MCP 服务端的工具定义，并记录 serverId 方便执行时路由。
+     * 创建来自 MCP 服务端的工具定义。
+     *
+     * <p>LLM 可见名称统一加 {@code mcp_} 前缀，避免和本地工具重名；
+     * remoteName 保留 MCP 服务端的原始工具名，真正 tools/call 时仍用它。</p>
      */
-    public static Tool mcp(String serverId, String name, String title, String description, Map<String, Object> inputSchema) {
-        return new Tool(name, title, description, inputSchema, ToolSource.MCP, serverId);
+    public static Tool mcp(String serverId, String remoteName, String title, String description, Map<String, Object> inputSchema) {
+        return new Tool("mcp_" + remoteName, title, description, inputSchema, ToolSource.MCP, serverId, remoteName);
     }
 }

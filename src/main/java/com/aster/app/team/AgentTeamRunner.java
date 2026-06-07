@@ -20,23 +20,28 @@ public class AgentTeamRunner {
     private static final int PARALLELISM = 5;
 
     private final AgentEventPublisher eventPublisher;
-    private final PlanRunner planRunner;
+    private final TeamTaskExecutor taskExecutor;
 
     public AgentTeamRunner(AgentEventPublisher eventPublisher, TeamTaskExecutor taskExecutor) {
         this.eventPublisher = Objects.requireNonNull(eventPublisher);
-        this.planRunner = new PlanRunner(taskExecutor::execute, PARALLELISM);
+        this.taskExecutor = Objects.requireNonNull(taskExecutor);
     }
 
     /**
      * 运行一次探索 Team。
      */
-    public TeamRunOutput run(String task) {
+    public TeamRunOutput run(String task, String model) {
         String input = requireTask(task);
+        String selectedModel = requireModel(model);
         long start = System.nanoTime();
         ExecutionPlan plan = TeamPlanFactory.explorationPlan(input);
         eventPublisher.publish(new AgentEvent.TeamRunStarted(input, "explore"));
         PlanRunResult result;
         try {
+            PlanRunner planRunner = new PlanRunner(
+                    (teamTask, currentPlan) -> taskExecutor.execute(teamTask, currentPlan, selectedModel),
+                    PARALLELISM
+            );
             result = planRunner.run(plan);
         } catch (Exception e) {
             String error = e.getMessage() == null ? e.toString() : e.getMessage();
@@ -86,6 +91,13 @@ public class AgentTeamRunner {
             throw new IllegalArgumentException("team task is required");
         }
         return task.trim();
+    }
+
+    private String requireModel(String model) {
+        if (model == null || model.isBlank()) {
+            throw new IllegalArgumentException("team model is required");
+        }
+        return model.trim();
     }
 
     private long elapsedMillis(long start) {

@@ -5,7 +5,9 @@ import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.ToolExecutor;
 import com.aster.core.tool.model.ToolResult;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -16,12 +18,42 @@ import java.util.Map;
  */
 public class McpToolExecutor implements ToolExecutor, AutoCloseable {
     private final Map<String, McpClient> clientsByServerId = new HashMap<>();
+    private final List<McpServerStatus> serverStatuses = new ArrayList<>();
+
+    /**
+     * MCP server 的加载状态。
+     *
+     * <p>Web 只展示 server 级别状态，不展示每个 MCP tool，避免右侧栏被工具列表撑爆。</p>
+     */
+    public record McpServerStatus(String serverId, boolean loaded, int toolCount, String errorMessage) {
+    }
 
     /**
      * 注册一个 MCP 客户端，后续按 serverId 找到对应服务端执行工具。
      */
     public void registerClient(McpClient client) {
         clientsByServerId.put(client.serverId(), client);
+    }
+
+    /**
+     * 记录 MCP server 加载成功。
+     */
+    public synchronized void recordLoaded(String serverId, int toolCount) {
+        serverStatuses.add(new McpServerStatus(serverId, true, toolCount, ""));
+    }
+
+    /**
+     * 记录 MCP server 加载失败。
+     */
+    public synchronized void recordFailed(String serverId, String errorMessage) {
+        serverStatuses.add(new McpServerStatus(serverId, false, 0, errorMessage == null ? "" : errorMessage));
+    }
+
+    /**
+     * 返回 MCP server 加载状态快照。
+     */
+    public synchronized List<McpServerStatus> serverStatuses() {
+        return List.copyOf(serverStatuses);
     }
 
     /**

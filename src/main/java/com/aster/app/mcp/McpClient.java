@@ -83,7 +83,7 @@ public class McpClient implements AutoCloseable {
         // 这里做协议形状转换，业务层不需要知道 MCP 细节。
         Map<String, Object> arguments = objectMapper.readValue(call.function().argumentsJson(), MAP_TYPE);
         JsonRpcResponse response = send("tools/call", Map.of(
-                "name", tool.name(),
+                "name", tool.remoteName(),
                 "arguments", arguments
         ));
 

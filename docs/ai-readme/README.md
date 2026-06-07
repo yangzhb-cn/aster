@@ -16,7 +16,7 @@ flowchart LR
 
 - 生成时间：2026-06-04 14:24
 - 生成分支：master
-- 最近同步：2026-06-07，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照、增量 JSONL 补齐、Web context 进度展示和主 Chat 模型切换
+- 最近同步：2026-06-08，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照、增量 JSONL 补齐、Web context 进度展示、主 Chat 模型切换、多 Agent 模型路由、Web 左栏底部 MCP/Skill 状态、Web Schedule 可视化、Web Todo/Schedule 折叠布局、Web 审批模式、Web 空启动规则和 prompt 迁移规则
 
 ## 入口功能矩阵
 
@@ -25,21 +25,22 @@ flowchart LR
 | 普通 Agent 对话 | 已实现 | 已实现 | 已实现 | 三个入口都通过 `AgentRuntime.submit()` 进入同一主链路。 |
 | 流式响应展示 | 已实现 | 已实现 | 部分实现 | TUI/Web 展示 token 流；Telegram 缓存 token，最终一次性发送回答，避免刷屏。 |
 | 工具调用可视化 | 已实现 | 已实现 | 部分实现 | TUI/Web 展示工具状态；Web 合并调用和结果并支持折叠；Telegram 展示工具开始/完成，长内容截断。 |
-| HITL 工具审批 | 已实现 | 已实现 | 已实现 | `/approve [id]`、`/deny [id] [reason]`；Web 使用审批块按钮。 |
-| 主 Chat 模型切换 | 已实现 | 已实现 | 已实现 | `/model [模型名]` 查看/切换；Web 顶部下拉切换当前 session runtime 的模型。 |
+| HITL 工具审批 | 已实现 | 已实现 | 已实现 | `/approve [id]`、`/deny [id] [reason]`；Web 使用审批块按钮，并提供“需要审批 / 默认通过”模式切换。 |
+| 主 Chat 模型切换 | 已实现 | 已实现 | 已实现 | `/model [模型名]` 查看/切换；Web 顶部下拉切换当前 session runtime 的模型。Team 未指定模型时跟随当前 Chat 模型。 |
 | `/stop` 停止 | 已实现 | 已实现 | 已实现 | 停止普通 run、取消审批、取消待执行 Plan；Room 同步回复当前还不是完整可中断流。 |
 | `/steer` 运行中引导 | 已实现 | API 已有，页面未展示 | 未实现 | TUI 有 `/steer` 命令；Web 有 `/api/steer`，当前页面没有入口；Telegram 未接命令。 |
 | follow-up 排队 | 已实现 | 已实现 | 已实现 | 忙碌时普通输入进入 `AgentRunCoordinator` 队列。 |
 | Session CRUD | 部分实现 | 已实现 | 部分实现 | TUI 支持 list/new/use/delete/current；Web 支持列表、新建、切换、重命名、归档、历史读取；Telegram 支持当前 session 和新建。 |
 | 多 session 并行运行 | 未实现 | 已实现 | 已实现 | Web 用 `WebSessionRuntimePool` 保留每个 session 的 `AgentRuntime`，切换会话不打断旧会话；Telegram 每个 chat 也持有独立 runtime。 |
 | Token/Context 状态 | 已实现 | 已实现 | 未实现 | TUI footer 和 Web 右栏展示；Web 额外显示自动压缩状态和上下文使用进度；Telegram 不展示指标面板。 |
-| Todo 便签 | 通过工具可用 | 已实现 | 通过工具可用 | Web 有右侧便签 CRUD；普通 Agent 可用 todo 工具；TUI/IM 没有专门面板。 |
+| MCP/Skill 状态 | 未实现 | 已实现 | 未实现 | Web Chat 左栏底部用 `MCP` / `SKILL` 按钮展开 MCP server loaded/failed 状态和已扫描 Skill 列表。 |
+| Todo 便签 | 通过工具可用 | 已实现 | 通过工具可用 | Web 有右侧便签 CRUD，新建表单和已有条目默认折叠；普通 Agent 可用 todo 工具；TUI/IM 没有专门面板。 |
 | 后台任务通知 | 已实现 | 已实现 | 已实现 | 通过各入口的 `NotificationSink` 展示长期记忆抽取、Todo 扫描等通知。 |
-| 自动化用户消息 schedule | 通过工具可用 | 通过工具可用 | 通过工具可用 | `schedule` 到点后向当前 session 提交 user 消息；不是后台 handler，后续仍走普通 Agent 链路。 |
-| `/team` 固定 DAG 探索 | 已实现 | 已实现 | 已实现 | 三个入口都能触发；Team 子 Agent 工具调用不展示，避免刷屏。 |
+| 自动化用户消息 schedule | 通过工具可用 | 已实现 | 通过工具可用 | Web 右栏可折叠新建每日/一次性/固定间隔 schedule；底层仍是 `schedule` 到点后向当前 session 提交 user 消息，不是后台 handler。 |
+| `/team` 固定 DAG 探索 | 已实现 | 已实现 | 已实现 | 三个入口都能触发；支持 `/team --model deepseek-v4-pro <任务>`；Team 子 Agent 工具调用不展示，避免刷屏。 |
 | `/plan` 动态 DAG | 已实现 | 已实现 | 已实现 | 支持 `/plan` 生成、`/start` 执行、`/plan cancel` 取消。 |
 | Web 多 Agent 聊天室 | 未实现 | 已实现 | 未实现 | 只有 Web 有 Room 页面、房间 CRUD、成员管理、Agent CRUD、`@name`/`@all` 触发。 |
-| Room Agent 配置管理 | 未实现 | 已实现 | 未实现 | Agent 的 name、role、alias、工具白名单、system prompt 在 Web 中维护；加入/移出聊天室由成员关系管理。 |
+| Room Agent 配置管理 | 未实现 | 已实现 | 未实现 | Agent 的 name、role、model、alias、工具白名单、system prompt 在 Web 中维护；加入/移出聊天室由成员关系管理。 |
 | 归档中心 | 未实现 | 已实现 | 未实现 | Web Archive 页面集中恢复、单个物理删除或批量物理删除已归档 session、todo、room、room-agent。 |
 
 ## 快速导航

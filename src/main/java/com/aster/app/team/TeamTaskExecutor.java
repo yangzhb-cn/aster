@@ -23,7 +23,7 @@ public class TeamTaskExecutor {
     /**
      * 执行一个 DAG 节点，并发布成员开始/完成事件。
      */
-    public String execute(PlanTask task, ExecutionPlan plan) throws Exception {
+    public String execute(PlanTask task, ExecutionPlan plan, String model) throws Exception {
         TeamRole role = roleFor(task);
         long start = System.nanoTime();
         eventPublisher.publish(new AgentEvent.TeamMemberStarted(
@@ -32,7 +32,7 @@ public class TeamTaskExecutor {
                 task.description()
         ));
         try {
-            String output = agentFactory.run(role, task.id(), memberPrompt(role, task, plan), eventPublisher);
+            String output = agentFactory.run(role, task.id(), memberPrompt(role, task, plan), model, eventPublisher);
             long elapsedMillis = elapsedMillis(start);
             eventPublisher.publish(new AgentEvent.TeamMemberFinished(
                     task.id(),

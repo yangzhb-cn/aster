@@ -37,6 +37,7 @@ public class PlanTaskExecutor {
     private final HookRegistry hookRegistry;
     private final AgentEventPublisher eventPublisher;
     private final String systemPrompt;
+    private final String model;
 
     public PlanTaskExecutor(
             OpenAiCompatibleProvider provider,
@@ -44,7 +45,8 @@ public class PlanTaskExecutor {
             ToolRegistry toolRegistry,
             HookRegistry hookRegistry,
             AgentEventPublisher eventPublisher,
-            String systemPrompt
+            String systemPrompt,
+            String model
     ) {
         this.provider = Objects.requireNonNull(provider);
         this.streamingChatClient = Objects.requireNonNull(streamingChatClient);
@@ -52,6 +54,7 @@ public class PlanTaskExecutor {
         this.hookRegistry = Objects.requireNonNull(hookRegistry);
         this.eventPublisher = Objects.requireNonNull(eventPublisher);
         this.systemPrompt = Objects.requireNonNull(systemPrompt);
+        this.model = requireText(model, "model");
     }
 
     /**
@@ -92,6 +95,7 @@ public class PlanTaskExecutor {
         );
         try (ParallelToolExecutor parallelToolExecutor = ParallelToolExecutor.fixedPool(toolRegistry, 4)) {
             AgentLoop agentLoop = new AgentLoop(
+                    () -> model,
                     provider,
                     sessionStore,
                     new ContextBuilder(
@@ -177,5 +181,12 @@ public class PlanTaskExecutor {
 
     private long elapsedMillis(long start) {
         return Math.max(0, (System.nanoTime() - start) / 1_000_000);
+    }
+
+    private String requireText(String value, String name) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(name + " is required");
+        }
+        return value.trim();
     }
 }

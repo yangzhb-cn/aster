@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -47,11 +48,32 @@ class ContextWindowSnapshotStoreTest {
         assertTrue(Files.readString(tempDir.resolve("default.main.json")).contains("summary-2"));
     }
 
+    /**
+     * 验证物理删除 session 时可以清掉该 session 的所有上下文快照。
+     */
+    @Test
+    void deletesAllSnapshotsForSession() throws Exception {
+        JsonContextWindowSnapshotStore store = new JsonContextWindowSnapshotStore(new ObjectMapper(), tempDir);
+        store.save(snapshot("target-main", "target", "main", 10));
+        store.save(snapshot("target-dev", "target", "dev", 11));
+        store.save(snapshot("other-main", "other", "main", 12));
+
+        store.deleteSession("target");
+
+        assertFalse(Files.exists(tempDir.resolve("target.main.json")));
+        assertFalse(Files.exists(tempDir.resolve("target.dev.json")));
+        assertTrue(Files.exists(tempDir.resolve("other.main.json")));
+    }
+
     private ContextWindowSnapshot snapshot(String summary, long seq) {
+        return snapshot(summary, "default", "main", seq);
+    }
+
+    private ContextWindowSnapshot snapshot(String summary, String sessionId, String branchId, long seq) {
         return new ContextWindowSnapshot(
                 ContextWindowSnapshot.CURRENT_VERSION,
-                "default",
-                "main",
+                sessionId,
+                branchId,
                 seq,
                 "hash-" + seq,
                 "system-hash",

@@ -17,6 +17,7 @@ public record RoomAgentTemplate(
         String promptPath,
         List<String> mentionAliases,
         List<String> toolAllowlist,
+        String model,
         Boolean enabled
 ) {
     public RoomAgentTemplate {

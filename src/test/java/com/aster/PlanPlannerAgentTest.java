@@ -3,8 +3,13 @@ package com.aster;
 import com.aster.app.plan.PlanPlannerAgent;
 import com.aster.app.plan.model.ExecutionPlan;
 import com.aster.app.plan.model.PlanTaskType;
+import com.aster.llm.StreamingChatClient;
+import com.aster.llm.model.ChatRequest;
+import com.aster.llm.model.ProviderStreamEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
+
+import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -83,5 +88,41 @@ class PlanPlannerAgentTest {
                   ]
                 }
                 """));
+    }
+
+    /**
+     * 验证 Plan planner 使用装配时指定的固定模型。
+     */
+    @Test
+    void createPlanUsesConfiguredModel() throws Exception {
+        CapturingClient client = new CapturingClient("""
+                {
+                  "tasks": [
+                    {"id":"T1","description":"分析需求","type":"ANALYSIS","dependencies":[]}
+                  ]
+                }
+                """);
+        PlanPlannerAgent agent = new PlanPlannerAgent(objectMapper, client, "system", "deepseek-v4-pro");
+
+        ExecutionPlan plan = agent.createPlan("实现模型路由");
+
+        assertEquals("deepseek-v4-pro", client.request.model());
+        assertEquals("实现模型路由", plan.task());
+    }
+
+    private static final class CapturingClient implements StreamingChatClient {
+        private final String text;
+        private ChatRequest request;
+
+        private CapturingClient(String text) {
+            this.text = text;
+        }
+
+        @Override
+        public void stream(ChatRequest request, StreamHandler handler) throws IOException {
+            this.request = request;
+            handler.onEvent(new ProviderStreamEvent.TextDelta(text));
+            handler.onDone();
+        }
     }
 }

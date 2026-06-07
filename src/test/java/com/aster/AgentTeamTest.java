@@ -5,6 +5,7 @@ import com.aster.app.plan.model.ExecutionPlan;
 import com.aster.app.plan.model.PlanTaskStatus;
 import com.aster.app.plan.model.PlanTaskType;
 import com.aster.app.team.TeamPlanFactory;
+import com.aster.app.team.model.TeamRunRequest;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -61,5 +62,19 @@ class AgentTeamTest {
         for (String taskId : TeamPlanFactory.RISK_REVIEWER_IDS) {
             assertTrue(executed.indexOf(taskId) > 0);
         }
+    }
+
+    /**
+     * 验证 Team 命令参数支持按次指定模型。
+     */
+    @Test
+    void parsesTeamRunModelOption() {
+        TeamRunRequest equalsStyle = TeamRunRequest.parse("--model=deepseek-v4-pro 探索运行时");
+        TeamRunRequest spaceStyle = TeamRunRequest.parse("--model deepseek-v4-flash 探索 Web");
+
+        assertEquals("deepseek-v4-pro", equalsStyle.model());
+        assertEquals("探索运行时", equalsStyle.task());
+        assertEquals("deepseek-v4-flash", spaceStyle.model());
+        assertEquals("探索 Web", spaceStyle.task());
     }
 }

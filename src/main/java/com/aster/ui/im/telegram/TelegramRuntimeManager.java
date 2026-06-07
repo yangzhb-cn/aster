@@ -3,6 +3,7 @@ package com.aster.ui.im.telegram;
 import com.aster.app.runtime.AgentRuntime;
 import com.aster.app.runtime.AgentRuntimeFactory;
 import com.aster.app.runtime.WorkspacePaths;
+import com.aster.app.team.model.TeamRunRequest;
 import com.aster.core.session.SessionIndex;
 import com.aster.core.session.model.SessionRecord;
 import com.aster.ui.im.telegram.model.TelegramMessage;
@@ -50,14 +51,16 @@ public class TelegramRuntimeManager implements AutoCloseable {
      * 启动当前 chat 的 Agent Team 探索。
      */
     public synchronized void submitTeam(TelegramMessage message, String task) throws IOException {
-        if (task == null || task.isBlank()) {
-            sender.sendMessage(message.chat().id(), "用法：/team 要探索的问题");
+        TeamRunRequest request = TeamRunRequest.parse(task);
+        if (request.task().isBlank()) {
+            sender.sendMessage(message.chat().id(), "用法：/team [--model 模型名] 要探索的问题");
             return;
         }
         ChatRuntime chatRuntime = runtimeFor(message);
-        chatRuntime.runtime().submitTeam(task);
+        String selectedModel = chatRuntime.runtime().submitTeam(request.task(), request.model());
         sessionIndex.touch(chatRuntime.sessionId());
-        sender.sendMessage(message.chat().id(), "Agent Team 探索已启动：" + task);
+        sender.sendMessage(message.chat().id(), "Agent Team 探索已启动："
+                + request.task() + "\nmodel=" + selectedModel);
     }
 
     /**

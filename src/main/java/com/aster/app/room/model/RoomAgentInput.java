@@ -16,6 +16,7 @@ public record RoomAgentInput(
         String systemPrompt,
         List<String> mentionAliases,
         List<String> toolAllowlist,
+        String model,
         Boolean enabled
 ) {
 }

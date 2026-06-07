@@ -1,5 +1,6 @@
 package com.aster.app.room.model;
 
+import com.aster.llm.DeepSeekModels;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 
@@ -23,6 +24,7 @@ public record RoomAgentProfile(
         String systemPromptPath,
         List<String> mentionAliases,
         List<String> toolAllowlist,
+        String model,
         boolean enabled,
         boolean archived,
         String createdAt,
@@ -31,6 +33,7 @@ public record RoomAgentProfile(
     public RoomAgentProfile {
         mentionAliases = mentionAliases == null ? List.of() : List.copyOf(mentionAliases);
         toolAllowlist = toolAllowlist == null ? List.of() : List.copyOf(toolAllowlist);
+        model = clean(model, DeepSeekModels.V4_FLASH);
     }
 
     /**
@@ -43,6 +46,7 @@ public record RoomAgentProfile(
             String systemPromptPath,
             List<String> aliases,
             List<String> toolAllowlist,
+            String model,
             boolean enabled
     ) {
         String now = Instant.now().toString();
@@ -54,6 +58,7 @@ public record RoomAgentProfile(
                 clean(systemPromptPath, ""),
                 aliases,
                 toolAllowlist,
+                model,
                 enabled,
                 false,
                 now,
@@ -71,6 +76,7 @@ public record RoomAgentProfile(
             String nextSystemPromptPath,
             List<String> nextAliases,
             List<String> nextToolAllowlist,
+            String nextModel,
             boolean nextEnabled
     ) {
         return new RoomAgentProfile(
@@ -81,6 +87,7 @@ public record RoomAgentProfile(
                 clean(nextSystemPromptPath, systemPromptPath),
                 nextAliases,
                 nextToolAllowlist,
+                nextModel,
                 nextEnabled,
                 archived,
                 createdAt,
@@ -100,6 +107,7 @@ public record RoomAgentProfile(
                 systemPromptPath,
                 mentionAliases,
                 toolAllowlist,
+                model,
                 enabled,
                 true,
                 createdAt,
@@ -119,6 +127,7 @@ public record RoomAgentProfile(
                 systemPromptPath,
                 mentionAliases,
                 toolAllowlist,
+                model,
                 enabled,
                 false,
                 createdAt,

@@ -25,6 +25,7 @@
 - 涉及架构、跨模块修改或不熟悉目录时，先读 `docs/ai-readme/generated/`。
 - 涉及业务规则、历史坑点、用户偏好沉淀时，读并更新 `docs/ai-readme/manual/`。
 - 涉及代码改动、架构变化、功能新增、入口能力变化或经验沉淀时，交付前评估是否同步 `docs/ai-readme/`。
+- 涉及 Agent Harness 的设计、实现、踩坑或取舍时，也要评估是否同步 `docs/agent-understanding-blog.md`。
 
 ## 验证规则
 

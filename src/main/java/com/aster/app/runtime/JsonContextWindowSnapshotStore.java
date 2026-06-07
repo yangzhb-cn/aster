@@ -59,6 +59,27 @@ public class JsonContextWindowSnapshotStore implements ContextWindowSnapshotStor
         }
     }
 
+    /**
+     * 删除指定 session 的所有上下文窗口快照。
+     *
+     * <p>物理删除 session 时调用；普通归档不调用，因为归档恢复后仍可复用快照继续上下文窗口。</p>
+     */
+    public void deleteSession(String sessionId) throws IOException {
+        if (!Files.isDirectory(directory)) {
+            return;
+        }
+        String prefix = safe(sessionId) + ".";
+        try (var files = Files.list(directory)) {
+            for (Path file : files
+                    .filter(Files::isRegularFile)
+                    .filter(file -> file.getFileName().toString().startsWith(prefix))
+                    .filter(file -> file.getFileName().toString().endsWith(".json"))
+                    .toList()) {
+                Files.deleteIfExists(file);
+            }
+        }
+    }
+
     private Path fileFor(String sessionId, String branchId) {
         return directory.resolve(safe(sessionId) + "." + safe(branchId) + ".json");
     }

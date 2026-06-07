@@ -42,6 +42,7 @@
 | `src/main/resources/web/assets/app.js` | Web 前端逻辑 |
 | `src/main/resources/web/assets/app.css` | Web 样式 |
 | `workspace/mcp.json` | MCP 配置；运行时本地文件，不提交 |
+| `workspace/skills/*/SKILL.md` | 本地 Skill；运行时扫描 name/description，完整内容由 `load_skill` 读取，不提交 |
 
 ## 关键环境变量
 
@@ -53,7 +54,7 @@
 | `OPENAI_COMPATIBLE_API_KEY` | 覆盖模型 API key |
 | `OPENAI_COMPATIBLE_MODEL` | 覆盖启动模型名；DeepSeek 当前支持运行中切换 `deepseek-v4-flash` / `deepseek-v4-pro` |
 | `ASTER_WEB_PORT` | Web 端口，`aster2web` 默认 8081 |
-| `ASTER_SESSION` | Web 启动 session 名称 |
+| `ASTER_SESSION` | 可选 Web 启动 session 名称；为空时不创建 `default`，已有活跃 session 会恢复，完全空仓库等待用户新建或首条发送 |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot token |
 | `TELEGRAM_ALLOWED_CHAT_IDS` | Telegram chat 白名单，逗号分隔 |
 | `OWNER_ID` | `aster2im` 兼容变量，可转换为 Telegram 白名单 |
@@ -79,6 +80,8 @@ flowchart LR
 - 默认入口：`http://localhost:8081`
 - 默认脚本：`./aster2web`
 - 当前页面包含 Chat、Room、Archive 三个视图；Room 是 Web 独有的多 Agent 聊天室入口。
+- Web 空启动不会自动创建 `default` session 或默认聊天室；没有会话时，点击 `+` 或直接发送第一条消息会创建新会话。
+- Chat 右栏包含审批模式、Todo 和 Schedule 面板；Todo/Schedule 新建表单和已有条目默认折叠，Schedule 面板创建的是当前 session 的自动化用户消息，例如每日整理长期记忆。
 - 如果端口被占用，`aster2web` 会打印占用进程，并提示：
   - `screen -S aster2web -X quit`
   - `ASTER_WEB_PORT=8082 ./aster2web`
@@ -90,7 +93,7 @@ flowchart LR
   - `/session ...`
   - `/steer <message>`
   - `/stop`
-  - `/team <任务>`
+  - `/team [--model 模型名] <任务>`
   - `/plan <任务>`
   - `/start`
   - `/approve [id]`

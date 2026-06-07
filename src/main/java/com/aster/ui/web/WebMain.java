@@ -6,8 +6,8 @@ import com.aster.core.session.SessionCatalog;
 /**
  * Aster Web 入口。
  *
- * <p>默认监听 8080 端口，session 默认使用 default。
- * 可以通过 ASTER_WEB_PORT 和 ASTER_SESSION 环境变量覆盖。</p>
+ * <p>默认监听 8080 端口。未配置 ASTER_SESSION 时，Web 不再自动创建 default session；
+ * 页面没有会话时由用户点击新建，或首次发送消息时自动创建。</p>
  */
 public final class WebMain {
     private WebMain() {
@@ -37,7 +37,7 @@ public final class WebMain {
     private static String readSessionName() {
         String raw = System.getenv("ASTER_SESSION");
         if (raw == null || raw.isBlank()) {
-            return SessionCatalog.DEFAULT_SESSION;
+            return "";
         }
         SessionCatalog.requireValidName(raw.trim());
         return raw.trim();

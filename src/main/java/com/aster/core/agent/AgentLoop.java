@@ -158,6 +158,38 @@ public class AgentLoop {
     }
 
     /**
+     * 创建支持动态模型读取的 AgentLoop，并沿用现有 ContextBuilder 构造上下文窗口。
+     *
+     * <p>Team、Plan Worker、Room Agent 需要在运行时固定或读取不同模型，
+     * 但它们仍然复用原来的 ContextBuilder 配置。</p>
+     */
+    public AgentLoop(
+            Supplier<String> modelSupplier,
+            OpenAiCompatibleProvider provider,
+            SessionStore sessionStore,
+            ContextBuilder contextBuilder,
+            StreamingChatClient streamingChatClient,
+            ToolRegistry toolRegistry,
+            ParallelToolExecutor parallelToolExecutor,
+            HookRegistry hookRegistry,
+            AgentEventBus eventBus,
+            int maxToolRounds
+    ) {
+        this(
+                modelSupplier,
+                provider,
+                sessionStore,
+                new ContextPipeline(sessionStore, contextBuilder),
+                streamingChatClient,
+                toolRegistry,
+                parallelToolExecutor,
+                hookRegistry,
+                eventBus,
+                maxToolRounds
+        );
+    }
+
+    /**
      * 创建支持动态模型读取的 AgentLoop。
      *
      * <p>供应商仍提供 thinking 等能力开关，modelSupplier 只负责返回当前 chat 模型。</p>

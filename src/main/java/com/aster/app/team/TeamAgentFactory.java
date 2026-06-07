@@ -69,7 +69,8 @@ public class TeamAgentFactory {
     /**
      * 执行一个 Team 成员任务。
      */
-    public String run(TeamRole role, String taskId, String prompt, AgentEventPublisher eventPublisher) throws Exception {
+    public String run(TeamRole role, String taskId, String prompt, String model, AgentEventPublisher eventPublisher) throws Exception {
+        String selectedModel = requireModel(model);
         ToolRegistry toolRegistry = readonlyToolRegistry();
         SessionStore sessionStore = new BootstrappedSessionStore(
                 List.of(Message.system(promptSet.systemPrompt(role))),
@@ -77,6 +78,7 @@ public class TeamAgentFactory {
         );
         try (ParallelToolExecutor parallelToolExecutor = ParallelToolExecutor.fixedPool(toolRegistry, 4)) {
             AgentLoop agentLoop = new AgentLoop(
+                    () -> selectedModel,
                     provider,
                     sessionStore,
                     new ContextBuilder(
@@ -93,6 +95,13 @@ public class TeamAgentFactory {
             );
             return agentLoop.run(prompt);
         }
+    }
+
+    private String requireModel(String model) {
+        if (model == null || model.isBlank()) {
+            throw new IllegalArgumentException("team model is required");
+        }
+        return model.trim();
     }
 
     private AgentEventBus teamEventBus(TeamRole role, String taskId, AgentEventPublisher eventPublisher) {

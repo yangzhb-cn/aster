@@ -335,9 +335,9 @@ public class AgentRuntimeFactory {
         PlanModeCoordinator planModeCoordinator = new PlanModeCoordinator(
                 new PlanPlannerAgent(
                         objectMapper,
-                        provider,
                         streamingChatClient,
-                        planPlannerSystemPrompt
+                        planPlannerSystemPrompt,
+                        fixedModelOrDefault(DeepSeekModels.V4_PRO, provider, availableChatModels)
                 ),
                 new PlanTaskExecutor(
                         provider,
@@ -345,7 +345,8 @@ public class AgentRuntimeFactory {
                         toolRegistry,
                         hookRegistry,
                         eventPublisher,
-                        planTaskExecutorSystemPrompt
+                        planTaskExecutorSystemPrompt,
+                        fixedModelOrDefault(DeepSeekModels.V4_FLASH, provider, availableChatModels)
                 ),
                 runCoordinator,
                 eventPublisher,
@@ -392,7 +393,7 @@ public class AgentRuntimeFactory {
                 availableChatModels,
                 sessionName,
                 teamFinalSummaryUserPrompt,
-                skillRepository.listMetadata().size()
+                skillRepository.listMetadata()
         );
     }
 
@@ -419,6 +420,13 @@ public class AgentRuntimeFactory {
             return provider.defaultModel();
         }
         return availableChatModels.getFirst();
+    }
+
+    /**
+     * DeepSeek 下使用固定策略模型；非 DeepSeek 供应商回退到启动模型。
+     */
+    private String fixedModelOrDefault(String model, OpenAiCompatibleProvider provider, List<String> availableChatModels) {
+        return availableChatModels.contains(model) ? model : provider.defaultModel();
     }
 
     /**

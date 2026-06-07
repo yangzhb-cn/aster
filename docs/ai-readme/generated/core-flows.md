@@ -12,7 +12,7 @@
 | P0 | Tool Calling + HITL | `AgentLoop.executeToolCalls()`、`ToolApprovalHook` | 保护 `bash/write/edit`，保持 tool 协议闭环 |
 | P0 | Context 构建和 `<system-reminder>` 注入 | `ContextPipeline.build()`、`SystemReminderInjectHook` | 压缩旧对话、注入时间/记忆/Skill |
 | P0 | 动态 `/plan` | `AgentRuntime.submitPlan()`、`PlanModeCoordinator` | LLM 生成 DAG，用户 `/start` 执行 |
-| P1 | 固定 `/team` | `AgentRuntime.submitTeam()`、`AgentTeamRunner` | 只读并行探索，结果交主 Agent |
+| P1 | 固定 `/team` | `AgentRuntime.submitTeam()`、`AgentTeamRunner` | 只读并行探索，支持按次指定模型，结果交主 Agent |
 | P1 | 后台任务 | `BackgroundTaskScheduler` | reminder、todo_scan、memory_extract |
 | P1 | 自动化用户消息 schedule | `ScheduledUserMessageScheduler` | 到点后向当前 session 提交 user 消息，复用普通 Agent 链路 |
 | P1 | 多入口事件消费 | TUI / Web / Telegram event handlers | 同一 AgentEvent，不同展示策略 |
@@ -162,7 +162,7 @@ sequenceDiagram
 - JSONL session 仍是事实源；`workspace/context-windows/*.json` 是可覆盖缓存，用来保存上一轮压缩进度。
 - 主 runtime 启动时先读取 snapshot；snapshot 元信息有效后，用 `containsEvent(lastSeq,lastHash)` 校验它仍对得上 JSONL。
 - snapshot 有效时直接恢复 `runningSummary + recentTurns`，并用 `loadMessageRecordsAfter(lastSeq)` 只读取和追加新增 JSONL 消息；snapshot 缺失、损坏、prompt/摘要器变化或 seq/hash 对不上时才 full replay 全量重建窗口。
-- 主 Chat 模型切换不让 snapshot 失效；模型是 `AgentRuntime` 的运行态，下一次 LLM 请求才读取新模型。
+- 主 Chat 模型切换不让 snapshot 失效；模型是 `AgentRuntime` 的运行态，下一次 LLM 请求才读取新模型；Team 不指定模型时跟随当前 Chat 模型。
 - 每条消息 append 成功后，`ContextWindowSnapshotSessionStore` 先写 JSONL，再更新 `ContextWindowCache`，最后覆盖保存最新 snapshot。
 - 触发压缩时优先用 `LlmSummarizer` 请求流式 LLM 生成语义摘要；摘要请求不带 tools、不带 thinking，不写 session，失败时回退 `TranscriptSummarizer`。
 - 压缩按 user turn，而不是字符串硬切。
@@ -230,12 +230,14 @@ sequenceDiagram
     UI->>Runtime: /plan task
     Runtime->>Coordinator: submitPlan(task)
     Coordinator->>Planner: createPlan(task)
+    Note over Planner: 使用 deepseek-v4-pro
     Planner-->>Coordinator: ExecutionPlan
     Coordinator-->>UI: PlanProposed(markdown)
     UI->>Runtime: /start
     Runtime->>Coordinator: startPlan()
     Coordinator->>Runner: run(plan)
     Runner->>Task: execute ready tasks
+    Note over Task: 使用 deepseek-v4-flash
     Task-->>Runner: task output
     Runner-->>Coordinator: PlanRunResult
     Coordinator->>Main: submit(finalSummaryPrompt)
@@ -260,6 +262,7 @@ sequenceDiagram
 - `FILE_WRITE` 和 `COMMAND` 节点走 `writeLock` 串行。
 - `PlanModeCoordinator.version` 防止取消或重新计划后的旧异步结果污染状态。
 - Plan 子 Agent 复用主 `ToolRegistry` 和 `HookRegistry`，所以写操作仍走 HITL。
+- Plan planner 固定使用 `deepseek-v4-pro`，worker 固定使用 `deepseek-v4-flash`；最终整理回到当前主 Chat runtime。
 
 ## 流程 5：固定 `/team`
 
@@ -274,13 +277,13 @@ sequenceDiagram
     participant Agent as TeamAgentFactory
     participant Main as AgentRunCoordinator
 
-    UI->>Runtime: /team task
-    Runtime->>Team: run(task)
+    UI->>Runtime: /team [--model m] task
+    Runtime->>Team: run(task, model)
     Team->>Factory: explorationPlan(task)
     Factory-->>Team: fixed ExecutionPlan
     Team->>Runner: run(plan)
     Runner->>Task: execute T1 then T2-T6
-    Task->>Agent: run(role, prompt)
+    Task->>Agent: run(role, prompt, model)
     Agent-->>Task: member output
     Team-->>Runtime: TeamRunOutput
     Runtime->>Main: submit(teamFinalSummaryPrompt)
@@ -300,6 +303,7 @@ sequenceDiagram
 ### 关键分支
 
 - Team 是固定 DAG：T1 planner，T2/T3/T4 code researcher，T5/T6 risk reviewer。
+- Team 启动时会固定本次运行模型；未传 `--model` 时使用当前 Chat 模型，传入后所有成员使用同一个指定模型。
 - Team 子 Agent 只注册 `read`、`ls`、`glob`、`grep`、`web_fetch`、`web_search`。
 - Team 使用空 `HookRegistry`，不注册写工具、bash、todo、background_task、schedule 或 subagent。
 - Team 子 Agent 工具事件不转发 UI，只转发成员 token，避免 read/grep 刷屏。
@@ -346,6 +350,7 @@ sequenceDiagram
 
 ```mermaid
 sequenceDiagram
+    participant Web as Web Schedule Panel
     participant Tool as schedule tool
     participant Manager as ScheduledUserMessageManager
     participant Store as schedules.json
@@ -353,6 +358,7 @@ sequenceDiagram
     participant Runtime as AgentRunCoordinator
     participant Loop as AgentLoop
 
+    Web->>Manager: create/list/cancel
     Tool->>Manager: create/list/cancel
     Manager->>Store: write schedule
     Manager->>Scheduler: reschedule()
@@ -366,15 +372,18 @@ sequenceDiagram
 ### 调用链
 
 1. `app/tool/schedule/ScheduleTool`
-2. `app/schedule/ScheduledUserMessageManager`
-3. `app/schedule/JsonScheduledUserMessageStore`
-4. `app/schedule/ScheduledUserMessageScheduler`
-5. `app/runtime/AgentRunCoordinator.submit`
-6. `core/agent/AgentLoop.run`
+2. `ui/web/WebServer.handleSchedules`
+3. `app/runtime/AgentRuntime`
+4. `app/schedule/ScheduledUserMessageManager`
+5. `app/schedule/JsonScheduledUserMessageStore`
+6. `app/schedule/ScheduledUserMessageScheduler`
+7. `app/runtime/AgentRunCoordinator.submit`
+8. `core/agent/AgentLoop.run`
 
 ### 关键分支
 
 - `schedule` 管理的是“到点提交 user 消息”，不是后台 handler。
+- Web 右栏可视化面板和 `schedule` 工具复用同一个 manager/store，不维护第二份状态。
 - 到点后照常走普通 Agent 链路，所以仍能使用工具、HITL、Session、Event 和上下文注入。
 - 一次性 `once/delay` 执行后标记 completed；`interval/daily` 执行后计算下一次 `nextRunAt`。
 - 派发失败会把 schedule 标记为 failed，避免已到期任务反复立即触发。

@@ -7,6 +7,7 @@
       "promptPath": "/prompts/room/templates/product-manager.md",
       "mentionAliases": ["产品经理", "产品", "pm", "product"],
       "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "model": "deepseek-v4-flash",
       "enabled": true
     },
     {
@@ -16,6 +17,7 @@
       "promptPath": "/prompts/room/templates/frontend.md",
       "mentionAliases": ["前端", "fe", "frontend"],
       "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "model": "deepseek-v4-flash",
       "enabled": true
     },
     {
@@ -25,6 +27,7 @@
       "promptPath": "/prompts/room/templates/backend.md",
       "mentionAliases": ["后端", "be", "backend"],
       "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "model": "deepseek-v4-flash",
       "enabled": true
     },
     {
@@ -34,6 +37,7 @@
       "promptPath": "/prompts/room/templates/tester.md",
       "mentionAliases": ["测试", "qa", "tester", "test"],
       "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "model": "deepseek-v4-flash",
       "enabled": true
     },
     {
@@ -43,6 +47,7 @@
       "promptPath": "/prompts/room/templates/reviewer.md",
       "mentionAliases": ["评审", "review", "reviewer", "code-review"],
       "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "model": "deepseek-v4-flash",
       "enabled": true
     },
     {
@@ -52,6 +57,7 @@
       "promptPath": "/prompts/room/templates/architect.md",
       "mentionAliases": ["架构师", "架构", "architect", "arch"],
       "toolAllowlist": ["read", "ls", "glob", "grep", "web_fetch", "web_search", "load_skill"],
+      "model": "deepseek-v4-flash",
       "enabled": true
     }
   ]

@@ -24,7 +24,6 @@
           <select id="modelSelect" class="model-select" aria-label="切换 Chat 模型">
             <option>model</option>
           </select>
-          <span id="sessionName">session</span>
         </div>
         <div class="top-actions">
           <button id="stopButton" class="ghost-button danger" type="button">Stop</button>
@@ -38,6 +37,20 @@
             <button id="newSessionButton" class="icon-button" type="button" title="新建会话" aria-label="新建会话">+</button>
           </div>
           <div id="sessionList" class="session-list"></div>
+          <div class="capability-dock">
+            <div id="mcpCapabilityPanel" class="capability-panel hidden">
+              <div class="capability-title">MCP</div>
+              <div id="mcpServerList" class="mcp-list"></div>
+            </div>
+            <div id="skillCapabilityPanel" class="capability-panel hidden">
+              <div class="capability-title">SKILL</div>
+              <div id="skillList" class="mcp-list"></div>
+            </div>
+            <div class="capability-actions">
+              <button id="toggleMcpButton" class="capability-toggle" type="button" title="MCP 状态" aria-label="MCP 状态">MCP</button>
+              <button id="toggleSkillButton" class="capability-toggle" type="button" title="Skill 列表" aria-label="Skill 列表">SKILL</button>
+            </div>
+          </div>
         </section>
         <section id="roomLeftPanel" class="rail-section room-panel hidden">
           <div class="session-head">
@@ -108,12 +121,22 @@
               </div>
             </div>
           </section>
+          <section class="rail-section approval-control-section">
+            <span class="eyebrow">APPROVAL</span>
+            <div class="approval-mode-switch" role="group" aria-label="工具审批模式">
+              <button id="approvalManualButton" class="approval-mode-button active" type="button">需要审批</button>
+              <button id="approvalAutoButton" class="approval-mode-button" type="button">默认通过</button>
+            </div>
+          </section>
           <section class="rail-section todo-section">
             <div class="todo-head">
               <span class="eyebrow">TODO</span>
-              <button id="refreshTodosButton" class="icon-button" type="button" title="刷新待办" aria-label="刷新待办">R</button>
+              <div class="rail-head-actions">
+                <button id="newTodoButton" class="icon-button" type="button" title="新建待办" aria-label="新建待办" aria-expanded="false">+</button>
+                <button id="refreshTodosButton" class="icon-button" type="button" title="刷新待办" aria-label="刷新待办">↻</button>
+              </div>
             </div>
-            <form id="todoForm" class="todo-form">
+            <form id="todoForm" class="todo-form hidden">
               <label class="sr-only" for="todoContent">待办内容</label>
               <textarea id="todoContent" rows="3" placeholder="写一个代办"></textarea>
               <label class="sr-only" for="todoDueAt">到期时间</label>
@@ -121,6 +144,43 @@
               <button id="addTodoButton" type="submit">添加</button>
             </form>
             <div id="todoList" class="todo-list"></div>
+          </section>
+          <section class="rail-section schedule-section">
+            <div class="todo-head">
+              <span class="eyebrow">SCHEDULE</span>
+              <div class="rail-head-actions">
+                <button id="newScheduleButton" class="icon-button" type="button" title="新建定时任务" aria-label="新建定时任务" aria-expanded="false">+</button>
+                <button id="refreshSchedulesButton" class="icon-button" type="button" title="刷新定时任务" aria-label="刷新定时任务">↻</button>
+              </div>
+            </div>
+            <form id="scheduleForm" class="schedule-form hidden">
+              <label class="sr-only" for="scheduleName">任务名称</label>
+              <input id="scheduleName" type="text" placeholder="每日整理长期记忆" />
+              <label class="sr-only" for="scheduleContent">触发后发送给 Agent 的消息</label>
+              <textarea id="scheduleContent" rows="4" placeholder="请整理长期记忆，抽取最近对话里的稳定偏好、项目规则和踩坑经验。"></textarea>
+              <label class="sr-only" for="scheduleType">触发方式</label>
+              <select id="scheduleType">
+                <option value="daily">每日</option>
+                <option value="once">一次性</option>
+                <option value="interval">固定间隔</option>
+              </select>
+              <div id="scheduleDailyFields" class="schedule-fields">
+                <label class="sr-only" for="scheduleDailyTime">每日时间</label>
+                <input id="scheduleDailyTime" type="time" value="09:00" />
+                <label class="sr-only" for="scheduleTimezone">时区</label>
+                <input id="scheduleTimezone" type="text" placeholder="Asia/Shanghai" />
+              </div>
+              <div id="scheduleOnceFields" class="schedule-fields hidden">
+                <label class="sr-only" for="scheduleRunAt">执行时间</label>
+                <input id="scheduleRunAt" type="datetime-local" />
+              </div>
+              <div id="scheduleIntervalFields" class="schedule-fields hidden">
+                <label class="sr-only" for="scheduleIntervalSeconds">间隔秒数</label>
+                <input id="scheduleIntervalSeconds" type="number" min="1" step="1" placeholder="间隔秒数，如 3600" />
+              </div>
+              <button id="addScheduleButton" type="submit">添加定时任务</button>
+            </form>
+            <div id="scheduleList" class="schedule-list"></div>
           </section>
         </div>
         <div id="roomRightPanel" class="hidden">
@@ -161,6 +221,10 @@
                 <label>
                   <span>角色</span>
                   <input id="roomAgentRole" type="text" placeholder="一句话描述角色" />
+                </label>
+                <label>
+                  <span>模型</span>
+                  <select id="roomAgentModel"></select>
                 </label>
                 <label>
                   <span>别名</span>

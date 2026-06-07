@@ -19,11 +19,14 @@ import com.aster.app.room.model.RoomMemberView;
 import com.aster.app.room.model.RoomMembership;
 import com.aster.app.room.model.RoomSendResult;
 import com.aster.app.schedule.ScheduledUserMessageManager;
+import com.aster.app.schedule.model.ScheduledUserMessage;
+import com.aster.app.skill.model.SkillMetadata;
 import com.aster.app.team.AgentTeamRunner;
 import com.aster.app.team.model.TeamRunOutput;
 import com.aster.core.event.model.AgentEvent;
 import com.aster.llm.model.OpenAiCompatibleProvider;
 import com.aster.app.mcp.McpToolExecutor;
+import com.aster.app.mcp.McpToolExecutor.McpServerStatus;
 import com.aster.core.tool.ParallelToolExecutor;
 
 import java.io.IOException;
@@ -63,7 +66,7 @@ public class AgentRuntime implements AutoCloseable {
     private final List<String> availableChatModels;
     private final String sessionName;
     private final String teamFinalSummaryUserPrompt;
-    private final int skillCount;
+    private final List<SkillMetadata> skills;
     private final ExecutorService teamExecutor = Executors.newSingleThreadExecutor();
     private final Object teamLock = new Object();
 
@@ -93,7 +96,7 @@ public class AgentRuntime implements AutoCloseable {
             List<String> availableChatModels,
             String sessionName,
             String teamFinalSummaryUserPrompt,
-            int skillCount
+            List<SkillMetadata> skills
     ) {
         this.agentLoop = Objects.requireNonNull(agentLoop);
         this.runCoordinator = Objects.requireNonNull(runCoordinator);
@@ -117,7 +120,7 @@ public class AgentRuntime implements AutoCloseable {
         this.availableChatModels = List.copyOf(Objects.requireNonNull(availableChatModels));
         this.sessionName = Objects.requireNonNull(sessionName);
         this.teamFinalSummaryUserPrompt = Objects.requireNonNull(teamFinalSummaryUserPrompt);
-        this.skillCount = skillCount;
+        this.skills = List.copyOf(Objects.requireNonNull(skills));
     }
 
     /**
@@ -146,8 +149,18 @@ public class AgentRuntime implements AutoCloseable {
     /**
      * 启动一次固定 DAG 的 Agent Team 探索。
      */
-    public void submitTeam(String task) {
+    public String submitTeam(String task) {
+        return submitTeam(task, chatModel());
+    }
+
+    /**
+     * 使用指定模型启动一次固定 DAG 的 Agent Team 探索。
+     */
+    public String submitTeam(String task, String model) {
         String input = requireText(task, "task");
+        String selectedModel = model == null || model.isBlank()
+                ? chatModel()
+                : requireAvailableChatModel(model);
         synchronized (teamLock) {
             if (teamBusy) {
                 throw new IllegalStateException("Agent Team 正在运行。");
@@ -159,8 +172,9 @@ public class AgentRuntime implements AutoCloseable {
                 throw new IllegalStateException("Agent 正在运行，结束后再启动 /team。");
             }
             teamBusy = true;
-            currentTeam = teamExecutor.submit(() -> runTeam(input));
+            currentTeam = teamExecutor.submit(() -> runTeam(input, selectedModel));
         }
+        return selectedModel;
     }
 
     /**
@@ -272,6 +286,41 @@ public class AgentRuntime implements AutoCloseable {
     }
 
     /**
+     * 列出当前 session 下仍然启用的自动化用户消息。
+     */
+    public List<ScheduledUserMessage> listSchedules() throws IOException {
+        return scheduledUserMessageManager.listActive();
+    }
+
+    /**
+     * 创建每天固定时间触发的自动化用户消息。
+     */
+    public ScheduledUserMessage createDailySchedule(String name, String content, String dailyTime, String timezone) throws IOException {
+        return scheduledUserMessageManager.createDaily(name, content, dailyTime, timezone);
+    }
+
+    /**
+     * 创建指定时间触发一次的自动化用户消息。
+     */
+    public ScheduledUserMessage createOnceSchedule(String name, String content, String runAt) throws IOException {
+        return scheduledUserMessageManager.createOnce(name, content, runAt);
+    }
+
+    /**
+     * 创建固定间隔重复触发的自动化用户消息。
+     */
+    public ScheduledUserMessage createIntervalSchedule(String name, String content, long intervalSeconds) throws IOException {
+        return scheduledUserMessageManager.createInterval(name, content, intervalSeconds);
+    }
+
+    /**
+     * 取消当前 session 下的自动化用户消息。
+     */
+    public ScheduledUserMessage cancelSchedule(String scheduleId) throws IOException {
+        return scheduledUserMessageManager.cancel(scheduleId);
+    }
+
+    /**
      * 当前模型供应商信息。
      */
     public OpenAiCompatibleProvider provider() {
@@ -281,7 +330,8 @@ public class AgentRuntime implements AutoCloseable {
     /**
      * 当前普通 Chat runtime 使用的模型。
      *
-     * <p>它只影响后续主 AgentLoop 请求；摘要、记忆、Plan、Team、Room 仍使用各自装配时的模型。</p>
+     * <p>它影响后续主 AgentLoop 请求；Team 不指定模型时会以它作为本次运行模型。
+     * 摘要、记忆、Plan 和 Room 仍使用各自的模型策略。</p>
      */
     public String chatModel() {
         return chatModel.get();
@@ -300,11 +350,16 @@ public class AgentRuntime implements AutoCloseable {
      * <p>已经发出的 SSE 请求不会被中断；下一次 LLM 请求会读取新模型。</p>
      */
     public String switchChatModel(String model) {
+        String normalized = requireAvailableChatModel(model);
+        chatModel.set(normalized);
+        return normalized;
+    }
+
+    private String requireAvailableChatModel(String model) {
         String normalized = Objects.requireNonNull(model, "model").trim();
         if (!availableChatModels.contains(normalized)) {
             throw new IllegalArgumentException("不支持的模型：" + normalized + "，可选：" + String.join(", ", availableChatModels));
         }
-        chatModel.set(normalized);
         return normalized;
     }
 
@@ -312,7 +367,21 @@ public class AgentRuntime implements AutoCloseable {
      * 启动时扫描到的 Skill 数量。
      */
     public int skillCount() {
-        return skillCount;
+        return skills.size();
+    }
+
+    /**
+     * 启动时扫描到的 Skill 元数据。
+     */
+    public List<SkillMetadata> skillMetadata() {
+        return skills;
+    }
+
+    /**
+     * 当前 runtime 的 MCP server 加载状态。
+     */
+    public List<McpServerStatus> mcpServerStatuses() {
+        return mcpToolExecutor.serverStatuses();
     }
 
     /**
@@ -559,11 +628,11 @@ public class AgentRuntime implements AutoCloseable {
         mcpToolExecutor.close();
     }
 
-    private void runTeam(String task) {
+    private void runTeam(String task, String teamModel) {
         eventPublisher.beginRun();
         TeamRunOutput output = null;
         try {
-            output = agentTeamRunner.run(task);
+            output = agentTeamRunner.run(task, teamModel);
         } finally {
             synchronized (teamLock) {
                 teamBusy = false;

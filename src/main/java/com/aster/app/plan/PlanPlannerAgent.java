@@ -6,7 +6,6 @@ import com.aster.app.plan.model.PlanTaskType;
 import com.aster.llm.StreamingChatClient;
 import com.aster.llm.model.ChatRequest;
 import com.aster.llm.model.Message;
-import com.aster.llm.model.OpenAiCompatibleProvider;
 import com.aster.llm.model.ProviderStreamEvent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -31,20 +30,20 @@ public class PlanPlannerAgent {
     private static final int MAX_TASKS = 12;
 
     private final ObjectMapper objectMapper;
-    private final OpenAiCompatibleProvider provider;
     private final StreamingChatClient streamingChatClient;
     private final String systemPrompt;
+    private final String model;
 
     public PlanPlannerAgent(
             ObjectMapper objectMapper,
-            OpenAiCompatibleProvider provider,
             StreamingChatClient streamingChatClient,
-            String systemPrompt
+            String systemPrompt,
+            String model
     ) {
         this.objectMapper = Objects.requireNonNull(objectMapper);
-        this.provider = Objects.requireNonNull(provider);
         this.streamingChatClient = Objects.requireNonNull(streamingChatClient);
         this.systemPrompt = Objects.requireNonNull(systemPrompt);
+        this.model = requireText(model, "model");
     }
 
     /**
@@ -54,7 +53,7 @@ public class PlanPlannerAgent {
         String input = requireText(task, "task");
         StringBuilder response = new StringBuilder();
         ChatRequest request = ChatRequest.streaming(
-                provider.defaultModel(),
+                model,
                 List.of(Message.system(systemPrompt), Message.user(input)),
                 List.of(),
                 null,

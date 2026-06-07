@@ -331,6 +331,58 @@ button:disabled {
   color: var(--accent-strong);
 }
 
+.capability-panel {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 253, 248, .62);
+}
+
+.capability-title {
+  color: var(--accent-strong);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.sessions-section {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.capability-dock {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.capability-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.capability-toggle {
+  min-height: 34px;
+  padding: 0 10px;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: .02em;
+}
+
+.capability-toggle.active {
+  color: var(--accent-strong);
+  border-color: #a8e3db;
+  background: var(--primary-weak);
+}
+
 .soft-button,
 .primary-action,
 .danger-action {
@@ -503,6 +555,8 @@ input {
 
 input[type="text"],
 input[type="datetime-local"],
+input[type="number"],
+input[type="time"],
 select {
   width: 100%;
   border: 1px solid var(--line);
@@ -515,6 +569,8 @@ select {
 
 input[type="text"]:focus,
 input[type="datetime-local"]:focus,
+input[type="number"]:focus,
+input[type="time"]:focus,
 select:focus {
   border-color: var(--accent);
 }
@@ -529,17 +585,19 @@ textarea:focus {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
+  --chat-content-width: min(920px, calc(100% - 56px));
   background: linear-gradient(180deg, rgba(255, 253, 248, .82), rgba(248, 250, 247, .94));
 }
 
 .chat-surface {
   min-height: 0;
   overflow: auto;
-  padding: 22px 28px 134px;
+  padding: 22px 28px 18px;
 }
 
 .messages {
-  max-width: 920px;
+  width: var(--chat-content-width);
+  max-width: 100%;
   margin: 0 auto;
   display: grid;
   gap: 22px;
@@ -1016,12 +1074,10 @@ th {
 }
 
 .composer {
-  position: absolute;
-  left: 50%;
-  bottom: 18px;
-  transform: translateX(-50%);
+  position: relative;
+  justify-self: center;
   z-index: 4;
-  width: min(920px, calc(100% - 48px));
+  width: var(--chat-content-width);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -1030,6 +1086,7 @@ th {
   background: rgba(255, 253, 248, .98);
   backdrop-filter: blur(12px);
   box-shadow: 0 16px 42px rgba(20, 33, 31, .10);
+  margin: 0 0 18px;
   padding: 9px 10px 9px 15px;
   transition: border-color .16s ease, box-shadow .16s ease;
 }
@@ -1171,7 +1228,60 @@ th {
   background: var(--rail);
 }
 
-.todo-section {
+.mcp-list {
+  display: grid;
+  gap: 8px;
+}
+
+.mcp-empty {
+  color: var(--faint);
+  font-size: 13px;
+}
+
+.mcp-row {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 9px 10px;
+}
+
+.mcp-row.loaded {
+  border-left-color: var(--accent);
+}
+
+.mcp-row.failed {
+  border-color: #f0b8b1;
+  border-left-color: var(--danger);
+  background: #fff5f4;
+}
+
+.mcp-row strong {
+  min-width: 0;
+  color: var(--accent-strong);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mcp-row small {
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.mcp-row.failed small {
+  color: var(--danger);
+}
+
+.todo-section,
+.schedule-section {
   margin-bottom: 0;
 }
 
@@ -1181,13 +1291,63 @@ th {
   justify-content: space-between;
 }
 
-.todo-form {
+.rail-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.icon-button.active {
+  color: #fffdf8;
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.approval-control-section {
+  gap: 10px;
+}
+
+.approval-mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 253, 248, .58);
+}
+
+.approval-mode-button {
+  min-height: 30px;
+  padding: 0 8px;
+  border-color: transparent;
+  border-radius: 8px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 12px;
+}
+
+.approval-mode-button.active {
+  color: var(--accent-strong);
+  border-color: #a8e3db;
+  background: var(--primary-weak);
+}
+
+.todo-form,
+.schedule-form {
   display: grid;
   gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(255, 253, 248, .68);
 }
 
 .todo-form textarea,
-.todo-form input {
+.todo-form input,
+.schedule-form textarea,
+.schedule-form input,
+.schedule-form select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1197,17 +1357,32 @@ th {
   outline: none;
 }
 
-.todo-form textarea {
+.todo-form textarea,
+.schedule-form textarea {
   min-height: 92px;
   resize: vertical;
 }
 
 .todo-form textarea:focus,
-.todo-form input:focus {
+.todo-form input:focus,
+.schedule-form textarea:focus,
+.schedule-form input:focus,
+.schedule-form select:focus {
   border-color: var(--accent);
 }
 
-.todo-list {
+.schedule-form textarea {
+  min-height: 112px;
+}
+
+.schedule-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.todo-list,
+.schedule-list {
   display: grid;
   gap: 8px;
 }
@@ -1218,14 +1393,92 @@ th {
 }
 
 .todo-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: start;
+  display: block;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
   padding: 10px;
+}
+
+.schedule-item {
+  min-width: 0;
+  display: block;
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 10px;
+}
+
+.todo-item-main,
+.schedule-item-head {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.schedule-main {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.schedule-main strong,
+.schedule-main small,
+.schedule-main p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.schedule-main strong {
+  color: var(--accent-strong);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.schedule-main small {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.schedule-main p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.collapsible-item-body {
+  display: none;
+  gap: 5px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.todo-item.expanded .collapsible-item-body,
+.schedule-item.expanded .collapsible-item-body {
+  display: grid;
+}
+
+.collapsible-item-body p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.collapsible-item-body small {
+  color: var(--faint);
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .todo-item.completed {
@@ -1250,6 +1503,8 @@ th {
 .todo-check small {
   display: block;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   overflow-wrap: anywhere;
 }
 
@@ -1277,6 +1532,22 @@ th {
   padding: 0;
   border-radius: 7px;
   color: var(--danger);
+}
+
+.rail-item-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rail-item-toggle {
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border-radius: 7px;
+  color: var(--accent-strong);
+  border-color: #b9d7cf;
+  background: rgba(255, 253, 248, .72);
 }
 
 .room-agent-form {
@@ -1462,10 +1733,11 @@ th {
 
   .chat-pane {
     grid-column: 1;
+    --chat-content-width: calc(100% - 32px);
   }
 
   .chat-surface {
-    padding: 16px 16px 124px;
+    padding: 16px 16px 14px;
   }
 
   .message.user .message-body {
@@ -1473,11 +1745,8 @@ th {
   }
 
   .composer {
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
-    width: auto;
-    transform: none;
+    width: var(--chat-content-width);
+    margin-bottom: 12px;
     padding: 9px 10px 9px 13px;
   }
 }

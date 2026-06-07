@@ -66,11 +66,12 @@ class LocalMcpServerTest {
             List<Tool> tools = client.listTools();
             ToolResult result = client.callTool(
                     tools.getFirst(),
-                    ToolCall.function("call_local", "echo", "{\"text\":\"hello\"}")
+                    ToolCall.function("call_local", "mcp_echo", "{\"text\":\"hello\"}")
             );
 
             assertEquals(1, tools.size());
-            assertEquals("echo", tools.getFirst().name());
+            assertEquals("mcp_echo", tools.getFirst().name());
+            assertEquals("echo", tools.getFirst().remoteName());
             assertFalse(result.error());
             assertEquals("call_local", result.toolCallId());
             assertEquals("local:hello", result.renderText());

@@ -43,6 +43,7 @@ public class RoomAgentTemplateSeeder {
                     loadTextResource(template.promptPath()),
                     template.mentionAliases(),
                     template.toolAllowlist(),
+                    template.model(),
                     template.enabled() == null || template.enabled()
             ));
         }

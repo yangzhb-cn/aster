@@ -67,15 +67,17 @@ flowchart TD
 | 决策 | 当前实现 | 原因 |
 | --- | --- | --- |
 | 只保留流式 LLM 主路径 | `StreamingChatClient` + SSE parser | TUI/Web/Telegram 都消费流式事件，避免维护流式和非流式两套路径 |
-| 主 Chat 模型是 runtime 状态 | `AgentRuntime.chatModel()` + `AgentLoop` model supplier | DeepSeek `deepseek-v4-flash` / `deepseek-v4-pro` 可按 session 切换；切换只影响后续主 Chat LLM 请求 |
+| 模型路由按生命周期拆分 | `AgentRuntime.chatModel()`、`TeamRunRequest`、`RoomAgentProfile.model`、Plan 固定模型 | Chat 按 session 切换；Team 单次运行快照；Room Agent 按配置；Plan planner=pro、worker=flash |
 | Context 压缩使用运行态窗口 | `ContextWindowCache` + `ContextPipeline` | 请求上下文只保留旧摘要和最近完整 turn，避免每轮请求全量 replay |
 | Context 快照恢复压缩进度 | `JsonContextWindowSnapshotStore` + `ContextWindowSnapshotSessionStore` | 快照保存到 `workspace/context-windows/*.json`；启动时先读快照，校验版本、session、prompt hash、summarizer、last seq/hash，有效则只用 `loadMessageRecordsAfter(lastSeq)` 补齐新增消息 |
 | Context 摘要优先使用 LLM | `LlmSummarizer` + `TranscriptSummarizer` | 压缩时走无工具、无 thinking 的流式 LLM 语义摘要；失败或空摘要时回退确定性转写摘要 |
 | 可选能力走 Hook / Extension | `HookRegistry`、`RuntimeExtensionRegistry` | 避免 `AgentLoop` 堆业务 if-else |
-| Tool 统一抽象 | `ToolRegistry`、`ToolHandler`、`ToolResult` | 本地工具、MCP 工具、扩展工具统一给 LLM 暴露 |
+| Tool 统一抽象 | `ToolRegistry`、`ToolHandler`、`ToolResult` | 本地工具、MCP 工具、扩展工具统一给 LLM 暴露；MCP 工具可见名加 `mcp_` 前缀，远端调用保留原名 |
 | 高影响工具走 HITL | `ToolApprovalHook` 审批 `bash/write/edit` | 工具执行前可见、可拒绝，拒绝仍保持 tool_result 协议闭环 |
 | Session 保存原始历史 | `JsonlSessionStore` | JSONL 是事实源；压缩摘要和快照只影响请求上下文，不污染可审计历史 |
 | Web 普通 session 可并行运行 | `WebSessionRuntimePool` | 每个 session 保留独立 `AgentRuntime`，切换会话不关闭旧 runtime；SSE 事件按 `sessionName` 分流 |
+| Web 能力状态左栏折叠展示 | `/api/status` + `mcpServers` / `skills` | Chat 左栏底部用 `MCP` / `SKILL` 按钮展开 MCP server 状态和 Skill 列表，避免右栏信息过载 |
+| Web 空启动不创建默认数据 | `WebServer.initialSession` + 首次发送创建 session | 不自动生成 `default` session 或默认聊天室；无会话时展示引导，首条消息或点击 `+` 才创建 |
 | Background 与 Schedule 分离 | `BackgroundTaskManager` + `ScheduledUserMessageManager` | 后台任务处理系统维护和简单提醒；schedule 到点提交 user 消息，让 Agent 按普通链路执行 |
 | Plan / Team 共用 DAG runner | `PlanRunner` | 复用依赖调度、并发执行、失败停止等逻辑 |
 | Room 共享消息与私有上下文分离 | `RoomHub` + `RoomAgentSessionFactory` + `RoomContextInjectHook` | 后加入 Agent 能看到房间上下文，同时每个 Agent 保持独立历史 |
@@ -114,21 +116,23 @@ flowchart LR
     Offload --> Session["SessionStore role=tool"]
 ```
 
+MCP 工具有两层名称：给 LLM 看的 `Tool.name` 使用 `mcp_` 前缀避免和本地工具冲突；真正发给 MCP server 的 `tools/call.name` 使用 `Tool.remoteName`。MCP server 加载状态由 `McpToolExecutor` 记录，Web 只展示 server 级 loaded/failed 状态，不逐个展示工具清单。
+
 ## Plan / Team 架构
 
 ```mermaid
 flowchart TD
-    PlanCmd["/plan <task>"] --> Planner["PlanPlannerAgent\nLLM 生成 JSON DAG"]
+    PlanCmd["/plan <task>"] --> Planner["PlanPlannerAgent\npro 生成 JSON DAG"]
     Planner --> Validate["Java 校验 id/type/deps/cycle"]
     Validate --> Pending["PlanModeCoordinator pendingPlan"]
     Pending --> Start["/start"]
     Start --> Runner["PlanRunner"]
-    Runner --> PlanTask["PlanTaskExecutor\n复用主 ToolRegistry + HookRegistry"]
+    Runner --> PlanTask["PlanTaskExecutor\nflash 执行节点\n复用主 ToolRegistry + HookRegistry"]
     PlanTask --> MainAgent["结果交回主 Agent 整理"]
 
-    TeamCmd["/team <task>"] --> Factory["TeamPlanFactory\n固定 DAG"]
+    TeamCmd["/team [--model m] <task>"] --> Factory["TeamPlanFactory\n固定 DAG"]
     Factory --> TeamRunner["AgentTeamRunner + PlanRunner"]
-    TeamRunner --> TeamAgent["TeamAgentFactory\n只读工具 + 空 HookRegistry"]
+    TeamRunner --> TeamAgent["TeamAgentFactory\n单次快照模型\n只读工具 + 空 HookRegistry"]
     TeamAgent --> MainAgent
 ```
 
@@ -147,7 +151,7 @@ flowchart TD
     Runner --> PrivateSession["RoomAgentSessionFactory\n每个 room-agent-generation 独立 JSONL"]
     Runner --> Hook["RoomContextInjectHook\n注入最近 hub messages"]
     Runner --> Tools["RoomToolRegistryFactory\nread/ls/glob/grep/web_fetch/web_search/load_skill"]
-    Runner --> Loop["AgentLoop + noop event bus"]
+    Runner --> Loop["AgentLoop\n读取 RoomAgentProfile.model\n+ noop event bus"]
     Loop --> HubReply["Agent 最终回复写回 RoomHub"]
 ```
 
@@ -173,5 +177,5 @@ flowchart LR
 - Archive Center 当前只在 Web 入口实现，集中处理已归档 session、todo、room、room-agent，并支持批量物理删除。
 - 长期记忆当前是 Markdown 存储，不是向量检索系统。
 - 后台任务当前只支持明确 handler，例如 `reminder`、`todo_scan`、`memory_extract`；需要 Agent 到点自动执行的任务使用 `schedule` 提交 user 消息。
-- `schedule` 是每个 `AgentRuntime` 绑定当前 session 的自动化用户消息调度器，应用不运行时不会主动执行。
+- `schedule` 是每个 `AgentRuntime` 绑定当前 session 的自动化用户消息调度器，应用不运行时不会主动执行；Web 右栏面板和 Agent `schedule` 工具共用同一套 manager/store。
 - Team 当前是只读探索；会修改文件的是普通 Agent 或 Plan 子 Agent，并且高影响工具需要 HITL。

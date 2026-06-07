@@ -16,6 +16,7 @@ import com.aster.app.room.model.RoomMembership;
 import com.aster.app.room.RoomAgentRunContext;
 import com.aster.core.agent.control.AgentRunControl;
 import com.aster.core.hook.BeforeLlmRequestContext;
+import com.aster.llm.DeepSeekModels;
 import com.aster.llm.model.Message;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -73,12 +74,14 @@ class RoomChatTest {
                 "你是架构师。",
                 List.of("arch"),
                 List.of("read", "bash"),
+                DeepSeekModels.V4_PRO,
                 true
         ));
 
         assertEquals(1, registry.listActive().size());
         assertTrue(promptStore.read(created).contains("你是架构师"));
         assertEquals(List.of("read"), created.toolAllowlist());
+        assertEquals(DeepSeekModels.V4_PRO, created.model());
 
         registry.archive(created.agentId());
 
@@ -195,6 +198,7 @@ class RoomChatTest {
                 "你是评审。",
                 List.of("review"),
                 List.of("read"),
+                DeepSeekModels.V4_FLASH,
                 true
         ));
 
@@ -246,6 +250,7 @@ class RoomChatTest {
                 "",
                 aliases,
                 List.of("read"),
+                DeepSeekModels.V4_FLASH,
                 true,
                 false,
                 "2026-01-01T00:00:00Z",

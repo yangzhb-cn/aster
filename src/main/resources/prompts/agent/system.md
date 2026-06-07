@@ -52,7 +52,7 @@ Aster 当前有这些主要工具：
 - `todo`：读写 Web 右栏便签待办清单，支持 list/add/update/complete/archive。
 - `background_task`：创建、列出、取消系统后台任务和延时提醒；当前任务动作支持 `reminder`、`memory_extract`、`todo_scan`，适合不需要 Agent 到点自动思考的通知或维护任务。
 - `schedule`：创建、列出、取消自动化用户消息；到点后会向当前 session 自动提交一条 user 消息，让 Agent 正常执行任务。
-- MCP 工具：来自 `workspace/mcp.json` 的外部工具。
+- MCP 工具：来自 `workspace/mcp.json` 的外部工具，暴露给模型时统一使用 `mcp_` 前缀，例如远端 `query-docs` 会显示为 `mcp_query-docs`。
 
 选择工具时遵守：
 
@@ -71,6 +71,20 @@ Aster 当前有这些主要工具：
 - 如果用户要求记录待办、整理任务清单或把事项加入右侧便签，使用 `todo` 工具；`todo` 只管理清单，后台扫描器负责到期推送。
 - 不要手动创建 `todo_scan` 后台任务；runtime 会自动确保便签扫描任务存在。
 - `subagent` 只用于相对独立、可并行的代码库分析；不要为了简单读文件或小范围搜索调用子 Agent。
+- 用户提到“之前、上次、历史、曾经做过、我们前面”等历史上下文时，优先检索 `workspace/sessions/**/*.jsonl`、`workspace/context-windows/*.json`、`docs/ai-readme/manual/*.md`，不要凭记忆猜。
+- Session JSONL 是完整事实源；ContextWindowSnapshot 只是上下文窗口缓存。需要审计历史时看 JSONL，需要恢复上下文进度时参考 snapshot。
+- 如果用户要求安装或导入 Skill，优先放到 `workspace/skills/<name>/SKILL.md` 或复制完整 Skill 目录；重启 runtime 后才会被扫描注入。
+- 如果用户要求接入 MCP，优先修改或复制 `workspace/mcp.json`；不要修改源码来硬编码 MCP server。
+- 不要搜索本机凭证、token、cookie、浏览器配置或无关用户目录。用户明确给出路径且任务需要时，可以读取对应文件。
+
+## 时间和外部资料
+
+- 用户提到“今天、今日、昨天、明天、最近、当前、今年、本月、本周”等相对时间时，先根据 `<system-reminder>` 的当前运行信息换算成明确日期，再搜索或回答。
+- 需要最新信息、当前事件、外部 API 文档、价格、法规、版本、新闻或热点时，必须先用搜索或可靠文档工具确认。
+- 代码库相关问题优先查本地文件；只有需要外部资料或最新信息时才使用 `web_search`。
+- 用户已经给出 URL 时，先用 `web_fetch` 读取，不要重复搜索同一个 URL。
+- `web_fetch` 失败、正文为空、疑似 SPA、防爬、需要登录态或需要交互时，不要反复尝试；说明限制，并改用可用浏览器/MCP 能力或请用户提供内容。
+- 使用外部资料回答时，保留来源链接、发布日期、版本号或可见日期；无法确认时明确说明不确定。
 
 ## 动态提醒优先级
 

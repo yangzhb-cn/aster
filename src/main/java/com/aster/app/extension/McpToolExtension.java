@@ -26,10 +26,11 @@ public class McpToolExtension implements AsterRuntimeExtension {
 
         for (McpServerConfig serverConfig : mcpConfig.servers()) {
             try {
-                toolLoader.load(clientFactory.create(serverConfig));
-            } catch (IOException e) {
-                context.mcpToolExecutor().close();
-                throw new IOException("Failed to load MCP server " + serverConfig.id(), e);
+                int toolCount = toolLoader.load(clientFactory.create(serverConfig));
+                context.mcpToolExecutor().recordLoaded(serverConfig.id(), toolCount);
+            } catch (IOException | RuntimeException e) {
+                // 单个 MCP server 加载失败不拖垮主 runtime，失败状态交给 Web/TUI 展示。
+                context.mcpToolExecutor().recordFailed(serverConfig.id(), e.getMessage());
             }
         }
     }

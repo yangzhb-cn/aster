@@ -120,7 +120,7 @@ public class TelegramUpdatePoller implements AutoCloseable {
                     /session 查看当前会话
                     /new 新建会话
                     /model [模型名] 查看或切换当前 Chat 模型
-                    /team <任务> 启动只读 Agent Team 探索
+                    /team [--model 模型名] <任务> 启动只读 Agent Team 探索
                     /plan <任务> 生成动态 DAG 计划
                     /start 执行当前 Plan
                     /plan cancel 取消当前 Plan

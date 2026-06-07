@@ -2,6 +2,7 @@ package com.aster.ui.web;
 
 import com.aster.app.runtime.AgentRuntime;
 import com.aster.app.runtime.AgentRuntimeFactory;
+import com.aster.app.runtime.JsonContextWindowSnapshotStore;
 import com.aster.app.runtime.WorkspacePaths;
 import com.aster.app.hitl.model.ToolApprovalRequest;
 import com.aster.app.room.model.ChatRoom;
@@ -10,6 +11,9 @@ import com.aster.app.room.model.RoomAgentInput;
 import com.aster.app.room.model.RoomAgentProfile;
 import com.aster.app.room.model.RoomMemberView;
 import com.aster.app.room.model.RoomSendResult;
+import com.aster.app.schedule.model.ScheduledUserMessage;
+import com.aster.app.skill.model.SkillMetadata;
+import com.aster.app.team.model.TeamRunRequest;
 import com.aster.app.todo.JsonTodoStore;
 import com.aster.app.todo.TodoStore;
 import com.aster.app.todo.model.TodoItem;
@@ -30,6 +34,7 @@ import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
+import java.time.DateTimeException;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -54,6 +59,7 @@ public class WebServer implements AutoCloseable {
     private final WebNotificationSink notificationSink;
     private final WebSessionRuntimePool runtimePool;
     private final SessionIndex sessionIndex;
+    private final JsonContextWindowSnapshotStore contextWindowSnapshotStore;
     private final TodoStore todoStore;
     private final Object runtimeLock = new Object();
     private final HttpServer server;
@@ -65,11 +71,16 @@ public class WebServer implements AutoCloseable {
         this.notificationSink = new WebNotificationSink(objectMapper, clients);
         this.runtimePool = new WebSessionRuntimePool(Objects.requireNonNull(runtimeFactory), eventHandler, notificationSink);
         this.sessionIndex = new SessionIndex(objectMapper, WorkspacePaths.SESSIONS);
+        this.contextWindowSnapshotStore = new JsonContextWindowSnapshotStore(objectMapper, WorkspacePaths.CONTEXT_WINDOWS);
         this.todoStore = new JsonTodoStore(objectMapper, WorkspacePaths.TODO_FILE);
-        SessionRecord session = sessionIndex.ensure(sessionName, sessionName);
-        this.currentSessionId = session.id();
-        this.currentDisplayName = session.displayName();
-        this.runtimePool.runtimeFor(session.id());
+        SessionRecord session = initialSession(sessionName);
+        if (session == null) {
+            clearCurrentSession();
+        } else {
+            this.currentSessionId = session.id();
+            this.currentDisplayName = session.displayName();
+            this.runtimePool.runtimeFor(session.id());
+        }
         this.server = HttpServer.create(new InetSocketAddress(port), 0);
         server.setExecutor(executor);
         registerRoutes();
@@ -106,6 +117,7 @@ public class WebServer implements AutoCloseable {
         server.createContext("/api/status", this::handleStatus);
         server.createContext("/api/sessions", this::handleSessions);
         server.createContext("/api/todos", this::handleTodos);
+        server.createContext("/api/schedules", this::handleSchedules);
         server.createContext("/api/rooms", this::handleRooms);
         server.createContext("/api/room-agents", this::handleRoomAgents);
         server.createContext("/api/archives", this::handleArchives);
@@ -150,7 +162,10 @@ public class WebServer implements AutoCloseable {
 
             String sessionId = sessionIdFromPayload(payload);
             synchronized (runtimeLock) {
-                SessionRecord session = activeSession(sessionId);
+                SessionRecord session = sessionId.isBlank()
+                        ? createSessionForFirstMessage(text)
+                        : activeSession(sessionId);
+                selectSession(session);
                 AgentRuntime target = runtimePool.runtimeFor(session.id());
                 if ("/start".equals(text)) {
                     if (!target.startPlan()) {
@@ -171,12 +186,13 @@ public class WebServer implements AutoCloseable {
                         target.submitPlan(task);
                     }
                 } else if (text.startsWith("/team")) {
-                    String task = text.length() <= "/team".length() ? "" : text.substring("/team".length()).trim();
-                    if (task.isBlank()) {
-                        sendJson(exchange, 400, Map.of("error", "用法：/team 要探索的问题"));
+                    String raw = text.length() <= "/team".length() ? "" : text.substring("/team".length()).trim();
+                    TeamRunRequest request = TeamRunRequest.parse(raw);
+                    if (request.task().isBlank()) {
+                        sendJson(exchange, 400, Map.of("error", "用法：/team [--model 模型名] 要探索的问题"));
                         return;
                     }
-                    target.submitTeam(task);
+                    target.submitTeam(request.task(), request.model());
                 } else if (text.equals("/model") || text.startsWith("/model ")) {
                     String model = text.length() <= "/model".length() ? "" : text.substring("/model".length()).trim();
                     if (!model.isBlank()) {
@@ -217,6 +233,8 @@ public class WebServer implements AutoCloseable {
                 accepted = runtimeForActiveSession(sessionId).steer(text);
             }
             sendJson(exchange, accepted ? 202 : 409, statusPayload());
+        } catch (IllegalArgumentException | DateTimeException e) {
+            sendJson(exchange, 400, Map.of("error", e.getMessage()));
         } catch (IOException e) {
             sendJson(exchange, sessionErrorStatus(e), Map.of("error", e.getMessage()));
         }
@@ -403,6 +421,32 @@ public class WebServer implements AutoCloseable {
     }
 
     /**
+     * 处理 Web 自动化用户消息 CRUD。
+     */
+    private void handleSchedules(HttpExchange exchange) throws IOException {
+        try {
+            String path = exchange.getRequestURI().getPath();
+            if ("/api/schedules".equals(path)) {
+                if ("GET".equals(exchange.getRequestMethod())) {
+                    sendJson(exchange, 200, schedulesPayload());
+                    return;
+                }
+                if ("POST".equals(exchange.getRequestMethod())) {
+                    createSchedule(exchange);
+                    return;
+                }
+            }
+            if ("/api/schedules/cancel".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                cancelSchedule(exchange);
+                return;
+            }
+            sendJson(exchange, 404, Map.of("error", "Not Found"));
+        } catch (IOException e) {
+            sendJson(exchange, sessionErrorStatus(e), Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
      * 处理 Web 聊天室 CRUD 和房间消息。
      */
     private void handleRooms(HttpExchange exchange) throws IOException {
@@ -532,6 +576,44 @@ public class WebServer implements AutoCloseable {
         Map<?, ?> payload = readPayload(exchange);
         todoStore.archive(requiredValue(payload, "id"));
         sendJson(exchange, 200, todosPayload());
+    }
+
+    private void createSchedule(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        synchronized (runtimeLock) {
+            AgentRuntime runtime = currentRuntime();
+            String type = requiredValue(payload, "type");
+            String name = stringValue(payload, "name");
+            String content = requiredValue(payload, "content");
+            switch (type) {
+                case "daily" -> runtime.createDailySchedule(
+                        name,
+                        content,
+                        requiredValue(payload, "dailyTime"),
+                        stringValue(payload, "timezone")
+                );
+                case "once" -> runtime.createOnceSchedule(
+                        name,
+                        content,
+                        requiredValue(payload, "runAt")
+                );
+                case "interval" -> runtime.createIntervalSchedule(
+                        name,
+                        content,
+                        longValue(payload, "intervalSeconds")
+                );
+                default -> throw new IOException("unknown schedule type: " + type);
+            }
+        }
+        sendJson(exchange, 201, schedulesPayload());
+    }
+
+    private void cancelSchedule(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        synchronized (runtimeLock) {
+            currentRuntime().cancelSchedule(requiredValue(payload, "id"));
+        }
+        sendJson(exchange, 200, schedulesPayload());
     }
 
     private void createRoom(HttpExchange exchange) throws IOException {
@@ -676,6 +758,7 @@ public class WebServer implements AutoCloseable {
             case "session" -> {
                 runtimePool.closeIfIdle(id);
                 sessionIndex.deletePermanently(id);
+                contextWindowSnapshotStore.deleteSession(id);
             }
             case "todo" -> todoStore.deletePermanently(id);
             case "room" -> currentRuntime().deleteRoomPermanently(id);
@@ -720,10 +803,11 @@ public class WebServer implements AutoCloseable {
 
             if (sessionId.equals(currentSessionId)) {
                 List<SessionRecord> sessions = sessionIndex.listActive();
-                SessionRecord next = sessions.isEmpty()
-                        ? sessionIndex.create("新会话")
-                        : sessions.getFirst();
-                selectSession(next);
+                if (sessions.isEmpty()) {
+                    clearCurrentSession();
+                } else {
+                    selectSession(sessions.getFirst());
+                }
             }
         }
 
@@ -809,6 +893,22 @@ public class WebServer implements AutoCloseable {
         return value == null ? "" : value.toString().trim();
     }
 
+    private long longValue(Map<?, ?> payload, String key) throws IOException {
+        Object value = payload.get(key);
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        String text = stringValue(payload, key);
+        if (text.isBlank()) {
+            throw new IOException(key + " is required");
+        }
+        try {
+            return Long.parseLong(text);
+        } catch (NumberFormatException e) {
+            throw new IOException(key + " must be a number", e);
+        }
+    }
+
     private List<ArchiveDeleteItem> archiveDeleteItems(Map<?, ?> payload) throws IOException {
         String key = "items";
         Object value = payload.get(key);
@@ -833,25 +933,60 @@ public class WebServer implements AutoCloseable {
     private Map<String, Object> statusPayload() throws IOException {
         Map<String, Object> status = new LinkedHashMap<>();
         synchronized (runtimeLock) {
-            AgentRuntime selected = currentRuntime();
             status.put("currentSessionId", currentSessionId);
             status.put("sessionId", currentSessionId);
             status.put("sessionName", currentSessionId);
             status.put("displayName", currentDisplayName);
-            status.put("model", selected.chatModel());
-            status.put("availableModels", selected.availableChatModels());
-            status.put("provider", selected.provider().name());
-            status.put("skillCount", selected.skillCount());
-            status.put("busy", selected.isBusy());
-            status.put("pendingPlan", selected.hasPendingPlan());
-            status.put("queuedCount", selected.queuedCount());
-            status.put("pendingApprovals", selected.pendingToolApprovals().stream()
-                    .map(this::approvalPayload)
-                    .toList());
+            if (hasCurrentSession()) {
+                AgentRuntime selected = currentRuntime();
+                status.put("model", selected.chatModel());
+                status.put("availableModels", selected.availableChatModels());
+                status.put("provider", selected.provider().name());
+                status.put("skillCount", selected.skillCount());
+                status.put("skills", selected.skillMetadata().stream()
+                        .map(this::skillPayload)
+                        .toList());
+                status.put("mcpServers", selected.mcpServerStatuses().stream()
+                        .map(this::mcpServerPayload)
+                        .toList());
+                status.put("busy", selected.isBusy());
+                status.put("pendingPlan", selected.hasPendingPlan());
+                status.put("queuedCount", selected.queuedCount());
+                status.put("pendingApprovals", selected.pendingToolApprovals().stream()
+                        .map(this::approvalPayload)
+                        .toList());
+            } else {
+                status.put("model", "");
+                status.put("availableModels", List.of());
+                status.put("provider", "");
+                status.put("skillCount", 0);
+                status.put("skills", List.of());
+                status.put("mcpServers", List.of());
+                status.put("busy", false);
+                status.put("pendingPlan", false);
+                status.put("queuedCount", 0);
+                status.put("pendingApprovals", List.of());
+            }
             status.put("sessionStatuses", sessionStatusesPayload());
         }
         status.put("sseClients", clients.size());
         return status;
+    }
+
+    private Map<String, Object> mcpServerPayload(com.aster.app.mcp.McpToolExecutor.McpServerStatus status) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("serverId", status.serverId());
+        payload.put("loaded", status.loaded());
+        payload.put("toolCount", status.toolCount());
+        payload.put("errorMessage", status.errorMessage());
+        return payload;
+    }
+
+    private Map<String, Object> skillPayload(SkillMetadata skill) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("name", skill.name());
+        payload.put("description", skill.description());
+        return payload;
     }
 
     private Map<String, Object> sessionsPayload() throws IOException {
@@ -890,6 +1025,17 @@ public class WebServer implements AutoCloseable {
                 .toList());
     }
 
+    private Map<String, Object> schedulesPayload() throws IOException {
+        synchronized (runtimeLock) {
+            if (!hasCurrentSession()) {
+                return Map.of("schedules", List.of());
+            }
+            return Map.of("schedules", currentRuntime().listSchedules().stream()
+                    .map(this::schedulePayload)
+                    .toList());
+        }
+    }
+
     private Map<String, Object> archivesPayload() throws IOException {
         Map<String, Object> payload = new LinkedHashMap<>();
         synchronized (runtimeLock) {
@@ -899,20 +1045,27 @@ public class WebServer implements AutoCloseable {
             payload.put("todos", todoStore.listArchived().stream()
                     .map(this::todoPayload)
                     .toList());
-            payload.put("rooms", currentRuntime().listArchivedRooms().stream()
-                    .map(this::roomPayload)
-                    .toList());
-            payload.put("roomAgents", currentRuntime().listArchivedRoomAgents().stream()
-                    .map(this::roomAgentPayload)
-                    .toList());
+            if (hasCurrentSession()) {
+                payload.put("rooms", currentRuntime().listArchivedRooms().stream()
+                        .map(this::roomPayload)
+                        .toList());
+                payload.put("roomAgents", currentRuntime().listArchivedRoomAgents().stream()
+                        .map(this::roomAgentPayload)
+                        .toList());
+            } else {
+                payload.put("rooms", List.of());
+                payload.put("roomAgents", List.of());
+            }
         }
         return payload;
     }
 
     private Map<String, Object> roomsPayload() throws IOException {
         synchronized (runtimeLock) {
+            if (!hasCurrentSession()) {
+                return Map.of("rooms", List.of());
+            }
             AgentRuntime selected = currentRuntime();
-            selected.ensureDefaultRoom();
             return Map.of("rooms", selected.listRooms().stream()
                     .map(this::roomPayload)
                     .toList());
@@ -921,6 +1074,9 @@ public class WebServer implements AutoCloseable {
 
     private Map<String, Object> roomAgentsPayload() throws IOException {
         synchronized (runtimeLock) {
+            if (!hasCurrentSession()) {
+                return Map.of("agents", List.of());
+            }
             return Map.of("agents", currentRuntime().listRoomAgents().stream()
                     .map(this::roomAgentPayload)
                     .toList());
@@ -995,6 +1151,7 @@ public class WebServer implements AutoCloseable {
         payload.put("systemPromptPath", agent.systemPromptPath());
         payload.put("mentionAliases", agent.mentionAliases());
         payload.put("toolAllowlist", agent.toolAllowlist());
+        payload.put("model", agent.model());
         payload.put("enabled", agent.enabled());
         payload.put("archived", agent.archived());
         payload.put("createdAt", agent.createdAt());
@@ -1020,6 +1177,22 @@ public class WebServer implements AutoCloseable {
         return payload;
     }
 
+    private Map<String, Object> schedulePayload(ScheduledUserMessage schedule) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("id", schedule.id());
+        payload.put("sessionId", schedule.sessionId());
+        payload.put("name", schedule.name());
+        payload.put("content", schedule.content());
+        payload.put("enabled", schedule.enabled());
+        payload.put("status", schedule.status().name());
+        payload.put("trigger", schedule.trigger());
+        payload.put("nextRunAt", schedule.nextRunAt());
+        payload.put("lastRunAt", schedule.lastRunAt());
+        payload.put("createdAt", schedule.createdAt());
+        payload.put("updatedAt", schedule.updatedAt());
+        return payload;
+    }
+
     private Map<String, Object> sessionPayload(SessionRecord session) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", session.id());
@@ -1031,6 +1204,9 @@ public class WebServer implements AutoCloseable {
     }
 
     private SessionRecord activeSession(String sessionId) throws IOException {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IOException("session is required");
+        }
         return sessionIndex.get(sessionId)
                 .filter(record -> !record.archived())
                 .orElseThrow(() -> new IOException("session not found: " + sessionId));
@@ -1042,6 +1218,9 @@ public class WebServer implements AutoCloseable {
     }
 
     private AgentRuntime currentRuntime() throws IOException {
+        if (!hasCurrentSession()) {
+            throw new IOException("session is required");
+        }
         return runtimeForActiveSession(currentSessionId);
     }
 
@@ -1062,6 +1241,41 @@ public class WebServer implements AutoCloseable {
             currentSessionId = session.id();
             currentDisplayName = session.displayName();
         }
+    }
+
+    /**
+     * Web 空启动时只恢复已有活跃 session，不再主动创建 default session。
+     */
+    private SessionRecord initialSession(String sessionName) throws IOException {
+        if (sessionName != null && !sessionName.isBlank()) {
+            return sessionIndex.ensure(sessionName, sessionName);
+        }
+        List<SessionRecord> sessions = sessionIndex.listActive();
+        return sessions.isEmpty() ? null : sessions.getFirst();
+    }
+
+    /**
+     * 首次发送消息时同步创建会话，用输入摘要作为展示名。
+     */
+    private SessionRecord createSessionForFirstMessage(String text) throws IOException {
+        return sessionIndex.create(firstMessageDisplayName(text));
+    }
+
+    private String firstMessageDisplayName(String text) {
+        String compact = text == null ? "" : text.replaceAll("\\s+", " ").trim();
+        if (compact.isBlank()) {
+            return "新会话";
+        }
+        return compact.length() > 18 ? compact.substring(0, 18) + "..." : compact;
+    }
+
+    private boolean hasCurrentSession() {
+        return currentSessionId != null && !currentSessionId.isBlank();
+    }
+
+    private void clearCurrentSession() {
+        currentSessionId = "";
+        currentDisplayName = "";
     }
 
     private String messageSessionId(String path) {

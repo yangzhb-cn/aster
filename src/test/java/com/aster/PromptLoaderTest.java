@@ -34,7 +34,7 @@ class PromptLoaderTest {
         assertTrue(systemPrompt.contains("Aster System Prompt"));
         assertTrue(systemPrompt.contains("Skill 使用"));
         assertTrue(summaryPrompt.contains("Context Summary Prompt"));
-        assertTrue(summaryPrompt.contains("工具协议安全"));
+        assertTrue(summaryPrompt.contains("主要请求和意图"));
         assertTrue(memorySystemPrompt.contains("{{memory}}"));
         assertTrue(memoryExtractionPrompt.contains("USER_PROFILE"));
         assertTrue(memoryExtractionPrompt.contains("BEHAVIOR_PREFERENCE"));

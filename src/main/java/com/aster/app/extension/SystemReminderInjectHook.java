@@ -39,6 +39,9 @@ public class SystemReminderInjectHook implements HookHandler<BeforeLlmRequestCon
 
     /**
      * 在发送给 LLM 前，把运行时提醒内容注入最后一条 user 消息。
+     *
+     * <p>这里改写的是本次请求的消息副本，不会写回 SessionStore。
+     * 下一轮请求会重新从最新的 Hook 上下文渲染提醒块，不依赖上一轮注入过的内容。</p>
      */
     @Override
     public BeforeLlmRequestContext handle(BeforeLlmRequestContext context) throws IOException {
@@ -64,6 +67,10 @@ public class SystemReminderInjectHook implements HookHandler<BeforeLlmRequestCon
 
     /**
      * 渲染统一的 system-reminder 块。
+     *
+     * <p>旧对话摘要来自 {@code BeforeLlmRequestContext.contextSummary()}，
+     * 也就是 ContextWindowCache 的滚动摘要；长期记忆和当前时间则在这里按请求实时读取。
+     * 这些动态内容合并后只作为“本轮上下文提示”，不是新的用户历史。</p>
      */
     private String renderReminder(BeforeLlmRequestContext context) throws IOException {
         List<String> sections = new ArrayList<>();

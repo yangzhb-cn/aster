@@ -26,6 +26,13 @@ public class ContextWindowCache {
     private final List<Message> systemMessages = new ArrayList<>();
     private final List<Turn> recentTurns = new ArrayList<>();
 
+    /**
+     * 旧对话滚动摘要。
+     *
+     * <p>它不是 SessionStore 的一部分，也不会作为普通历史消息长期保存。
+     * 每次旧 turn 被挤出窗口时，都会用“已有摘要 + 本次被挤出的 turn”
+     * 重新生成一份新摘要。</p>
+     */
     private String runningSummary;
     private int processedMessageCount;
 
@@ -58,6 +65,10 @@ public class ContextWindowCache {
 
     /**
      * 初始化缓存内容。
+     *
+     * <p>runtime 打开已有 session 时，会把 JSONL 完整历史回放一次到缓存。
+     * 回放过程中也会按阈值触发压缩，因此很长的历史不会全部留在
+     * {@link #recentTurns} 里，而是逐步滚入 {@link #runningSummary}。</p>
      */
     public synchronized void initialize(List<Message> messages) {
         systemMessages.clear();
@@ -72,6 +83,9 @@ public class ContextWindowCache {
 
     /**
      * 增量追加一条已经成功写入 SessionStore 的消息。
+     *
+     * <p>写入顺序很重要：先持久化原始消息，再更新运行态缓存。
+     * 这样即使缓存逻辑只影响请求窗口，JSONL 仍然保留完整可审计历史。</p>
      */
     public synchronized void append(Message message) {
         appendInternal(message);
@@ -80,6 +94,11 @@ public class ContextWindowCache {
 
     /**
      * 构造本轮可发送给 LLM 的上下文。
+     *
+     * <p>返回的 messages 只包含 system 消息和最近 turn 原文；
+     * {@link #runningSummary} 作为 summary 字段返回，交给请求前 Hook 注入
+     * 最后一条 user 的 {@code <system-reminder>}，避免把摘要插到
+     * assistant.tool_calls 和 role=tool 之间。</p>
      */
     public synchronized ContextBuildResult build() {
         List<Message> messages = currentRequestMessages();
@@ -104,6 +123,12 @@ public class ContextWindowCache {
         return processedMessageCount;
     }
 
+    /**
+     * 把一条原始消息放入运行态窗口。
+     *
+     * <p>user 消息开启一个新 turn；assistant/tool 消息归到最近的 user turn。
+     * 没有 user 边界的孤儿消息不能安全原样保留，只能滚入摘要。</p>
+     */
     private void appendInternal(Message message) {
         Objects.requireNonNull(message);
         processedMessageCount++;
@@ -129,6 +154,12 @@ public class ContextWindowCache {
         return new Turn(turn.type(), List.copyOf(messages));
     }
 
+    /**
+     * 根据 token 阈值裁剪窗口。
+     *
+     * <p>窗口超阈值后，只把最早的完整 turn 挤出并摘要。
+     * 当前 user turn 以及它前面的最近 N 个完整 turn 会原样保留。</p>
+     */
     private void trimIfNeeded() {
         int threshold = (int) (options.maxContextTokens() * options.compressThreshold());
         if (estimateWindowTokens() < threshold) {
@@ -146,6 +177,13 @@ public class ContextWindowCache {
         mergeIntoSummary(flushed);
     }
 
+    /**
+     * 将被挤出窗口的 turn 合并进滚动摘要。
+     *
+     * <p>这是“摘要的摘要”策略：如果已经有 {@link #runningSummary}，
+     * 本次摘要输入会先放入旧摘要，再追加新挤出的 turn。这样下一次请求仍能看到
+     * 更早历史的压缩结果，但不会依赖上一轮临时注入过的 {@code <system-reminder>}。</p>
+     */
     private void mergeIntoSummary(List<Turn> turns) {
         List<Message> summaryInput = new ArrayList<>();
         if (runningSummary != null && !runningSummary.isBlank()) {
@@ -157,6 +195,12 @@ public class ContextWindowCache {
         }
     }
 
+    /**
+     * 估算当前运行态窗口的 token。
+     *
+     * <p>虽然 {@link #runningSummary} 不直接放进 request messages，
+     * 但它会在请求前注入给模型，所以这里必须把摘要也计入窗口压力。</p>
+     */
     private int estimateWindowTokens() {
         List<Message> messages = new ArrayList<>(currentRequestMessages());
         if (runningSummary != null && !runningSummary.isBlank()) {
@@ -165,6 +209,12 @@ public class ContextWindowCache {
         return tokenEstimator.estimate(messages);
     }
 
+    /**
+     * 生成请求消息的原文部分。
+     *
+     * <p>这里只返回 system + recent turns。旧对话摘要、长期记忆、当前时间等动态内容
+     * 统一由 {@code BEFORE_LLM_REQUEST} Hook 临时注入。</p>
+     */
     private List<Message> currentRequestMessages() {
         List<Message> messages = new ArrayList<>(systemMessages);
         messages.addAll(flatten(recentTurns));

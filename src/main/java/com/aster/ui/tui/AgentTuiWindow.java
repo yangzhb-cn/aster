@@ -122,8 +122,8 @@ public class AgentTuiWindow implements AutoCloseable {
             lastMaxContextTokens = 0;
         }
         status = runtime.provider().thinkingEnabled()
-                ? "ready | session=" + runtime.sessionName() + " | thinking=" + runtime.provider().reasoningEffort()
-                : "ready | session=" + runtime.sessionName();
+                ? "ready | session=" + runtime.sessionName() + " | model=" + runtime.chatModel() + " | thinking=" + runtime.provider().reasoningEffort()
+                : "ready | session=" + runtime.sessionName() + " | model=" + runtime.chatModel();
         addBlock(new SystemBlock("session: " + runtime.sessionName()));
         dirty = true;
     }

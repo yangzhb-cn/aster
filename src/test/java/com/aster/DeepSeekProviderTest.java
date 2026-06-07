@@ -153,6 +153,14 @@ class DeepSeekProviderTest {
     }
 
     /**
+     * 验证 DeepSeek 当前开放给用户切换的模型包含 flash 和 pro。
+     */
+    @Test
+    void deepSeekSwitchableModelsContainFlashAndPro() {
+        assertEquals(List.of("deepseek-v4-flash", "deepseek-v4-pro"), DeepSeekModels.switchableChatModels());
+    }
+
+    /**
      * 验证 DeepSeek 只是 OpenAI 兼容供应商定义的一种实现。
      */
     @Test

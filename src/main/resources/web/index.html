@@ -21,7 +21,9 @@
         </div>
         <div class="run-strip">
           <span id="connectionState" class="state-pill">connecting</span>
-          <span id="modelName">model</span>
+          <select id="modelSelect" class="model-select" aria-label="切换 Chat 模型">
+            <option>model</option>
+          </select>
           <span id="sessionName">session</span>
         </div>
         <div class="top-actions">
@@ -59,7 +61,11 @@
         <form id="composer" class="composer">
           <label class="sr-only" for="prompt">输入消息</label>
           <textarea id="prompt" rows="1" placeholder="输入任务或问题"></textarea>
-          <button id="sendButton" type="submit">发送</button>
+          <div class="composer-bar">
+            <div class="composer-actions">
+              <button id="sendButton" type="submit">发送</button>
+            </div>
+          </div>
         </form>
       </main>
 
@@ -99,24 +105,6 @@
               </div>
               <div class="context-meter-sub">
                 已用 <strong id="contextUsedTokens">-</strong> 标记，共 <strong id="contextTotalTokens">-</strong>
-              </div>
-            </div>
-            <div class="token-grid">
-              <div class="token-row">
-                <span>before</span>
-                <strong id="contextBefore">-</strong>
-              </div>
-              <div class="token-row">
-                <span>after</span>
-                <strong id="contextAfter">-</strong>
-              </div>
-              <div class="token-row">
-                <span>max</span>
-                <strong id="contextMax">-</strong>
-              </div>
-              <div class="token-row strong">
-                <span>auto</span>
-                <strong id="contextCompressed">-</strong>
               </div>
             </div>
           </section>

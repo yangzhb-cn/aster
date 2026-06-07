@@ -33,6 +33,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
  * Agent 的流式主循环。
@@ -42,7 +43,7 @@ import java.util.Objects;
  * 如果模型请求工具，就并行执行工具，再把结果写回会话，继续请求下一轮模型。</p>
  */
 public class AgentLoop {
-    private final String model;
+    private final Supplier<String> modelSupplier;
     private final SessionStore sessionStore;
     private final ContextPipeline contextPipeline;
     private final StreamingChatClient streamingChatClient;
@@ -65,7 +66,7 @@ public class AgentLoop {
             int maxToolRounds
     ) {
         this(
-                model,
+                () -> model,
                 sessionStore,
                 new ContextPipeline(sessionStore, contextBuilder),
                 streamingChatClient,
@@ -90,7 +91,7 @@ public class AgentLoop {
             int maxToolRounds
     ) {
         this(
-                provider.defaultModel(),
+                () -> provider.defaultModel(),
                 sessionStore,
                 new ContextPipeline(sessionStore, contextBuilder),
                 streamingChatClient,
@@ -116,7 +117,7 @@ public class AgentLoop {
             int maxToolRounds
     ) {
         this(
-                provider.defaultModel(),
+                () -> provider.defaultModel(),
                 sessionStore,
                 new ContextPipeline(sessionStore, contextBuilder),
                 streamingChatClient,
@@ -142,7 +143,39 @@ public class AgentLoop {
             int maxToolRounds
     ) {
         this(
-                provider.defaultModel(),
+                () -> provider.defaultModel(),
+                sessionStore,
+                contextPipeline,
+                streamingChatClient,
+                toolRegistry,
+                parallelToolExecutor,
+                hookRegistry,
+                eventBus,
+                maxToolRounds,
+                provider.thinkingEnabled(),
+                provider.reasoningEffort()
+        );
+    }
+
+    /**
+     * 创建支持动态模型读取的 AgentLoop。
+     *
+     * <p>供应商仍提供 thinking 等能力开关，modelSupplier 只负责返回当前 chat 模型。</p>
+     */
+    public AgentLoop(
+            Supplier<String> modelSupplier,
+            OpenAiCompatibleProvider provider,
+            SessionStore sessionStore,
+            ContextPipeline contextPipeline,
+            StreamingChatClient streamingChatClient,
+            ToolRegistry toolRegistry,
+            ParallelToolExecutor parallelToolExecutor,
+            HookRegistry hookRegistry,
+            AgentEventBus eventBus,
+            int maxToolRounds
+    ) {
+        this(
+                modelSupplier,
                 sessionStore,
                 contextPipeline,
                 streamingChatClient,
@@ -157,7 +190,7 @@ public class AgentLoop {
     }
 
     private AgentLoop(
-            String model,
+            Supplier<String> modelSupplier,
             SessionStore sessionStore,
             ContextPipeline contextPipeline,
             StreamingChatClient streamingChatClient,
@@ -169,7 +202,7 @@ public class AgentLoop {
             boolean thinkingEnabled,
             String reasoningEffort
     ) {
-        this.model = Objects.requireNonNull(model);
+        this.modelSupplier = Objects.requireNonNull(modelSupplier);
         this.sessionStore = Objects.requireNonNull(sessionStore);
         this.contextPipeline = Objects.requireNonNull(contextPipeline);
         this.streamingChatClient = Objects.requireNonNull(streamingChatClient);
@@ -259,6 +292,7 @@ public class AgentLoop {
             ));
             checkStop(control);
             List<Map<String, Object>> tools = toolRegistry.toLlmToolSchemas();
+            String model = currentModel();
             BeforeLlmRequestContext hookContext = hookRegistry.apply(AgentHookPoints.BEFORE_LLM_REQUEST, new BeforeLlmRequestContext(
                     eventBus.sessionName(),
                     eventBus.currentRunId(),
@@ -330,6 +364,20 @@ public class AgentLoop {
         }
 
         throw new IllegalStateException("Agent stopped after max tool rounds: " + maxToolRounds);
+    }
+
+    /**
+     * 读取当前 chat 模型。
+     *
+     * <p>主 runtime 可以在运行中切换模型。这里在每次 LLM 请求前读取一次，
+     * 因此已经发出的 SSE 请求不会被打断，下一次请求会使用新模型。</p>
+     */
+    private String currentModel() {
+        String model = modelSupplier.get();
+        if (model == null || model.isBlank()) {
+            throw new IllegalStateException("chat model is blank");
+        }
+        return model.trim();
     }
 
     /**

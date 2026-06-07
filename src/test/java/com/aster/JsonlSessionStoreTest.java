@@ -73,6 +73,39 @@ class JsonlSessionStoreTest {
     }
 
     /**
+     * 验证上下文快照恢复后，可以只读取快照进度之后的新消息。
+     */
+    @Test
+    void loadsMessageRecordsAfterSnapshotSeq() throws Exception {
+        Path file = tempDir.resolve("sessions/default.jsonl");
+        JsonlSessionStore store = new JsonlSessionStore(
+                objectMapper,
+                file,
+                "default",
+                SessionReplayer.MAIN_BRANCH
+        );
+
+        store.append(Message.user("旧问题"));
+        store.append(Message.assistant("旧回答"));
+        long snapshotSeq = store.lastAppendedMessageRecord().seq();
+        String snapshotHash = store.lastAppendedMessageRecord().hash();
+        store.recordRunFinished("旧回答");
+        store.append(Message.user("新问题"));
+
+        JsonlSessionStore reopened = new JsonlSessionStore(
+                objectMapper,
+                file,
+                "default",
+                SessionReplayer.MAIN_BRANCH
+        );
+
+        var records = reopened.loadMessageRecordsAfter(snapshotSeq);
+        assertTrue(reopened.containsEvent(snapshotSeq, snapshotHash));
+        assertEquals(1, records.size());
+        assertEquals("新问题", records.getFirst().message().content());
+    }
+
+    /**
      * 验证基础 system prompt 只作为启动消息参与上下文，不写入 JSONL。
      */
     @Test

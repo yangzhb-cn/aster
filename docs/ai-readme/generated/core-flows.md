@@ -119,12 +119,14 @@ sequenceDiagram
     participant Hook as SystemReminderInjectHook
     participant LLM as StreamingChatClient
 
-    Runtime->>Jsonl: replay() -> records(seq/hash/message)
     Runtime->>Snapshot: load(sessionId, branch)
     alt snapshot valid
+        Runtime->>Jsonl: containsEvent(lastSeq,lastHash)
+        Runtime->>Jsonl: loadMessageRecordsAfter(lastSeq)
         Runtime->>Cache: restore(bootstrap, snapshot)
         Runtime->>Cache: append records after lastSeq
     else no snapshot or invalid
+        Runtime->>Jsonl: replay() -> records(seq/hash/message)
         Runtime->>Cache: initialize(bootstrap, records)
         Cache->>Summarizer: summarize(old turns) when trim
         Summarizer->>LLM: stream(summary request without tools)
@@ -158,8 +160,9 @@ sequenceDiagram
 ### 关键分支
 
 - JSONL session 仍是事实源；`workspace/context-windows/*.json` 是可覆盖缓存，用来保存上一轮压缩进度。
-- 主 runtime 启动时先 replay JSONL 得到 `SessionMessageRecord(seq/hash/message)`，再校验 snapshot 的版本、session、branch、prompt hash、summarizer、model 和 last seq/hash。
-- snapshot 有效时直接恢复 `runningSummary + recentTurns`，并只追加 snapshot 之后新增的 JSONL 消息；snapshot 缺失、损坏或配置变化时才全量重建窗口。
+- 主 runtime 启动时先读取 snapshot；snapshot 元信息有效后，用 `containsEvent(lastSeq,lastHash)` 校验它仍对得上 JSONL。
+- snapshot 有效时直接恢复 `runningSummary + recentTurns`，并用 `loadMessageRecordsAfter(lastSeq)` 只读取和追加新增 JSONL 消息；snapshot 缺失、损坏、prompt/摘要器变化或 seq/hash 对不上时才 full replay 全量重建窗口。
+- 主 Chat 模型切换不让 snapshot 失效；模型是 `AgentRuntime` 的运行态，下一次 LLM 请求才读取新模型。
 - 每条消息 append 成功后，`ContextWindowSnapshotSessionStore` 先写 JSONL，再更新 `ContextWindowCache`，最后覆盖保存最新 snapshot。
 - 触发压缩时优先用 `LlmSummarizer` 请求流式 LLM 生成语义摘要；摘要请求不带 tools、不带 thinking，不写 session，失败时回退 `TranscriptSummarizer`。
 - 压缩按 user turn，而不是字符串硬切。

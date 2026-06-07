@@ -51,7 +51,7 @@
 | `OPENAI_COMPATIBLE_PROVIDER` | 覆盖 OpenAI-compatible provider 名称 |
 | `OPENAI_COMPATIBLE_BASE_URL` | 覆盖模型 API base URL |
 | `OPENAI_COMPATIBLE_API_KEY` | 覆盖模型 API key |
-| `OPENAI_COMPATIBLE_MODEL` | 覆盖模型名 |
+| `OPENAI_COMPATIBLE_MODEL` | 覆盖启动模型名；DeepSeek 当前支持运行中切换 `deepseek-v4-flash` / `deepseek-v4-pro` |
 | `ASTER_WEB_PORT` | Web 端口，`aster2web` 默认 8081 |
 | `ASTER_SESSION` | Web 启动 session 名称 |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot token |

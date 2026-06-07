@@ -159,6 +159,26 @@ public class TelegramRuntimeManager implements AutoCloseable {
         sender.sendMessage(message.chat().id(), "当前会话：\n" + displayName + "\n" + chatRuntime.sessionId());
     }
 
+    /**
+     * 显示或切换当前 chat 的 Chat 模型。
+     */
+    public synchronized void switchModel(TelegramMessage message, String model) throws IOException {
+        ChatRuntime chatRuntime = runtimeFor(message);
+        AgentRuntime runtime = chatRuntime.runtime();
+        if (model == null || model.isBlank()) {
+            sender.sendMessage(message.chat().id(), "当前模型：" + runtime.chatModel()
+                    + "\n可选模型：" + String.join(", ", runtime.availableChatModels()));
+            return;
+        }
+
+        try {
+            String selected = runtime.switchChatModel(model.trim());
+            sender.sendMessage(message.chat().id(), "已切换模型：" + selected);
+        } catch (IllegalArgumentException error) {
+            sender.sendMessage(message.chat().id(), error.getMessage());
+        }
+    }
+
     private ChatRuntime runtimeFor(TelegramMessage message) throws IOException {
         long chatId = message.chat().id();
         ChatRuntime existing = runtimes.get(chatId);

@@ -32,6 +32,7 @@ import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Agent 运行时对象。
@@ -58,6 +59,8 @@ public class AgentRuntime implements AutoCloseable {
     private final ParallelToolExecutor parallelToolExecutor;
     private final McpToolExecutor mcpToolExecutor;
     private final OpenAiCompatibleProvider provider;
+    private final AtomicReference<String> chatModel;
+    private final List<String> availableChatModels;
     private final String sessionName;
     private final String teamFinalSummaryUserPrompt;
     private final int skillCount;
@@ -86,6 +89,8 @@ public class AgentRuntime implements AutoCloseable {
             ParallelToolExecutor parallelToolExecutor,
             McpToolExecutor mcpToolExecutor,
             OpenAiCompatibleProvider provider,
+            AtomicReference<String> chatModel,
+            List<String> availableChatModels,
             String sessionName,
             String teamFinalSummaryUserPrompt,
             int skillCount
@@ -108,6 +113,8 @@ public class AgentRuntime implements AutoCloseable {
         this.parallelToolExecutor = Objects.requireNonNull(parallelToolExecutor);
         this.mcpToolExecutor = Objects.requireNonNull(mcpToolExecutor);
         this.provider = Objects.requireNonNull(provider);
+        this.chatModel = Objects.requireNonNull(chatModel);
+        this.availableChatModels = List.copyOf(Objects.requireNonNull(availableChatModels));
         this.sessionName = Objects.requireNonNull(sessionName);
         this.teamFinalSummaryUserPrompt = Objects.requireNonNull(teamFinalSummaryUserPrompt);
         this.skillCount = skillCount;
@@ -269,6 +276,36 @@ public class AgentRuntime implements AutoCloseable {
      */
     public OpenAiCompatibleProvider provider() {
         return provider;
+    }
+
+    /**
+     * 当前普通 Chat runtime 使用的模型。
+     *
+     * <p>它只影响后续主 AgentLoop 请求；摘要、记忆、Plan、Team、Room 仍使用各自装配时的模型。</p>
+     */
+    public String chatModel() {
+        return chatModel.get();
+    }
+
+    /**
+     * 当前 runtime 允许切换的 chat 模型列表。
+     */
+    public List<String> availableChatModels() {
+        return availableChatModels;
+    }
+
+    /**
+     * 切换当前普通 Chat runtime 的模型。
+     *
+     * <p>已经发出的 SSE 请求不会被中断；下一次 LLM 请求会读取新模型。</p>
+     */
+    public String switchChatModel(String model) {
+        String normalized = Objects.requireNonNull(model, "model").trim();
+        if (!availableChatModels.contains(normalized)) {
+            throw new IllegalArgumentException("不支持的模型：" + normalized + "，可选：" + String.join(", ", availableChatModels));
+        }
+        chatModel.set(normalized);
+        return normalized;
     }
 
     /**

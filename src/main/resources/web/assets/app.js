@@ -3,6 +3,8 @@ const state = {
   busy: false,
   queuedCount: 0,
   currentSessionId: "",
+  model: "",
+  availableModels: [],
   sessions: [],
   sessionStatuses: {},
   rooms: [],
@@ -58,17 +60,13 @@ const roomMemberList = $("#roomMemberList");
 const roomMemberSelect = $("#roomMemberSelect");
 const addRoomMemberButton = $("#addRoomMemberButton");
 const connectionState = $("#connectionState");
-const modelName = $("#modelName");
+const modelSelect = $("#modelSelect");
 const sessionName = $("#sessionName");
 const inputTokens = $("#inputTokens");
 const cacheTokens = $("#cacheTokens");
 const missTokens = $("#missTokens");
 const outputTokens = $("#outputTokens");
 const totalTokens = $("#totalTokens");
-const contextBefore = $("#contextBefore");
-const contextAfter = $("#contextAfter");
-const contextMax = $("#contextMax");
-const contextCompressed = $("#contextCompressed");
 const contextUsedPercent = $("#contextUsedPercent");
 const contextUsedTokens = $("#contextUsedTokens");
 const contextTotalTokens = $("#contextTotalTokens");
@@ -527,10 +525,24 @@ function applyStatus(status) {
   const current = sessionRuntimeStatus(state.currentSessionId);
   state.busy = Boolean(current.busy ?? status.busy);
   state.queuedCount = Number(current.queuedCount ?? status.queuedCount ?? 0);
-  modelName.textContent = status.model || "model";
+  state.model = status.model || state.model;
+  state.availableModels = Array.isArray(status.availableModels) ? status.availableModels : state.availableModels;
+  renderModelSelect();
   sessionName.textContent = status.displayName || status.sessionName || "session";
   sendButton.disabled = false;
   renderSessions();
+}
+
+function renderModelSelect() {
+  const models = state.availableModels.length ? state.availableModels : [state.model || "model"];
+  const signature = models.join("|");
+  if (modelSelect.dataset.signature !== signature) {
+    modelSelect.innerHTML = models
+      .map((model) => `<option value="${escapeHtml(model)}">${escapeHtml(model)}</option>`)
+      .join("");
+    modelSelect.dataset.signature = signature;
+  }
+  modelSelect.value = state.model || models[0] || "";
 }
 
 function setMetric(node, value) {
@@ -556,10 +568,6 @@ function applyUsage(usage = {}) {
 }
 
 function applyContext(payload = {}) {
-  setMetric(contextBefore, payload.beforeTokens);
-  setMetric(contextAfter, payload.afterTokens);
-  setMetric(contextMax, payload.maxContextTokens);
-  setMetric(contextCompressed, payload.compressed ? "compressed" : "watching");
   const used = Number(payload.afterTokens ?? payload.beforeTokens);
   const max = Number(payload.maxContextTokens);
   if (Number.isFinite(used) && Number.isFinite(max) && max > 0) {
@@ -1711,9 +1719,21 @@ stopButton.addEventListener("click", async () => {
   }
 });
 
+modelSelect.addEventListener("change", async () => {
+  try {
+    await postJson("/api/model", {
+      sessionId: state.currentSessionId,
+      model: modelSelect.value,
+    });
+  } catch (error) {
+    addMessage("error", error.message);
+    refreshStatus();
+  }
+});
+
 promptEl.addEventListener("input", () => {
   promptEl.style.height = "auto";
-  promptEl.style.height = `${Math.min(promptEl.scrollHeight, 150)}px`;
+  promptEl.style.height = `${Math.min(promptEl.scrollHeight, 118)}px`;
 });
 
 promptEl.addEventListener("keydown", (event) => {

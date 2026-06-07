@@ -8,6 +8,7 @@ import com.aster.core.agent.control.AgentRunControl;
 import com.aster.core.event.model.AgentEvent;
 import com.aster.core.event.model.AgentEventEnvelope;
 import com.aster.core.context.ContextBuilder;
+import com.aster.core.context.ContextPipeline;
 import com.aster.core.context.SimpleTokenEstimator;
 import com.aster.core.context.TranscriptSummarizer;
 import com.aster.core.context.model.ContextOptions;
@@ -48,6 +49,7 @@ import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -62,6 +64,48 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class AgentLoopTest {
     @TempDir
     Path tempDir;
+
+    /**
+     * 验证同一个 AgentLoop 会在每次 LLM 请求前读取当前模型。
+     */
+    @Test
+    void readsCurrentModelBeforeEachLlmRequest() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        InMemorySessionStore sessionStore = new InMemorySessionStore();
+        ToolRegistry toolRegistry = new ToolRegistry(new LocalToolExecutor(objectMapper), new McpToolExecutor());
+        AtomicReference<String> model = new AtomicReference<>("deepseek-v4-flash");
+        List<String> requestedModels = new ArrayList<>();
+
+        StreamingChatClient fakeStreamingLlm = (request, handler) -> {
+            requestedModels.add(request.model());
+            handler.onEvent(textEvent("ok"));
+            handler.onDone();
+        };
+
+        ContextBuilder contextBuilder = new ContextBuilder(
+                new SimpleTokenEstimator(),
+                new TranscriptSummarizer(1_000),
+                ContextOptions.defaults()
+        );
+        AgentLoop loop = new AgentLoop(
+                model::get,
+                new OpenAiCompatibleProvider("deepseek", "http://localhost", "test-key", "deepseek-v4-flash", true, "high"),
+                sessionStore,
+                new ContextPipeline(sessionStore, contextBuilder),
+                fakeStreamingLlm,
+                toolRegistry,
+                new ParallelToolExecutor(toolRegistry, Executors.newFixedThreadPool(1)),
+                HookRegistry.empty(),
+                AgentEventBus.noop("test"),
+                4
+        );
+
+        assertEquals("ok", loop.run("first"));
+        model.set("deepseek-v4-pro");
+        assertEquals("ok", loop.run("second"));
+
+        assertEquals(List.of("deepseek-v4-flash", "deepseek-v4-pro"), requestedModels);
+    }
 
     /**
      * 验证模型先流式返回 tool_call，工具执行后再继续请求模型拿最终答案。

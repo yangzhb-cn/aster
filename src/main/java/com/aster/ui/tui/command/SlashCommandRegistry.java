@@ -25,6 +25,7 @@ public class SlashCommandRegistry {
         return new SlashCommandRegistry(List.of(
                 new ExitCommand(),
                 new SessionCommand(),
+                new ModelCommand(),
                 new TeamCommand(),
                 new PlanCommand(),
                 new StartCommand(),

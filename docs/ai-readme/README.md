@@ -16,7 +16,7 @@ flowchart LR
 
 - 生成时间：2026-06-04 14:24
 - 生成分支：master
-- 最近同步：2026-06-07，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照和 Web context 进度展示
+- 最近同步：2026-06-07，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照、增量 JSONL 补齐、Web context 进度展示和主 Chat 模型切换
 
 ## 入口功能矩阵
 
@@ -26,6 +26,7 @@ flowchart LR
 | 流式响应展示 | 已实现 | 已实现 | 部分实现 | TUI/Web 展示 token 流；Telegram 缓存 token，最终一次性发送回答，避免刷屏。 |
 | 工具调用可视化 | 已实现 | 已实现 | 部分实现 | TUI/Web 展示工具状态；Web 合并调用和结果并支持折叠；Telegram 展示工具开始/完成，长内容截断。 |
 | HITL 工具审批 | 已实现 | 已实现 | 已实现 | `/approve [id]`、`/deny [id] [reason]`；Web 使用审批块按钮。 |
+| 主 Chat 模型切换 | 已实现 | 已实现 | 已实现 | `/model [模型名]` 查看/切换；Web 顶部下拉切换当前 session runtime 的模型。 |
 | `/stop` 停止 | 已实现 | 已实现 | 已实现 | 停止普通 run、取消审批、取消待执行 Plan；Room 同步回复当前还不是完整可中断流。 |
 | `/steer` 运行中引导 | 已实现 | API 已有，页面未展示 | 未实现 | TUI 有 `/steer` 命令；Web 有 `/api/steer`，当前页面没有入口；Telegram 未接命令。 |
 | follow-up 排队 | 已实现 | 已实现 | 已实现 | 忙碌时普通输入进入 `AgentRunCoordinator` 队列。 |

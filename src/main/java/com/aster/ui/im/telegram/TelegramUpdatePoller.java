@@ -87,6 +87,7 @@ public class TelegramUpdatePoller implements AutoCloseable {
             case "/help" -> sendHelp(message);
             case "/session" -> runtimeManager.showSession(message);
             case "/new" -> runtimeManager.newSession(message);
+            case "/model" -> runtimeManager.switchModel(message, commandArgument(text));
             case "/team" -> runtimeManager.submitTeam(message, commandArgument(text));
             case "/plan" -> {
                 String task = commandArgument(text);
@@ -118,6 +119,7 @@ public class TelegramUpdatePoller implements AutoCloseable {
                     直接发送文本即可对话。
                     /session 查看当前会话
                     /new 新建会话
+                    /model [模型名] 查看或切换当前 Chat 模型
                     /team <任务> 启动只读 Agent Team 探索
                     /plan <任务> 生成动态 DAG 计划
                     /start 执行当前 Plan

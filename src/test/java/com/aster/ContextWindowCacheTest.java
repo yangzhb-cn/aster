@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -121,6 +122,53 @@ class ContextWindowCacheTest {
         assertEquals(3, result.messages().size());
         assertTrue(result.messages().stream().anyMatch(message ->
                 "user".equals(message.role()) && message.content().contains("最近问题")
+        ));
+    }
+
+    @Test
+    void appendsAfterSnapshotWithoutResummarizingOldHistory() {
+        ContextWindowCache cache = new ContextWindowCache(
+                new SimpleTokenEstimator(),
+                ignored -> "已保存的旧摘要",
+                new ContextOptions(10, 0.1, 1)
+        );
+        cache.initialize(List.of(
+                Message.system("系统提示"),
+                Message.user("很早的问题"),
+                Message.assistant("很早的回答"),
+                Message.user("中间问题"),
+                Message.assistant("中间回答"),
+                Message.user("最近问题"),
+                Message.assistant("最近回答")
+        ));
+        ContextWindowSnapshot snapshot = cache.snapshot(
+                "default",
+                "main",
+                4,
+                "hash-4",
+                "system-hash",
+                "summary-hash",
+                "llm",
+                "model"
+        );
+        AtomicInteger summarizeCalls = new AtomicInteger();
+        ContextWindowCache restored = new ContextWindowCache(
+                new SimpleTokenEstimator(),
+                messages -> {
+                    summarizeCalls.incrementAndGet();
+                    return "不应该重新生成的摘要";
+                },
+                new ContextOptions(10_000, 0.9, 3)
+        );
+
+        restored.restore(List.of(Message.system("系统提示")), snapshot);
+        restored.append(Message.user("恢复后的新问题"));
+        ContextBuildResult result = restored.build();
+
+        assertEquals(0, summarizeCalls.get());
+        assertEquals("已保存的旧摘要", result.summary());
+        assertTrue(result.messages().stream().anyMatch(message ->
+                "user".equals(message.role()) && message.content().contains("恢复后的新问题")
         ));
     }
 

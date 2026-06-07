@@ -94,7 +94,7 @@ mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
 ## 常用环境变量
 
 - `DEEPSEEK_API_KEY`：默认模型 API Key。
-- `OPENAI_COMPATIBLE_*`：覆盖 provider、base URL、API Key、model。
+- `OPENAI_COMPATIBLE_*`：覆盖 provider、base URL、API Key、启动模型；DeepSeek 可在运行中通过 `/model` 或 Web 顶部下拉切换 `deepseek-v4-flash` / `deepseek-v4-pro`。
 - `ASTER_WEB_PORT`：Web 端口，`aster2web` 默认 `8081`。
 - `ASTER_SESSION`：Web 启动 session。
 - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`：Telegram 配置。

@@ -101,6 +101,7 @@ public class WebServer implements AutoCloseable {
         server.createContext("/api/messages", this::handleMessageSubmit);
         server.createContext("/api/steer", this::handleSteer);
         server.createContext("/api/stop", this::handleStop);
+        server.createContext("/api/model", this::handleModel);
         server.createContext("/api/approvals", this::handleApprovals);
         server.createContext("/api/status", this::handleStatus);
         server.createContext("/api/sessions", this::handleSessions);
@@ -176,6 +177,11 @@ public class WebServer implements AutoCloseable {
                         return;
                     }
                     target.submitTeam(task);
+                } else if (text.equals("/model") || text.startsWith("/model ")) {
+                    String model = text.length() <= "/model".length() ? "" : text.substring("/model".length()).trim();
+                    if (!model.isBlank()) {
+                        target.switchChatModel(model);
+                    }
                 } else {
                     target.submit(text);
                 }
@@ -230,6 +236,30 @@ public class WebServer implements AutoCloseable {
                 accepted = runtimeForActiveSession(sessionId).stop();
             }
             sendJson(exchange, accepted ? 202 : 409, statusPayload());
+        } catch (IOException e) {
+            sendJson(exchange, sessionErrorStatus(e), Map.of("error", e.getMessage()));
+        }
+    }
+
+    /**
+     * 切换当前 Web session 的 Chat 模型。
+     */
+    private void handleModel(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, Map.of("error", "Method Not Allowed"));
+            return;
+        }
+
+        try {
+            Map<?, ?> payload = readPayload(exchange);
+            String model = requiredValue(payload, "model");
+            synchronized (runtimeLock) {
+                String sessionId = sessionIdFromPayload(payload);
+                runtimeForActiveSession(sessionId).switchChatModel(model);
+            }
+            sendJson(exchange, 200, statusPayload());
+        } catch (IllegalArgumentException e) {
+            sendJson(exchange, 400, Map.of("error", e.getMessage()));
         } catch (IOException e) {
             sendJson(exchange, sessionErrorStatus(e), Map.of("error", e.getMessage()));
         }
@@ -808,7 +838,8 @@ public class WebServer implements AutoCloseable {
             status.put("sessionId", currentSessionId);
             status.put("sessionName", currentSessionId);
             status.put("displayName", currentDisplayName);
-            status.put("model", selected.provider().defaultModel());
+            status.put("model", selected.chatModel());
+            status.put("availableModels", selected.availableChatModels());
             status.put("provider", selected.provider().name());
             status.put("skillCount", selected.skillCount());
             status.put("busy", selected.isBusy());

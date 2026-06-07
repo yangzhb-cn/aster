@@ -67,8 +67,9 @@ flowchart TD
 | 决策 | 当前实现 | 原因 |
 | --- | --- | --- |
 | 只保留流式 LLM 主路径 | `StreamingChatClient` + SSE parser | TUI/Web/Telegram 都消费流式事件，避免维护流式和非流式两套路径 |
+| 主 Chat 模型是 runtime 状态 | `AgentRuntime.chatModel()` + `AgentLoop` model supplier | DeepSeek `deepseek-v4-flash` / `deepseek-v4-pro` 可按 session 切换；切换只影响后续主 Chat LLM 请求 |
 | Context 压缩使用运行态窗口 | `ContextWindowCache` + `ContextPipeline` | 请求上下文只保留旧摘要和最近完整 turn，避免每轮请求全量 replay |
-| Context 快照恢复压缩进度 | `JsonContextWindowSnapshotStore` + `ContextWindowSnapshotSessionStore` | 快照保存到 `workspace/context-windows/*.json`；启动时校验版本、session、prompt hash、summarizer、model、last seq/hash，有效则恢复并只补齐新增 JSONL 消息 |
+| Context 快照恢复压缩进度 | `JsonContextWindowSnapshotStore` + `ContextWindowSnapshotSessionStore` | 快照保存到 `workspace/context-windows/*.json`；启动时先读快照，校验版本、session、prompt hash、summarizer、last seq/hash，有效则只用 `loadMessageRecordsAfter(lastSeq)` 补齐新增消息 |
 | Context 摘要优先使用 LLM | `LlmSummarizer` + `TranscriptSummarizer` | 压缩时走无工具、无 thinking 的流式 LLM 语义摘要；失败或空摘要时回退确定性转写摘要 |
 | 可选能力走 Hook / Extension | `HookRegistry`、`RuntimeExtensionRegistry` | 避免 `AgentLoop` 堆业务 if-else |
 | Tool 统一抽象 | `ToolRegistry`、`ToolHandler`、`ToolResult` | 本地工具、MCP 工具、扩展工具统一给 LLM 暴露 |

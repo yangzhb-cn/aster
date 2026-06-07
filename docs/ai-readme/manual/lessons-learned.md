@@ -13,7 +13,8 @@
 | 长期记忆和压缩摘要不应混入 system prompt 或永久历史 | 动态内容如果写进 session 或 system prompt，会污染审计历史，也难以恢复 | 统一放进最后一条 user 消息开头的 `<system-reminder>`，只参与本轮请求 | `SystemReminderInjectHook` |
 | tool_call 协议很容易被破坏 | assistant 的 tool_calls 必须紧跟匹配的 role=tool 结果；中间不能插普通 user | 工具失败、审批拒绝、大结果卸载也要写回合法 tool 结果；上下文压缩按消息边界处理 | `AgentLoop`, `ContextBuilder` |
 | 每轮 LLM 都全量 replay JSONL 会浪费 | 工具调用多轮时，每轮 `ContextPipeline.build()` 都会 `loadMessages()` 并回放完整事件日志 | 主 runtime 用 `ContextWindowCache` 维护运行态窗口；append 成功后增量更新，完整历史仍留在 JSONL | `ContextWindowCache`, `ContextWindowSnapshotSessionStore` |
-| 恢复会话不能丢上下文压缩进度 | 只靠内存缓存时，重启后要么重新摘要全部历史，要么丢失上一轮摘要进度 | 用 `ContextWindowSnapshot` 保存 runningSummary、recentTurns、last seq/hash；启动时快照有效就恢复并只补齐新增 JSONL 消息 | `JsonContextWindowSnapshotStore`, `SessionMessageRecord` |
+| 恢复会话不能丢上下文压缩进度 | 只靠内存缓存时，重启后要么重新摘要全部历史，要么丢失上一轮摘要进度 | 用 `ContextWindowSnapshot` 保存 runningSummary、recentTurns、last seq/hash；启动时快照有效就恢复，并通过 `loadMessageRecordsAfter(lastSeq)` 只补齐新增 JSONL 消息 | `JsonContextWindowSnapshotStore`, `SessionMessageRecord` |
+| Chat 模型切换不应破坏上下文快照 | `deepseek-v4-flash` / `deepseek-v4-pro` 是用户运行态选择，如果参与 snapshot 校验会导致恢复会话时无谓 full replay | 模型切换放在 `AgentRuntime`，`AgentLoop` 每次请求前读取；snapshot 只校验 session、prompt、摘要器、last seq/hash | `AgentRuntime`, `AgentLoop`, `AgentRuntimeFactory` |
 | LLM 摘要不能复用 AgentLoop | 摘要如果走普通 AgentLoop，可能触发工具、Hook、Session 写入或递归压缩 | `LlmSummarizer` 只调用底层 `StreamingChatClient`，请求不带 tools/thinking，不写 session；失败回退 `TranscriptSummarizer` | `LlmSummarizer`, `TranscriptSummarizer` |
 | Web 审批接口曾出现 `java.time.Instant` 序列化错误 | 当前 ObjectMapper 没有注册 `JavaTimeModule` | 对 Web DTO 和持久化状态优先使用 ISO 字符串时间，或显式注册模块；项目里 Todo/Room 使用字符串时间 | `ToolApprovalRequest`, `TodoItem`, `HubMessage` |
 | TUI Markdown 表格渲染异常 | 表格宽度、中文字符宽度和换行处理如果按普通字符硬切，边框会错位 | 表格渲染要按列计算宽度，长内容截断/换行，不能只按原始 Markdown 输出 | `ui/tui` Markdown 渲染 |

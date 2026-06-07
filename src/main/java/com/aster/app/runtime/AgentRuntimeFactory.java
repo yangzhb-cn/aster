@@ -84,6 +84,7 @@ import com.aster.app.team.AgentTeamRunner;
 import com.aster.app.team.TeamAgentFactory;
 import com.aster.app.team.TeamTaskExecutor;
 import com.aster.app.team.model.TeamPromptSet;
+import com.aster.llm.DeepSeekModels;
 import okhttp3.OkHttpClient;
 
 import java.io.IOException;
@@ -97,6 +98,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 创建 Agent 运行时。
@@ -140,6 +142,8 @@ public class AgentRuntimeFactory {
         if (provider.apiKey() == null || provider.apiKey().isBlank()) {
             throw new IllegalStateException("Missing API key. Set DEEPSEEK_API_KEY or OPENAI_COMPATIBLE_API_KEY.");
         }
+        List<String> availableChatModels = availableChatModels(provider);
+        AtomicReference<String> chatModel = new AtomicReference<>(initialChatModel(provider, availableChatModels));
         WorkspacePaths.ensureDirectories();
 
         ObjectMapper objectMapper = new ObjectMapper();
@@ -224,17 +228,23 @@ public class AgentRuntimeFactory {
                 CONTEXT_SUMMARIZER_ID,
                 provider.defaultModel()
         );
-        SessionReplayResult replayResult = persistentSessionStore.replay();
-        ContextWindowCache contextWindowCache = restoreOrBuildContextWindowCache(
+        ContextWindowRestoreResult contextWindowRestoreResult = restoreOrBuildContextWindowCache(
                 bootstrapMessages,
-                replayResult,
+                persistentSessionStore,
                 contextWindowSnapshotStore,
                 snapshotMetadata,
                 tokenEstimator,
                 contextSummarizer,
                 contextOptions
         );
-        saveContextWindowSnapshot(contextWindowCache, contextWindowSnapshotStore, snapshotMetadata, replayResult.messageRecords());
+        ContextWindowCache contextWindowCache = contextWindowRestoreResult.cache();
+        saveContextWindowSnapshot(
+                contextWindowCache,
+                contextWindowSnapshotStore,
+                snapshotMetadata,
+                contextWindowRestoreResult.lastSeq(),
+                contextWindowRestoreResult.lastHash()
+        );
         SessionStore sessionStore = new ContextWindowSnapshotSessionStore(
                 bootstrapMessages,
                 persistentSessionStore,
@@ -295,6 +305,7 @@ public class AgentRuntimeFactory {
         ContextPipeline contextPipeline = new ContextPipeline(contextWindowCache);
 
         AgentLoop agentLoop = new AgentLoop(
+                chatModel::get,
                 provider,
                 sessionStore,
                 contextPipeline,
@@ -377,6 +388,8 @@ public class AgentRuntimeFactory {
                 parallelToolExecutor,
                 mcpToolExecutor,
                 provider,
+                chatModel,
+                availableChatModels,
                 sessionName,
                 teamFinalSummaryUserPrompt,
                 skillRepository.listMetadata().size()
@@ -384,31 +397,74 @@ public class AgentRuntimeFactory {
     }
 
     /**
+     * 返回当前主 Chat runtime 可切换的模型集合。
+     *
+     * <p>第一版只开放 DeepSeek V4 flash/pro。其他 OpenAI-compatible provider
+     * 仍使用启动时配置的默认模型，避免把供应商能力判断扩散到 UI。</p>
+     */
+    private List<String> availableChatModels(OpenAiCompatibleProvider provider) {
+        if ("deepseek".equalsIgnoreCase(provider.name())) {
+            return DeepSeekModels.switchableChatModels();
+        }
+        return List.of(provider.defaultModel());
+    }
+
+    /**
+     * 计算启动时的 chat 模型。
+     *
+     * <p>如果 .env 指定了允许切换的模型，就沿用；否则回退到当前列表第一个模型。</p>
+     */
+    private String initialChatModel(OpenAiCompatibleProvider provider, List<String> availableChatModels) {
+        if (availableChatModels.contains(provider.defaultModel())) {
+            return provider.defaultModel();
+        }
+        return availableChatModels.getFirst();
+    }
+
+    /**
      * 从 snapshot 恢复上下文窗口；无效时回退到 JSONL 全量重建。
      */
-    private ContextWindowCache restoreOrBuildContextWindowCache(
+    private ContextWindowRestoreResult restoreOrBuildContextWindowCache(
             List<Message> bootstrapMessages,
-            SessionReplayResult replayResult,
+            JsonlSessionStore sessionStore,
             ContextWindowSnapshotStore snapshotStore,
             ContextWindowSnapshotSessionStore.SnapshotMetadata metadata,
             TokenEstimator tokenEstimator,
             Summarizer summarizer,
             ContextOptions contextOptions
-    ) {
+    ) throws IOException {
         ContextWindowCache cache = new ContextWindowCache(tokenEstimator, summarizer, contextOptions);
         Optional<ContextWindowSnapshot> snapshot = loadSnapshotQuietly(snapshotStore, metadata);
-        if (snapshot.isPresent() && isSnapshotValid(snapshot.get(), metadata, replayResult.messageRecords())) {
+        if (snapshot.isPresent() && isSnapshotMetadataValid(snapshot.get(), metadata)) {
             try {
-                cache.restore(bootstrapMessages, snapshot.get());
-                appendRecordsAfter(cache, replayResult.messageRecords(), snapshot.get().lastSeq());
-                return cache;
-            } catch (RuntimeException ignored) {
+                ContextWindowSnapshot currentSnapshot = snapshot.get();
+                if (snapshotSeqMatches(sessionStore, currentSnapshot)) {
+                    List<SessionMessageRecord> recordsAfterSnapshot = sessionStore.loadMessageRecordsAfter(currentSnapshot.lastSeq());
+                    cache.restore(bootstrapMessages, currentSnapshot);
+                    appendRecordsAfter(cache, recordsAfterSnapshot, currentSnapshot.lastSeq());
+                    cache.build();
+                    SessionMessageRecord lastRecord = recordsAfterSnapshot.isEmpty() ? null : recordsAfterSnapshot.getLast();
+                    return new ContextWindowRestoreResult(
+                            cache,
+                            lastRecord == null ? currentSnapshot.lastSeq() : lastRecord.seq(),
+                            lastRecord == null ? currentSnapshot.lastHash() : lastRecord.hash()
+                    );
+                }
+            } catch (IOException | RuntimeException ignored) {
                 // 快照内容损坏或协议不合法时，直接回退到 JSONL 全量重建。
             }
         }
 
+        SessionReplayResult replayResult = sessionStore.replay();
         cache.initialize(bootstrapMessages, replayResult.messageRecords());
-        return cache;
+        SessionMessageRecord lastRecord = replayResult.messageRecords().isEmpty()
+                ? null
+                : replayResult.messageRecords().getLast();
+        return new ContextWindowRestoreResult(
+                cache,
+                lastRecord == null ? 0 : lastRecord.seq(),
+                lastRecord == null ? "" : lastRecord.hash()
+        );
     }
 
     private Optional<ContextWindowSnapshot> loadSnapshotQuietly(
@@ -423,12 +479,14 @@ public class AgentRuntimeFactory {
     }
 
     /**
-     * 校验快照是否还能对应当前 session 历史和 prompt 配置。
+     * 校验快照是否还能对应当前 prompt 配置。
+     *
+     * <p>chat 模型可以在运行中切换，因此模型名不参与快照失效判断；
+     * 真正会改变压缩语义的是 system prompt、summary prompt 和 summarizer。</p>
      */
-    private boolean isSnapshotValid(
+    private boolean isSnapshotMetadataValid(
             ContextWindowSnapshot snapshot,
-            ContextWindowSnapshotSessionStore.SnapshotMetadata metadata,
-            List<SessionMessageRecord> records
+            ContextWindowSnapshotSessionStore.SnapshotMetadata metadata
     ) {
         if (snapshot.version() != ContextWindowSnapshot.CURRENT_VERSION) {
             return false;
@@ -437,16 +495,20 @@ public class AgentRuntimeFactory {
                 || !Objects.equals(snapshot.branchId(), metadata.branchId())
                 || !Objects.equals(snapshot.systemPromptHash(), metadata.systemPromptHash())
                 || !Objects.equals(snapshot.summaryPromptHash(), metadata.summaryPromptHash())
-                || !Objects.equals(snapshot.summarizer(), metadata.summarizer())
-                || !Objects.equals(snapshot.model(), metadata.model())) {
+                || !Objects.equals(snapshot.summarizer(), metadata.summarizer())) {
             return false;
         }
         if (snapshot.lastSeq() == 0) {
             return snapshot.lastHash() == null || snapshot.lastHash().isBlank();
         }
-        return records.stream()
-                .anyMatch(record -> record.seq() == snapshot.lastSeq()
-                        && Objects.equals(record.hash(), snapshot.lastHash()));
+        return snapshot.lastHash() != null && !snapshot.lastHash().isBlank();
+    }
+
+    private boolean snapshotSeqMatches(JsonlSessionStore sessionStore, ContextWindowSnapshot snapshot) throws IOException {
+        if (snapshot.lastSeq() == 0) {
+            return true;
+        }
+        return sessionStore.containsEvent(snapshot.lastSeq(), snapshot.lastHash());
     }
 
     private void appendRecordsAfter(ContextWindowCache cache, List<SessionMessageRecord> records, long lastSeq) {
@@ -462,14 +524,14 @@ public class AgentRuntimeFactory {
             ContextWindowCache cache,
             ContextWindowSnapshotStore snapshotStore,
             ContextWindowSnapshotSessionStore.SnapshotMetadata metadata,
-            List<SessionMessageRecord> records
+            long lastSeq,
+            String lastHash
     ) throws IOException {
-        SessionMessageRecord lastRecord = records.isEmpty() ? null : records.getLast();
         snapshotStore.save(cache.snapshot(
                 metadata.sessionId(),
                 metadata.branchId(),
-                lastRecord == null ? 0 : lastRecord.seq(),
-                lastRecord == null ? "" : lastRecord.hash(),
+                lastSeq,
+                lastHash == null ? "" : lastHash,
                 metadata.systemPromptHash(),
                 metadata.summaryPromptHash(),
                 metadata.summarizer(),
@@ -484,6 +546,9 @@ public class AgentRuntimeFactory {
         } catch (NoSuchAlgorithmException error) {
             throw new IOException("SHA-256 not available", error);
         }
+    }
+
+    private record ContextWindowRestoreResult(ContextWindowCache cache, long lastSeq, String lastHash) {
     }
 
     /**

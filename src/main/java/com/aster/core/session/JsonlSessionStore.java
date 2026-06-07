@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -109,6 +110,39 @@ public class JsonlSessionStore implements SessionStore {
     }
 
     /**
+     * 只读取指定 seq 之后、当前分支直接追加的消息记录。
+     *
+     * <p>用于 ContextWindowSnapshot 恢复后的增量补齐。当前主 runtime 只使用 main
+     * 分支；如果未来 snapshot 支持派生分支，需要在上层先确认分支祖先关系。</p>
+     */
+    public synchronized List<SessionMessageRecord> loadMessageRecordsAfter(long lastSeq) throws IOException {
+        List<SessionMessageRecord> records = new ArrayList<>();
+        for (SessionEvent event : readEventsAfter(lastSeq)) {
+            if (branchId.equals(event.branchId())
+                    && SessionEventType.MESSAGE_APPENDED.value().equals(event.type())
+                    && event.message() != null) {
+                records.add(new SessionMessageRecord(event.seq(), event.hash(), event.message()));
+            }
+        }
+        return List.copyOf(records);
+    }
+
+    /**
+     * 判断 JSONL 里是否存在指定 seq/hash 的事件。
+     */
+    public synchronized boolean containsEvent(long seq, String hash) throws IOException {
+        for (SessionEvent event : readEventsAfter(seq - 1)) {
+            if (event.seq() == seq) {
+                return Objects.equals(event.hash(), hash);
+            }
+            if (event.seq() > seq) {
+                return false;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 返回最近一次 append 写入的 message record。
      *
      * <p>只记录 message_appended 事件；run_started/run_finished 不影响上下文窗口。</p>
@@ -192,8 +226,8 @@ public class JsonlSessionStore implements SessionStore {
      * 根据现有文件初始化 seq 和哈希链；空文件会写入 session_created/main branch。
      */
     private void initializeFromFile() throws IOException {
-        List<SessionEvent> events = readEvents();
-        if (events.isEmpty()) {
+        Optional<SessionEvent> lastEvent = readLastEvent();
+        if (lastEvent.isEmpty()) {
             nextSeq = 1;
             lastHash = "";
             appendEvent(SessionEvent.draft(
@@ -219,11 +253,9 @@ public class JsonlSessionStore implements SessionStore {
             return;
         }
 
-        SessionEvent last = events.getLast();
+        SessionEvent last = lastEvent.get();
         nextSeq = last.seq() + 1;
         lastHash = last.hash() == null ? "" : last.hash();
-        // 打开时做一次回放，尽早发现未知分支或分支循环。
-        replayer.replay(events, branchId);
     }
 
     private List<SessionEvent> readEvents() throws IOException {
@@ -238,6 +270,37 @@ public class JsonlSessionStore implements SessionStore {
             }
         }
         return events;
+    }
+
+    private List<SessionEvent> readEventsAfter(long seqExclusive) throws IOException {
+        if (!Files.exists(file)) {
+            return List.of();
+        }
+
+        List<SessionEvent> events = new ArrayList<>();
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (!line.isBlank()) {
+                SessionEvent event = objectMapper.readValue(line, SessionEvent.class);
+                if (event.seq() > seqExclusive) {
+                    events.add(event);
+                }
+            }
+        }
+        return events;
+    }
+
+    private Optional<SessionEvent> readLastEvent() throws IOException {
+        if (!Files.exists(file)) {
+            return Optional.empty();
+        }
+
+        SessionEvent last = null;
+        for (String line : Files.readAllLines(file, StandardCharsets.UTF_8)) {
+            if (!line.isBlank()) {
+                last = objectMapper.readValue(line, SessionEvent.class);
+            }
+        }
+        return Optional.ofNullable(last);
     }
 
     private SessionEvent appendEvent(SessionEvent draft) throws IOException {

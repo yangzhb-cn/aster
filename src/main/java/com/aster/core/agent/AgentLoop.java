@@ -54,6 +54,7 @@ public class AgentLoop {
     private final int maxToolRounds;
     private final boolean thinkingEnabled;
     private final String reasoningEffort;
+    private final boolean streamUsageEnabled;
 
     public AgentLoop(
             String model,
@@ -76,7 +77,8 @@ public class AgentLoop {
                 eventBus,
                 maxToolRounds,
                 false,
-                null
+                null,
+                true
         );
     }
 
@@ -101,7 +103,8 @@ public class AgentLoop {
                 eventBus,
                 maxToolRounds,
                 provider.thinkingEnabled(),
-                provider.reasoningEffort()
+                provider.reasoningEffort(),
+                provider.streamUsageEnabled()
         );
     }
 
@@ -127,7 +130,8 @@ public class AgentLoop {
                 eventBus,
                 maxToolRounds,
                 provider.thinkingEnabled(),
-                provider.reasoningEffort()
+                provider.reasoningEffort(),
+                provider.streamUsageEnabled()
         );
     }
 
@@ -153,7 +157,8 @@ public class AgentLoop {
                 eventBus,
                 maxToolRounds,
                 provider.thinkingEnabled(),
-                provider.reasoningEffort()
+                provider.reasoningEffort(),
+                provider.streamUsageEnabled()
         );
     }
 
@@ -217,7 +222,8 @@ public class AgentLoop {
                 eventBus,
                 maxToolRounds,
                 provider.thinkingEnabled(),
-                provider.reasoningEffort()
+                provider.reasoningEffort(),
+                provider.streamUsageEnabled()
         );
     }
 
@@ -232,7 +238,8 @@ public class AgentLoop {
             AgentEventBus eventBus,
             int maxToolRounds,
             boolean thinkingEnabled,
-            String reasoningEffort
+            String reasoningEffort,
+            boolean streamUsageEnabled
     ) {
         this.modelSupplier = Objects.requireNonNull(modelSupplier);
         this.sessionStore = Objects.requireNonNull(sessionStore);
@@ -245,6 +252,7 @@ public class AgentLoop {
         this.maxToolRounds = maxToolRounds;
         this.thinkingEnabled = thinkingEnabled;
         this.reasoningEffort = reasoningEffort;
+        this.streamUsageEnabled = streamUsageEnabled;
     }
 
     /**
@@ -355,7 +363,8 @@ public class AgentLoop {
                     requestTools,
                     requestTools.isEmpty() ? null : "auto",
                     thinkingEnabled,
-                    reasoningEffort
+                    reasoningEffort,
+                    streamUsageEnabled
             );
 
             Message assistant;

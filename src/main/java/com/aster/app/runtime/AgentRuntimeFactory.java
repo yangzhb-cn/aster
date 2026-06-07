@@ -139,7 +139,7 @@ public class AgentRuntimeFactory {
         SessionCatalog.requireValidName(sessionName);
 
         OpenAiCompatibleProvider provider = OpenAiCompatibleProviderFactory.fromEnvWithDeepSeekDefaults();
-        if (provider.apiKey() == null || provider.apiKey().isBlank()) {
+        if (provider.apiKeyRequired() && (provider.apiKey() == null || provider.apiKey().isBlank())) {
             throw new IllegalStateException("Missing API key. Set DEEPSEEK_API_KEY or OPENAI_COMPATIBLE_API_KEY.");
         }
         List<String> availableChatModels = availableChatModels(provider);
@@ -400,14 +400,11 @@ public class AgentRuntimeFactory {
     /**
      * 返回当前主 Chat runtime 可切换的模型集合。
      *
-     * <p>第一版只开放 DeepSeek V4 flash/pro。其他 OpenAI-compatible provider
-     * 仍使用启动时配置的默认模型，避免把供应商能力判断扩散到 UI。</p>
+     * <p>模型列表由 provider 定义。DeepSeek 默认暴露 flash/pro；
+     * Ollama 可以通过 OLLAMA_CHAT_MODELS 暴露本机已拉取的模型。</p>
      */
     private List<String> availableChatModels(OpenAiCompatibleProvider provider) {
-        if ("deepseek".equalsIgnoreCase(provider.name())) {
-            return DeepSeekModels.switchableChatModels();
-        }
-        return List.of(provider.defaultModel());
+        return provider.switchableChatModels();
     }
 
     /**

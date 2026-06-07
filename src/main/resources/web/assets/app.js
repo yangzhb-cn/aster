@@ -10,6 +10,17 @@ const state = {
   sessions: [],
   sessionStatuses: {},
   schedules: [],
+  ragSessions: [],
+  currentRagSessionId: "",
+  knowledgeBases: [],
+  currentKbId: "default",
+  ragDocuments: [],
+  ragChatModel: "",
+  ragAvailableChatModels: [],
+  ragEmbeddingModel: "",
+  ragTopK: 5,
+  ragBusy: false,
+  ragSources: [],
   rooms: [],
   currentRoomId: "",
   roomAgents: [],
@@ -37,11 +48,14 @@ const sendButton = $("#sendButton");
 const stopButton = $("#stopButton");
 const chatViewButton = $("#chatViewButton");
 const roomViewButton = $("#roomViewButton");
+const ragViewButton = $("#ragViewButton");
 const archiveViewButton = $("#archiveViewButton");
 const chatLeftPanel = $("#chatLeftPanel");
 const roomLeftPanel = $("#roomLeftPanel");
+const ragLeftPanel = $("#ragLeftPanel");
 const chatRightPanel = $("#chatRightPanel");
 const roomRightPanel = $("#roomRightPanel");
+const ragRightPanel = $("#ragRightPanel");
 const roomEditorDetails = $("#roomEditorDetails");
 const newSessionButton = $("#newSessionButton");
 const toggleMcpButton = $("#toggleMcpButton");
@@ -102,6 +116,17 @@ const scheduleIntervalSeconds = $("#scheduleIntervalSeconds");
 const newScheduleButton = $("#newScheduleButton");
 const refreshSchedulesButton = $("#refreshSchedulesButton");
 const scheduleList = $("#scheduleList");
+const newRagSessionButton = $("#newRagSessionButton");
+const ragSessionList = $("#ragSessionList");
+const newRagKbButton = $("#newRagKbButton");
+const ragKbSelect = $("#ragKbSelect");
+const ragFileInput = $("#ragFileInput");
+const uploadRagDocumentButton = $("#uploadRagDocumentButton");
+const ragDocumentList = $("#ragDocumentList");
+const ragChatModel = $("#ragChatModel");
+const ragEmbeddingModel = $("#ragEmbeddingModel");
+const ragTopK = $("#ragTopK");
+const ragSourceList = $("#ragSourceList");
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -783,6 +808,148 @@ function renderNoSessionHint() {
   addMessage("system", "暂无会话。输入消息并发送会自动创建，也可以点击左侧 + 新建。");
 }
 
+async function loadRagStatus() {
+  try {
+    applyRagPayload(await requestJson("/api/rag/status"));
+    if (state.currentKbId && state.currentKbId !== "default") {
+      await loadRagDocuments();
+    }
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function applyRagPayload(payload = {}) {
+  if (Array.isArray(payload.sessions)) state.ragSessions = payload.sessions;
+  if (Object.prototype.hasOwnProperty.call(payload, "currentSessionId")) {
+    state.currentRagSessionId = payload.currentSessionId || "";
+  }
+  if (Array.isArray(payload.knowledgeBases)) {
+    state.knowledgeBases = payload.knowledgeBases;
+    if (!state.currentKbId && state.knowledgeBases.length) {
+      state.currentKbId = state.knowledgeBases[0].kbId;
+    }
+  }
+  if (Array.isArray(payload.documents)) state.ragDocuments = payload.documents;
+  if (Object.prototype.hasOwnProperty.call(payload, "ragChatModel")) state.ragChatModel = payload.ragChatModel || "";
+  if (Array.isArray(payload.ragAvailableChatModels)) state.ragAvailableChatModels = payload.ragAvailableChatModels;
+  if (Object.prototype.hasOwnProperty.call(payload, "ragEmbeddingModel")) state.ragEmbeddingModel = payload.ragEmbeddingModel || "";
+  if (Object.prototype.hasOwnProperty.call(payload, "ragTopK")) state.ragTopK = payload.ragTopK || 5;
+  renderRagSessions();
+  renderKnowledgeBases();
+  renderRagDocuments();
+  renderRagStatus();
+}
+
+function renderRagSessions() {
+  ragSessionList.innerHTML = "";
+  if (!state.ragSessions.length) {
+    const empty = document.createElement("div");
+    empty.className = "session-empty";
+    empty.textContent = "暂无知识库问答。输入问题发送后会自动创建，也可以点 + 新建。";
+    ragSessionList.append(empty);
+    renderNoRagSessionHint();
+    return;
+  }
+  for (const session of state.ragSessions) {
+    const row = document.createElement("article");
+    row.className = `session-row${session.id === state.currentRagSessionId ? " active" : ""}`;
+    row.dataset.id = session.id;
+    row.innerHTML = `
+      <button class="session-main" type="button" data-action="use" title="切换 RAG 会话">
+        <strong></strong>
+        <span></span>
+      </button>
+      <div class="session-actions">
+        <button class="session-action" type="button" data-action="rename" title="重命名" aria-label="重命名">R</button>
+        <button class="session-action danger" type="button" data-action="archive" title="归档" aria-label="归档">x</button>
+      </div>
+    `;
+    row.querySelector("strong").textContent = session.displayName || session.id;
+    row.querySelector("span").textContent = `${session.id} · ${formatSessionTime(session.updatedAt)}`;
+    ragSessionList.append(row);
+  }
+}
+
+function renderNoRagSessionHint() {
+  if (state.view !== "rag" || state.currentRagSessionId || state.ragSessions.length) return;
+  messagesEl.innerHTML = "";
+  addMessage("system", "暂无知识库问答。上传文档后输入问题，系统会自动创建 RAG 会话并流式回答。");
+}
+
+function renderKnowledgeBases() {
+  ragKbSelect.innerHTML = "";
+  if (!state.knowledgeBases.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "暂无知识库";
+    ragKbSelect.append(option);
+    return;
+  }
+  for (const kb of state.knowledgeBases) {
+    const option = document.createElement("option");
+    option.value = kb.kbId;
+    option.textContent = kb.name || kb.kbId;
+    ragKbSelect.append(option);
+  }
+  if (!state.currentKbId || !state.knowledgeBases.some((kb) => kb.kbId === state.currentKbId)) {
+    state.currentKbId = state.knowledgeBases[0].kbId;
+  }
+  ragKbSelect.value = state.currentKbId;
+}
+
+function renderRagDocuments() {
+  ragDocumentList.innerHTML = "";
+  if (!state.ragDocuments.length) {
+    const empty = document.createElement("div");
+    empty.className = "session-empty";
+    empty.textContent = "暂无文档";
+    ragDocumentList.append(empty);
+    return;
+  }
+  for (const documentItem of state.ragDocuments) {
+    const row = document.createElement("article");
+    row.className = "session-row rag-document-row";
+    row.innerHTML = `
+      <div class="session-main">
+        <strong></strong>
+        <span></span>
+      </div>
+    `;
+    row.querySelector("strong").textContent = documentItem.fileName || documentItem.docId;
+    row.querySelector("span").textContent = `${documentItem.chunkCount || 0} chunks · ${formatSessionTime(documentItem.updatedAt)}`;
+    ragDocumentList.append(row);
+  }
+}
+
+function renderRagStatus() {
+  if (ragChatModel) ragChatModel.textContent = state.ragChatModel || "-";
+  if (ragEmbeddingModel) ragEmbeddingModel.textContent = state.ragEmbeddingModel || "-";
+  if (ragTopK) ragTopK.textContent = String(state.ragTopK || 5);
+  renderRagSources(state.ragSources);
+}
+
+function renderRagSources(hits = []) {
+  if (!ragSourceList) return;
+  ragSourceList.innerHTML = "";
+  if (!hits.length) {
+    const empty = document.createElement("div");
+    empty.className = "session-empty";
+    empty.textContent = "暂无引用";
+    ragSourceList.append(empty);
+    return;
+  }
+  for (const hit of hits) {
+    const row = document.createElement("details");
+    row.className = "rag-source-item";
+    row.innerHTML = `
+      <summary>${escapeHtml(hit.sourceName || "source")} · chunk ${escapeHtml(hit.chunkIndex ?? "-")} · ${Number(hit.score || 0).toFixed(3)}</summary>
+      <p>${escapeHtml(previewText(hit.text || "").text)}</p>
+    `;
+    ragSourceList.append(row);
+  }
+}
+
 function sessionRuntimeStatus(sessionId) {
   return state.sessionStatuses?.[sessionId] || { sessionId, active: false, busy: false, queuedCount: 0, pendingApprovalCount: 0 };
 }
@@ -828,6 +995,247 @@ async function loadSessionMessages(sessionId) {
   }
 }
 
+async function loadRagMessages(sessionId) {
+  if (!sessionId) {
+    renderNoRagSessionHint();
+    return;
+  }
+  try {
+    const payload = await requestJson(`/api/rag/sessions/${encodeURIComponent(sessionId)}/messages`);
+    messagesEl.innerHTML = "";
+    state.currentAssistant = null;
+    state.ragSources = [];
+    for (const message of payload.messages || []) {
+      renderStoredRagMessage(message);
+    }
+    renderRagSources(state.ragSources);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+function renderStoredRagMessage(message = {}) {
+  if (message.type === "user") {
+    addMessage("user", message.content || "");
+    return;
+  }
+  if (message.type === "assistant") {
+    const hits = Array.isArray(message.hits) ? message.hits : [];
+    state.ragSources = hits;
+    addMessage("assistant", formatRagAnswer(message.content || "", hits));
+    return;
+  }
+  addMessage("system", message.content || "");
+}
+
+async function createRagSession() {
+  const displayName = window.prompt("RAG 会话名称", "");
+  if (displayName === null) return;
+  try {
+    applyRagPayload(await postJson("/api/rag/sessions", { displayName }));
+    await loadRagMessages(state.currentRagSessionId);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function switchRagSession(sessionId) {
+  if (!sessionId || sessionId === state.currentRagSessionId) return;
+  try {
+    applyRagPayload(await postJson("/api/rag/sessions/use", { id: sessionId }));
+    await loadRagMessages(sessionId);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function renameRagSession(sessionId) {
+  const session = state.ragSessions.find((item) => item.id === sessionId);
+  const displayName = window.prompt("RAG 会话名称", session?.displayName || "");
+  if (displayName === null) return;
+  try {
+    applyRagPayload(await postJson("/api/rag/sessions/rename", { id: sessionId, displayName }));
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function archiveRagSession(sessionId) {
+  const session = state.ragSessions.find((item) => item.id === sessionId);
+  if (!window.confirm(`归档 RAG 会话「${session?.displayName || sessionId}」？`)) return;
+  try {
+    applyRagPayload(await postJson("/api/rag/sessions/archive", { id: sessionId }));
+    messagesEl.innerHTML = "";
+    if (state.currentRagSessionId) {
+      await loadRagMessages(state.currentRagSessionId);
+    } else {
+      renderNoRagSessionHint();
+    }
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function createKnowledgeBase() {
+  const name = window.prompt("知识库名称", "");
+  if (name === null) return;
+  try {
+    const payload = await postJson("/api/rag/kbs", { name });
+    applyRagPayload(payload);
+    state.currentKbId = payload.knowledgeBases?.[0]?.kbId || state.currentKbId;
+    await loadRagDocuments();
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function loadRagDocuments() {
+  if (!state.currentKbId) return;
+  try {
+    const payload = await requestJson(`/api/rag/documents?kbId=${encodeURIComponent(state.currentKbId)}`);
+    applyRagPayload(payload);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+}
+
+async function uploadRagDocument() {
+  const file = ragFileInput.files?.[0];
+  if (!file) {
+    addMessage("error", "请选择要上传的 PDF / Markdown / 文本文件");
+    return;
+  }
+  uploadRagDocumentButton.disabled = true;
+  try {
+    const contentBase64 = await fileToBase64(file);
+    const payload = await postJson("/api/rag/documents", {
+      kbId: state.currentKbId || "default",
+      fileName: file.name,
+      contentType: file.type || "",
+      contentBase64,
+    });
+    applyRagPayload(payload);
+    ragFileInput.value = "";
+    addMessage("system", `文档已入库：${file.name}`);
+  } catch (error) {
+    addMessage("error", error.message);
+  } finally {
+    uploadRagDocumentButton.disabled = false;
+  }
+}
+
+async function fileToBase64(file) {
+  const buffer = await file.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buffer);
+  const batchSize = 0x8000;
+  for (let index = 0; index < bytes.length; index += batchSize) {
+    binary += String.fromCharCode(...bytes.subarray(index, index + batchSize));
+  }
+  return btoa(binary);
+}
+
+async function sendRagQuestion(question) {
+  addMessage("user", question);
+  const assistant = addMessage("assistant", "");
+  let answer = "";
+  state.ragBusy = true;
+  state.ragSources = [];
+  sendButton.disabled = true;
+  try {
+    const response = await fetch("/api/rag/query", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        sessionId: state.currentRagSessionId,
+        kbId: state.currentKbId || "default",
+        question,
+        topK: state.ragTopK || 5,
+        chatModel: state.ragChatModel,
+      }),
+    });
+    if (!response.ok || !response.body) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    await readRagStream(response.body, {
+      started: (data) => {
+        state.currentRagSessionId = data.session?.id || state.currentRagSessionId;
+        state.ragChatModel = data.chatModel || state.ragChatModel;
+        state.ragEmbeddingModel = data.embeddingModel || state.ragEmbeddingModel;
+        state.ragSources = Array.isArray(data.hits) ? data.hits : [];
+        renderRagStatus();
+        renderRagSources(state.ragSources);
+        renderRagSessions();
+      },
+      token: (data) => {
+        answer += data.text || "";
+        updateMessage(assistant, answer);
+      },
+      done: async (data) => {
+        answer = data.answer || answer;
+        state.currentRagSessionId = data.session?.id || state.currentRagSessionId;
+        state.ragChatModel = data.chatModel || state.ragChatModel;
+        state.ragEmbeddingModel = data.embeddingModel || state.ragEmbeddingModel;
+        state.ragSources = Array.isArray(data.hits) ? data.hits : state.ragSources;
+        updateMessage(assistant, formatRagAnswer(answer, state.ragSources));
+        renderRagStatus();
+        renderRagSources(state.ragSources);
+        await loadRagStatus();
+      },
+      error: (data) => {
+        addMessage("error", data.error || "RAG 查询失败");
+      },
+    });
+  } catch (error) {
+    addMessage("error", error.message);
+  } finally {
+    state.ragBusy = false;
+    sendButton.disabled = false;
+  }
+}
+
+async function readRagStream(body, handlers) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let index;
+    while ((index = buffer.indexOf("\n\n")) >= 0) {
+      const block = buffer.slice(0, index);
+      buffer = buffer.slice(index + 2);
+      handleSseBlock(block, handlers);
+    }
+  }
+  if (buffer.trim()) handleSseBlock(buffer, handlers);
+}
+
+function handleSseBlock(block, handlers) {
+  let eventName = "message";
+  const dataLines = [];
+  for (const line of block.split("\n")) {
+    if (line.startsWith("event:")) {
+      eventName = line.slice("event:".length).trim();
+    } else if (line.startsWith("data:")) {
+      dataLines.push(line.slice("data:".length).trim());
+    }
+  }
+  const raw = dataLines.join("\n");
+  const data = raw ? JSON.parse(raw) : {};
+  handlers[eventName]?.(data);
+}
+
+function formatRagAnswer(answer, hits = []) {
+  if (!hits.length) return answer;
+  const sources = hits
+    .map((hit, index) => `${index + 1}. ${hit.sourceName || "source"} / chunk ${hit.chunkIndex ?? "-"} / score ${Number(hit.score || 0).toFixed(3)}`)
+    .join("\n");
+  return `${answer}\n\n---\n\n**引用来源**\n\n${sources}`;
+}
+
 function renderStoredMessage(message = {}) {
   const toolCalls = Array.isArray(message.toolCalls) ? message.toolCalls : [];
   if (message.role === "assistant" && toolCalls.length) {
@@ -865,17 +1273,22 @@ function normalizeStoredRole(role) {
 function setView(view) {
   state.view = view;
   const room = view === "room";
+  const rag = view === "rag";
   const archive = view === "archive";
-  chatViewButton.classList.toggle("active", !room);
   chatViewButton.classList.toggle("active", view === "chat");
   roomViewButton.classList.toggle("active", room);
+  ragViewButton.classList.toggle("active", rag);
   archiveViewButton.classList.toggle("active", archive);
   appShell.classList.toggle("archive-mode", archive);
-  chatLeftPanel.classList.toggle("hidden", room || archive);
+  chatLeftPanel.classList.toggle("hidden", room || rag || archive);
   roomLeftPanel.classList.toggle("hidden", !room || archive);
-  chatRightPanel.classList.toggle("hidden", room || archive);
+  ragLeftPanel.classList.toggle("hidden", !rag || archive);
+  chatRightPanel.classList.toggle("hidden", room || rag || archive);
   roomRightPanel.classList.toggle("hidden", !room || archive);
-  promptEl.placeholder = room ? "输入房间消息，使用 @Agent 或 @all 触发回复" : "输入任务或问题";
+  ragRightPanel.classList.toggle("hidden", !rag || archive);
+  promptEl.placeholder = room
+    ? "输入房间消息，使用 @Agent 或 @all 触发回复"
+    : (rag ? "输入知识库问题" : "输入任务或问题");
   messagesEl.innerHTML = "";
   state.currentAssistant = null;
   state.currentReasoning = null;
@@ -885,6 +1298,14 @@ function setView(view) {
   } else if (room) {
     loadRooms();
     loadRoomAgents();
+  } else if (rag) {
+    loadRagStatus().then(() => {
+      if (state.currentRagSessionId) {
+        loadRagMessages(state.currentRagSessionId);
+      } else {
+        renderNoRagSessionHint();
+      }
+    });
   } else if (state.currentSessionId) {
     loadSessionMessages(state.currentSessionId);
   } else {
@@ -908,6 +1329,10 @@ function renderArchives(payload = {}) {
   board.append(archiveToolbar());
   board.append(
     archiveSection("Sessions", payload.sessions || [], "session", (item) => ({
+      title: item.displayName || item.id,
+      meta: `${item.id || ""} · ${formatSessionTime(item.updatedAt)}`
+    })),
+    archiveSection("RAG Sessions", payload.ragSessions || [], "rag-session", (item) => ({
       title: item.displayName || item.id,
       meta: `${item.id || ""} · ${formatSessionTime(item.updatedAt)}`
     })),
@@ -1005,7 +1430,7 @@ function toggleArchiveSelection(type, id, checked) {
 }
 
 function archiveItemId(type, item) {
-  if (type === "session" || type === "todo") return item.id || "";
+  if (type === "session" || type === "rag-session" || type === "todo") return item.id || "";
   if (type === "room") return item.roomId || "";
   if (type === "room-agent") return item.agentId || "";
   return "";
@@ -1053,6 +1478,7 @@ async function deleteSelectedArchives() {
 async function afterArchiveChanged() {
   await loadArchives();
   await loadSessions();
+  await loadRagStatus();
   await loadTodos();
   await loadSchedules();
   await loadRooms();
@@ -2051,6 +2477,10 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
     await sendRoomMessage(text);
     return;
   }
+  if (state.view === "rag") {
+    await sendRagQuestion(text);
+    return;
+  }
   addMessage("user", text);
   sendButton.disabled = true;
   try {
@@ -2105,7 +2535,15 @@ toggleMcpButton.addEventListener("click", () => toggleCapability(mcpCapabilityPa
 toggleSkillButton.addEventListener("click", () => toggleCapability(skillCapabilityPanel, toggleSkillButton));
 chatViewButton.addEventListener("click", () => setView("chat"));
 roomViewButton.addEventListener("click", () => setView("room"));
+ragViewButton.addEventListener("click", () => setView("rag"));
 archiveViewButton.addEventListener("click", () => setView("archive"));
+newRagSessionButton.addEventListener("click", createRagSession);
+newRagKbButton.addEventListener("click", createKnowledgeBase);
+ragKbSelect.addEventListener("change", async () => {
+  state.currentKbId = ragKbSelect.value || "default";
+  await loadRagDocuments();
+});
+uploadRagDocumentButton.addEventListener("click", uploadRagDocument);
 newRoomButton.addEventListener("click", createRoom);
 newRoomAgentButton.addEventListener("click", () => {
   state.currentRoomAgentId = "";
@@ -2164,6 +2602,22 @@ sessionList.addEventListener("click", (event) => {
     renameSession(sessionId);
   } else if (action === "archive") {
     archiveSession(sessionId);
+  }
+});
+
+ragSessionList.addEventListener("click", (event) => {
+  const actionButton = event.target.closest("[data-action]");
+  const row = event.target.closest(".session-row");
+  if (!actionButton || !row) return;
+
+  const sessionId = row.dataset.id;
+  const action = actionButton.dataset.action;
+  if (action === "use") {
+    switchRagSession(sessionId);
+  } else if (action === "rename") {
+    renameRagSession(sessionId);
+  } else if (action === "archive") {
+    archiveRagSession(sessionId);
   }
 });
 
@@ -2232,6 +2686,7 @@ refreshStatus();
 state.approvalMode = window.localStorage.getItem("asterApprovalMode") === "auto" ? "auto" : "manual";
 renderApprovalMode();
 loadSessions();
+loadRagStatus();
 loadTodos();
 loadSchedules();
 scheduleTimezone.value = Intl.DateTimeFormat().resolvedOptions().timeZone || "Asia/Shanghai";
@@ -2239,4 +2694,7 @@ updateScheduleFields();
 connectEvents();
 setInterval(refreshStatus, 3000);
 setInterval(loadSessions, 5000);
+setInterval(() => {
+  if (state.view === "rag") loadRagStatus();
+}, 5000);
 setInterval(loadSchedules, 10000);

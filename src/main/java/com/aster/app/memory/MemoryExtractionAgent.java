@@ -98,7 +98,10 @@ public class MemoryExtractionAgent {
                         Message.user(renderExtractionInput(recentMessages, currentMemory))
                 ),
                 List.of(),
-                null
+                null,
+                false,
+                null,
+                false
         );
 
         streamingChatClient.stream(request, event -> {

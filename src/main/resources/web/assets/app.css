@@ -426,6 +426,53 @@ button:disabled {
   gap: 8px;
 }
 
+.rag-select,
+.rag-upload input[type="file"] {
+  width: 100%;
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface);
+  padding: 8px 10px;
+}
+
+.rag-upload {
+  display: grid;
+  gap: 8px;
+}
+
+.rag-document-row .session-main {
+  width: 100%;
+}
+
+.rag-source-list {
+  display: grid;
+  gap: 8px;
+}
+
+.rag-source-item {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px 10px;
+}
+
+.rag-source-item summary {
+  cursor: pointer;
+  color: var(--accent-strong);
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.rag-source-item p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .session-row {
   width: 100%;
   display: grid;

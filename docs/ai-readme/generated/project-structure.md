@@ -16,12 +16,12 @@ Aster/
 ├── src/
 │   ├── main/
 │   │   ├── java/com/aster/
-│   │   │   ├── llm/                # OpenAI-compatible SSE 和 provider 适配
+│   │   │   ├── llm/                # 模型能力层：chat / embedding / speech / image
 │   │   │   ├── core/               # Agent 主流程和抽象契约
 │   │   │   ├── app/                # 具体能力实现和运行时装配
 │   │   │   └── ui/                 # TUI / Web / Telegram 入口
 │   │   └── resources/
-│   │       ├── prompts/            # system、context、memory、plan、team、room prompt
+│   │       ├── prompts/            # system、context、memory、plan、team、room、rag prompt
 │   │       └── web/                # Web 静态资源
 │   └── test/java/com/aster/        # JUnit 5 测试
 ├── docs/ai-readme/                 # AI + 人类共用项目上下文文档
@@ -32,7 +32,7 @@ Aster/
 
 | 目录 | 职责 | 关键文件 |
 | --- | --- | --- |
-| `src/main/java/com/aster/llm/` | 模型供应商适配和 SSE 解析 | `OpenAiCompatibleChatClient.java`、`OpenAiCompatibleStreamParser.java`、`OpenAiCompatibleProviderFactory.java` |
+| `src/main/java/com/aster/llm/` | 模型能力层；chat 走 OpenAI-compatible SSE，embedding/语音/图片按能力拆接口 | `OpenAiCompatibleChatClient.java`、`OpenAiCompatibleStreamParser.java`、`OpenAiCompatibleProviderFactory.java`、`OllamaProvider.java`、`embedding/EmbeddingClient.java` |
 | `src/main/java/com/aster/core/agent/` | Agent 流式主循环和 assistant message 拼接 | `AgentLoop.java`、`AssistantMessageBuilder.java`、`control/AgentRunControl.java` |
 | `src/main/java/com/aster/core/context/` | 上下文构建、运行态窗口缓存、LLM/回退摘要、快照模型、工具协议校验 | `ContextWindowCache.java`、`ContextBuilder.java`、`ContextPipeline.java`、`LlmSummarizer.java`、`TranscriptSummarizer.java`、`model/ContextWindowSnapshot.java`、`ToolProtocolValidator.java` |
 | `src/main/java/com/aster/core/event/` | Agent 事件总线和事件模型 | `AgentEventBus.java`、`AgentEventHandler.java`、`model/AgentEvent.java` |
@@ -51,21 +51,22 @@ Aster/
 | `src/main/java/com/aster/app/plan/` | 动态 DAG Plan 生成和执行 | `PlanPlannerAgent.java`、`PlanRunner.java`、`PlanTaskExecutor.java` |
 | `src/main/java/com/aster/app/team/` | 固定 DAG Agent Team | `AgentTeamRunner.java`、`TeamPlanFactory.java`、`TeamAgentFactory.java` |
 | `src/main/java/com/aster/app/room/` | Web 多 Agent 聊天室、房间消息、Agent 配置和上下文注入 | `RoomCoordinator.java`、`RoomAgentRunner.java`、`RoomContextInjectHook.java`、`JsonRoomStore.java` |
+| `src/main/java/com/aster/app/rag/` | Web Knowledge 知识库问答、文档解析、滑动分块、embedding 入库、向量召回和流式回答 | `RagIngestionService.java`、`RagChatService.java`、`JsonlRagStore.java`、`VectorRetriever.java` |
 | `src/main/java/com/aster/ui/tui/` | Lanterna 终端界面 | `TuiMain.java`、`AgentTuiWindow.java`、`command/SlashCommandRegistry.java` |
 | `src/main/java/com/aster/ui/web/` | JDK HttpServer Web Chat 和 SSE | `WebMain.java`、`WebServer.java`、`WebAgentEventMapper.java` |
 | `src/main/java/com/aster/ui/im/telegram/` | Telegram long polling IM 入口 | `TelegramMain.java`、`TelegramUpdatePoller.java`、`TelegramRuntimeManager.java` |
-| `src/main/resources/prompts/` | 外部化 prompt | `agent/system.md`、`plan/planner-system.md`、`team/code-researcher-system.md`、`room/default-agents.json` |
-| `src/test/java/com/aster/` | 单元测试和协议测试 | `AgentLoopTest.java`、`PlanPlannerAgentTest.java`、`RoomChatTest.java`、`WebAgentEventMapperTest.java` |
+| `src/main/resources/prompts/` | 外部化 prompt | `agent/system.md`、`plan/planner-system.md`、`team/code-researcher-system.md`、`room/default-agents.json`、`rag/answer-system.md` |
+| `src/test/java/com/aster/` | 单元测试和协议测试 | `AgentLoopTest.java`、`PlanPlannerAgentTest.java`、`RoomChatTest.java`、`RagChatServiceTest.java`、`RagRetrieverTest.java` |
 
 ## 模块依赖关系
 
 ```mermaid
 flowchart TD
     UI["ui/*\nTUI / Web / Telegram"] --> Runtime["app/runtime\nAgentRuntime"]
-    Runtime --> App["app/*\nTools / MCP / Memory / Plan / Team / Room"]
+    Runtime --> App["app/*\nTools / MCP / Memory / Plan / Team / Room / RAG"]
     Runtime --> Core["core/*\nAgentLoop / Context / Tool / Event"]
     App --> Core
-    Core --> LLM["llm/*\nOpenAI-compatible SSE"]
+    Core --> LLM["llm/*\nchat / embedding / speech / image"]
     Core --> Resources["resources/prompts\nPrompt files"]
     UI --> ResourcesWeb["resources/web\nWeb assets"]
 ```
@@ -85,5 +86,6 @@ workspace/
 ├── artifacts/tool-results/   # 大工具结果外部卸载
 ├── memory/                   # 长期记忆 Markdown
 ├── im/                       # Telegram chat-session 映射
-└── rooms/                    # Web Room、members、hub message、Agent 配置和 Agent 私有 session
+├── rooms/                    # Web Room、members、hub message、Agent 配置和 Agent 私有 session
+└── rag/                      # Web Knowledge 知识库、文档、chunk、向量索引和 RAG session
 ```

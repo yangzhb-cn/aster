@@ -1,6 +1,6 @@
 # Aster
 
-Aster 是一个教学版 Java Agent Runtime MVP，用来拆开演示一个 Agent Harness 应该具备的核心能力：流式 LLM、AgentLoop、工具调用、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、Plan、Team、多 Agent 聊天室，以及 TUI / Web / Telegram 多入口。
+Aster 是一个教学版 Java Agent Runtime MVP，用来拆开演示一个 Agent Harness 应该具备的核心能力：流式 LLM、AgentLoop、工具调用、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、Plan、Team、多 Agent 聊天室、RAG 知识库问答，以及 TUI / Web / Telegram 多入口。
 
 它不是生产级多租户平台。项目目标是用尽量清晰的代码展示 Agent Runtime 的关键组成和边界。
 
@@ -28,11 +28,11 @@ core/agent | core/context | core/tool | core/event | core/hook | core/session | 
 llm
 ```
 
-- `llm`：OpenAI-compatible SSE 调用和 provider 适配。
+- `llm`：模型能力层；Chat 走 OpenAI-compatible SSE，Embedding / Speech / Image 按能力拆接口。
 - `core`：AgentLoop、Context、Tool、Event、Hook、Session、Stage 等主流程和抽象。
-- `app`：运行时装配、内置/扩展工具、MCP、Skill、HITL、Memory、Background、Schedule、Todo、Plan、Team、Room。
+- `app`：运行时装配、内置/扩展工具、MCP、Skill、HITL、Memory、Background、Schedule、Todo、Plan、Team、Room、RAG。
 - `ui`：TUI、Web、Telegram 三个入口。
-- `src/main/resources/prompts/`：外部化系统提示词、摘要提示词、Plan/Team/Room 提示词。
+- `src/main/resources/prompts/`：外部化系统提示词、摘要提示词、Plan/Team/Room/RAG 提示词。
 
 ## 当前能力
 
@@ -73,6 +73,14 @@ llm
 - Plan 策略：planner 使用 `deepseek-v4-pro`，worker 使用 `deepseek-v4-flash`。
 - Web Room：多 Agent 聊天室，房间共享消息 + 每个 Agent 独立私有上下文；支持 Agent CRUD、成员管理、`@Agent` 和 `@all`。
 
+### RAG 知识库问答
+
+- Web Knowledge 页面支持 RAG session、知识库、文档上传和流式问答。
+- 第一版使用本地文件存储：`workspace/rag/knowledge-bases`、`documents`、`chunks`、`indexes`、`sessions`。
+- PDF 使用 PDFBox 解析，Markdown/文本直接读取；分块使用 1200 字符窗口 + 200 字符重叠。
+- Embedding 固定走 Ollama `/api/embed`，默认模型 `nomic-embed-text:v1.5`。
+- 回答使用 Knowledge 自己的 DeepSeek/OpenAI-compatible chat 配置，不给 LLM 暴露工具；后端先检索，再把 chunk 拼入 prompt，最后通过 SSE 流式返回。
+
 ### Web 能力
 
 - 多 session 并行运行：切到 B 时，A 可以继续跑。
@@ -81,6 +89,7 @@ llm
 - 右侧 Token / Context 进度、审批模式、Todo、Schedule。
 - 工具调用和工具结果合并为可折叠块，长内容截断。
 - Archive 页面集中恢复或物理删除已归档的 session、todo、room、room-agent。
+- Knowledge 页面使用独立 RAG session，支持文件入库和引用来源展示。
 
 ## 快速启动
 
@@ -139,6 +148,7 @@ mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
 
 - `DEEPSEEK_API_KEY`：DeepSeek API Key。
 - `OPENAI_COMPATIBLE_PROVIDER` / `OPENAI_COMPATIBLE_BASE_URL` / `OPENAI_COMPATIBLE_API_KEY` / `OPENAI_COMPATIBLE_MODEL`：OpenAI-compatible provider 覆盖配置。
+- `OLLAMA_BASE_URL` / `OLLAMA_CHAT_MODEL` / `OLLAMA_CHAT_MODELS` / `OLLAMA_EMBEDDING_MODEL`：Ollama 本地模型配置；RAG embedding 使用 `OLLAMA_EMBEDDING_MODEL`，chat 切到 Ollama 时使用 chat 配置。
 - `ASTER_WEB_PORT`：Web 端口，`aster2web` 默认 `8081`。
 - `ASTER_SESSION`：可选启动 session；为空时 Web 不自动创建 `default`。
 - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`：Telegram Bot 配置。

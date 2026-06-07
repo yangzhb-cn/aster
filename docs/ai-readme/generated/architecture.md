@@ -9,6 +9,7 @@ flowchart TD
     TUI["TUI\nLanterna"] --> Runtime["AgentRuntime"]
     Web["Web\nJDK HttpServer + SSE"] --> WebPool["WebSessionRuntimePool\nsessionId -> AgentRuntime"]
     WebPool --> Runtime
+    Web --> Rag["RagChatService\nKnowledge SSE"]
     Telegram["Telegram\nLong polling"] --> Runtime
 
     Runtime --> Coordinator["AgentRunCoordinator\nfollow-up / steer / stop"]
@@ -26,6 +27,8 @@ flowchart TD
     PlanRunner --> ChildAgents["临时子 Agent"]
     Room --> RoomAgents["RoomAgentRunner\n独立私有 session"]
     Room --> RoomHub["RoomHub\n共享 hub messages"]
+    Rag --> RagStore["RagStore\nworkspace/rag"]
+    Rag --> RagRetriever["VectorRetriever\nOllama embedding"]
 
     Snapshot --> Context["ContextPipeline\nContextWindowCache + ContextBuilder"]
     AgentLoop --> Context
@@ -33,7 +36,10 @@ flowchart TD
     AgentLoop --> Tools["ToolRegistry + ParallelToolExecutor"]
     AgentLoop --> Session["SessionStore JSONL"]
     AgentLoop --> Events["AgentEventBus"]
-    AgentLoop --> LLM["StreamingChatClient\nOpenAI-compatible SSE"]
+    AgentLoop --> LLM["llm chat\nStreamingChatClient + SSE"]
+    Rag --> LLM
+    RagRetriever --> ModelCaps
+    LLM --> ModelCaps["llm capabilities\nchat / embedding / speech / image"]
     Context --> Summary["LlmSummarizer\n无工具流式摘要"]
     Summary --> LLM
 ```
@@ -44,9 +50,9 @@ flowchart TD
 | --- | --- | --- |
 | UI | 用户输入、事件渲染、命令分流 | `TuiMain`、`WebMain`、`WebSessionRuntimePool`、`TelegramMain`、`SlashCommandRegistry` |
 | app/runtime | Runtime 创建、入口互斥、普通 run / Team / Plan / Room 调度 | `AgentRuntimeFactory`、`AgentRuntime`、`AgentRunCoordinator`、`PlanModeCoordinator` |
-| app capabilities | 具体工具、MCP、Skill、Memory、HITL、Todo、Background、Schedule、Plan、Team、Room | `app/tool/*`、`app/mcp/*`、`app/memory/*`、`app/schedule/*`、`app/plan/*`、`app/team/*`、`app/room/*` |
+| app capabilities | 具体工具、MCP、Skill、Memory、HITL、Todo、Background、Schedule、Plan、Team、Room、RAG | `app/tool/*`、`app/mcp/*`、`app/memory/*`、`app/schedule/*`、`app/plan/*`、`app/team/*`、`app/room/*`、`app/rag/*` |
 | core | AgentLoop、Context、Tool、Hook、Event、Session、Stage 抽象 | `AgentLoop`、`ContextPipeline`、`ToolRegistry`、`HookRegistry`、`AgentEventBus` |
-| llm | OpenAI-compatible provider 配置、请求、SSE 解析 | `OpenAiCompatibleChatClient`、`OpenAiCompatibleStreamParser`、`ProviderStreamEvent` |
+| llm | 模型能力层；chat 走 OpenAI-compatible SSE，embedding/语音/图片按能力拆接口 | `StreamingChatClient`、`OpenAiCompatibleChatClient`、`OllamaProvider`、`EmbeddingClient`、`SpeechToTextClient`、`ImageUnderstandingClient` |
 | resources | Prompt 和 Web 静态资源 | `src/main/resources/prompts/`、`src/main/resources/web/` |
 
 ## 技术栈
@@ -57,6 +63,7 @@ flowchart TD
 | 构建工具 | Maven | 由 `pom.xml` 定义 | 构建、测试、运行 exec main |
 | JSON | Jackson Databind | 2.17.2 | 配置、Session、Tool 参数、Web API、MCP JSON-RPC |
 | HTTP | OkHttp | 4.12.0 | LLM SSE、Web fetch/search、Telegram API |
+| PDF | Apache PDFBox | 2.0.35 | RAG PDF 文本解析 |
 | TUI | Lanterna | 3.1.2 | 终端界面 |
 | Web | JDK HttpServer | JDK 内置 | Web Chat、REST API、SSE |
 | 测试 | JUnit 5 | 5.10.3 | 单元测试 |
@@ -68,6 +75,7 @@ flowchart TD
 | --- | --- | --- |
 | 只保留流式 LLM 主路径 | `StreamingChatClient` + SSE parser | TUI/Web/Telegram 都消费流式事件，避免维护流式和非流式两套路径 |
 | 模型路由按生命周期拆分 | `AgentRuntime.chatModel()`、`TeamRunRequest`、`RoomAgentProfile.model`、Plan 固定模型 | Chat 按 session 切换；Team 单次运行快照；Room Agent 按配置；Plan planner=pro、worker=flash |
+| 模型供应商与能力拆分 | `ModelProviderDefinition`、`ModelCapability`、`EmbeddingClient` | DeepSeek 负责 chat；Ollama 可作为本地 chat/embedding provider；后续语音和图片模型不挤进 AgentLoop |
 | Context 压缩使用运行态窗口 | `ContextWindowCache` + `ContextPipeline` | 请求上下文只保留旧摘要和最近完整 turn，避免每轮请求全量 replay |
 | Context 快照恢复压缩进度 | `JsonContextWindowSnapshotStore` + `ContextWindowSnapshotSessionStore` | 快照保存到 `workspace/context-windows/*.json`；启动时先读快照，校验版本、session、prompt hash、summarizer、last seq/hash，有效则只用 `loadMessageRecordsAfter(lastSeq)` 补齐新增消息 |
 | Context 摘要优先使用 LLM | `LlmSummarizer` + `TranscriptSummarizer` | 压缩时走无工具、无 thinking 的流式 LLM 语义摘要；失败或空摘要时回退确定性转写摘要 |
@@ -78,6 +86,7 @@ flowchart TD
 | Web 普通 session 可并行运行 | `WebSessionRuntimePool` | 每个 session 保留独立 `AgentRuntime`，切换会话不关闭旧 runtime；SSE 事件按 `sessionName` 分流 |
 | Web 能力状态左栏折叠展示 | `/api/status` + `mcpServers` / `skills` | Chat 左栏底部用 `MCP` / `SKILL` 按钮展开 MCP server 状态和 Skill 列表，避免右栏信息过载 |
 | Web 空启动不创建默认数据 | `WebServer.initialSession` + 首次发送创建 session | 不自动生成 `default` session 或默认聊天室；无会话时展示引导，首条消息或点击 `+` 才创建 |
+| RAG 不走工具调用 | `RagChatService` + `VectorRetriever` | Knowledge 页面后端先检索，再把片段注入 prompt；LLM 只负责流式回答，不开放工具，chat provider 独立于普通 Agent 工具链 |
 | Background 与 Schedule 分离 | `BackgroundTaskManager` + `ScheduledUserMessageManager` | 后台任务处理系统维护和简单提醒；schedule 到点提交 user 消息，让 Agent 按普通链路执行 |
 | Plan / Team 共用 DAG runner | `PlanRunner` | 复用依赖调度、并发执行、失败停止等逻辑 |
 | Room 共享消息与私有上下文分离 | `RoomHub` + `RoomAgentSessionFactory` + `RoomContextInjectHook` | 后加入 Agent 能看到房间上下文，同时每个 Agent 保持独立历史 |
@@ -164,6 +173,7 @@ flowchart LR
     ArchiveApi --> Todos["TodoStore\nrestore/deletePermanently"]
     ArchiveApi --> Rooms["RoomStore + RoomHub + RoomAgentSessionCleaner"]
     ArchiveApi --> Agents["RoomAgentRegistry + RoomAgentPromptStore + RoomAgentSessionCleaner"]
+    ArchiveApi --> RagSessions["RAG SessionIndex\nworkspace/rag/sessions"]
 ```
 
 ## 当前边界
@@ -172,6 +182,7 @@ flowchart LR
 - Web 前端当前使用静态资源和原生 JS，没有前端构建链路。
 - Web 普通 Chat 支持多个 session runtime 并行；运行中 session 不能归档或物理删除，直到它空闲。
 - Web Room 当前是同步 HTTP 回复，不是 token 流式聊天室；Room Agent 事件总线使用 noop，页面只展示最终回复。
+- Web Knowledge RAG 是 SSE 流式问答；第一版只有 PDF/文本/Markdown 上传、固定滑动分块、Ollama embedding、纯向量召回和来源展示，还没有 BM25、rerank、文档删除或多路召回。
 - Room 当前只在 Web 入口实现；TUI 和 Telegram 没有 Room 页面或 Agent CRUD。
 - Room `@all` 只触发当前聊天室成员。Agent 并行执行，回复按成员顺序写回，避免完成时间影响消息顺序。
 - Archive Center 当前只在 Web 入口实现，集中处理已归档 session、todo、room、room-agent，并支持批量物理删除。

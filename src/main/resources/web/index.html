@@ -16,6 +16,7 @@
           <nav class="view-tabs" aria-label="视图切换">
             <button id="chatViewButton" class="view-tab active" type="button">Chat</button>
             <button id="roomViewButton" class="view-tab" type="button">Room</button>
+            <button id="ragViewButton" class="view-tab" type="button">Knowledge</button>
             <button id="archiveViewButton" class="view-tab" type="button">Archive</button>
           </nav>
         </div>
@@ -63,6 +64,26 @@
             <button id="newRoomAgentButton" class="icon-button" type="button" title="新增 Agent" aria-label="新增 Agent">+</button>
           </div>
           <div id="roomAgentList" class="session-list"></div>
+        </section>
+        <section id="ragLeftPanel" class="rail-section rag-panel hidden">
+          <div class="session-head">
+            <span class="eyebrow">RAG SESSIONS</span>
+            <button id="newRagSessionButton" class="icon-button" type="button" title="新建知识库问答" aria-label="新建知识库问答">+</button>
+          </div>
+          <div id="ragSessionList" class="session-list"></div>
+          <div class="session-head">
+            <span class="eyebrow">KNOWLEDGE</span>
+            <button id="newRagKbButton" class="icon-button" type="button" title="新建知识库" aria-label="新建知识库">+</button>
+          </div>
+          <select id="ragKbSelect" class="rag-select" aria-label="选择知识库"></select>
+          <div class="session-head">
+            <span class="eyebrow">DOCUMENTS</span>
+          </div>
+          <div class="rag-upload">
+            <input id="ragFileInput" type="file" accept=".pdf,.txt,.md,.markdown,text/plain,application/pdf" />
+            <button id="uploadRagDocumentButton" type="button">上传入库</button>
+          </div>
+          <div id="ragDocumentList" class="session-list"></div>
         </section>
       </aside>
 
@@ -253,6 +274,29 @@
               </form>
             </div>
           </details>
+        </div>
+        <div id="ragRightPanel" class="hidden">
+          <section class="rail-section">
+            <span class="eyebrow">RAG</span>
+            <div class="token-grid">
+              <div class="token-row">
+                <span>chat</span>
+                <strong id="ragChatModel">-</strong>
+              </div>
+              <div class="token-row">
+                <span>embedding</span>
+                <strong id="ragEmbeddingModel">nomic-embed-text:v1.5</strong>
+              </div>
+              <div class="token-row">
+                <span>topK</span>
+                <strong id="ragTopK">5</strong>
+              </div>
+            </div>
+          </section>
+          <section class="rail-section">
+            <span class="eyebrow">SOURCES</span>
+            <div id="ragSourceList" class="rag-source-list"></div>
+          </section>
         </div>
       </aside>
     </div>

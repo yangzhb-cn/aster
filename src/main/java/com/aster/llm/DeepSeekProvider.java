@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aster.llm.model.OpenAiCompatibleProvider;
 import okhttp3.OkHttpClient;
 
+import java.util.List;
+
 /**
  * DeepSeek 供应商定义。
  *
@@ -33,6 +35,14 @@ public class DeepSeekProvider implements OpenAiCompatibleProviderDefinition {
     @Override
     public String apiKeyEnvName() {
         return API_KEY_ENV;
+    }
+
+    /**
+     * DeepSeek 当前允许用户切换 flash / pro。
+     */
+    @Override
+    public List<String> switchableChatModels() {
+        return DeepSeekModels.switchableChatModels();
     }
 
     /**

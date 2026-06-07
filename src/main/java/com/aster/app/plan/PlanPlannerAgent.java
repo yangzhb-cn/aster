@@ -58,7 +58,8 @@ public class PlanPlannerAgent {
                 List.of(),
                 null,
                 false,
-                null
+                null,
+                false
         );
         streamingChatClient.stream(request, event -> {
             if (event instanceof ProviderStreamEvent.TextDelta delta) {

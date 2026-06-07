@@ -18,6 +18,7 @@
 | P1 | 多入口事件消费 | TUI / Web / Telegram event handlers | 同一 AgentEvent，不同展示策略 |
 | P1 | Web 多 session 并行运行 | `WebSessionRuntimePool`、`WebAgentEventMapper`、`app.js` | Web 切换 B 不停止 A；SSE 按 sessionName 分流 |
 | P1 | Web Room 多 Agent 聊天 | `AgentRuntime.sendRoomMessage()`、`RoomCoordinator` | Web 独有；成员关系 + 共享 hub message + Agent 私有上下文 |
+| P1 | Web Knowledge RAG | `WebServer.handleRag()`、`RagIngestionService`、`RagChatService` | Web 独有；文档上传入库，Ollama embedding，DeepSeek SSE 流式回答 |
 | P1 | 归档中心 | `WebServer.handleArchives()` | Web 独有；恢复、单个物理删除或批量物理删除已归档对象 |
 
 ## 流程 1：普通 Agent Run
@@ -445,6 +446,60 @@ sequenceDiagram
 - 共享房间消息通过 `RoomContextInjectHook` 临时注入，不写入私有 session。
 - Room Agent 事件总线是 noop，Web Room 只展示最终回复，不展示 token、reasoning、工具调用或工具结果。
 - 当前 Room 回复是同步 HTTP 请求，不是 SSE/WebSocket 流式聊天室。
+
+## 流程 7.5：Web Knowledge RAG 流式问答
+
+```mermaid
+sequenceDiagram
+    participant Web as Web Knowledge
+    participant Server as WebServer
+    participant Ingest as RagIngestionService
+    participant Store as RagStore
+    participant Embed as OllamaEmbeddingClient
+    participant Retriever as VectorRetriever
+    participant Chat as RagChatService
+    participant LLM as StreamingChatClient
+    participant Session as RagSessionStore
+
+    Web->>Server: POST /api/rag/documents(base64 file)
+    Server->>Ingest: ingest(kbId,file)
+    Ingest->>Ingest: parse PDF/text + sliding chunk
+    Ingest->>Embed: /api/embed chunks
+    Ingest->>Store: save document/chunks/vectors
+
+    Web->>Server: POST /api/rag/query
+    Server-->>Web: SSE started
+    Server->>Chat: stream(session,kb,question)
+    Chat->>Session: append user question
+    Chat->>Retriever: retrieve(question, topK)
+    Retriever->>Embed: embed query
+    Retriever->>Store: load vectors/chunks
+    Chat-->>Web: SSE started(hits)
+    Chat->>LLM: stream(system + RAG prompt, no tools)
+    LLM-->>Web: SSE token*
+    Chat->>Session: append assistant answer + citations
+    Chat-->>Web: SSE done
+```
+
+### 调用链
+
+1. `src/main/resources/web/assets/app.js` Knowledge 视图上传或提问。
+2. `ui/web/WebServer.handleRag`
+3. `app/rag/RagIngestionService.ingest`
+4. `llm/embedding/OllamaEmbeddingClient`
+5. `app/rag/retrieve/VectorRetriever`
+6. `app/rag/RagChatService.stream`
+7. `llm/OpenAiCompatibleChatClient.stream`
+8. `app/rag/JsonlRagSessionStore`
+
+### 关键分支
+
+- RAG session 和普通 Agent session 分开存储；第一版只是复用 `SessionIndex` 的 CRUD/归档能力。
+- 文档上传当前通过 Web API 传 base64；服务端保存原文件、解析文本、chunk 和向量索引到 `workspace/rag/`。
+- 回答阶段不走 AgentLoop，不注册工具；检索固定在后端完成，LLM 只拿到 system prompt、历史摘要式对话片段和 topK 来源。
+- RAG chat 模型来自 Knowledge 自己的 OpenAI-compatible provider 配置；普通 Chat 顶部模型下拉不直接决定 RAG 请求 endpoint。
+- `/api/rag/query` 必须使用 `text/event-stream`，先发送 `started` 和来源，再逐 token 发送 `token`，完成后发送 `done`。
+- 第一版只有余弦相似度向量召回，没有 BM25、rerank、文档删除或异步入库队列。
 
 ## 流程 8：归档中心
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aster.llm.model.Message;
 import com.aster.llm.DeepSeekModels;
 import com.aster.llm.DeepSeekProvider;
+import com.aster.llm.ModelCapability;
 import com.aster.llm.OpenAiCompatibleChatClient;
 import com.aster.llm.OpenAiCompatibleProviderDefinition;
 import com.aster.llm.OpenAiCompatibleStreamParser;
@@ -174,6 +175,10 @@ class DeepSeekProviderTest {
         assertEquals("deepseek-v4-flash", provider.defaultModel());
         assertEquals(true, provider.thinkingEnabled());
         assertEquals("high", provider.reasoningEffort());
+        assertEquals(true, provider.apiKeyRequired());
+        assertEquals(true, provider.streamUsageEnabled());
+        assertEquals(List.of("deepseek-v4-flash", "deepseek-v4-pro"), provider.switchableChatModels());
+        assertEquals(true, provider.supports(ModelCapability.CHAT_COMPLETIONS));
     }
 
     /**

@@ -15,6 +15,7 @@
         <jackson.version>2.17.2</jackson.version>
         <okhttp.version>4.12.0</okhttp.version>
         <lanterna.version>3.1.2</lanterna.version>
+        <pdfbox.version>2.0.35</pdfbox.version>
         <junit.version>5.10.3</junit.version>
         <exec.mainClass>com.aster.ui.tui.TuiMain</exec.mainClass>
     </properties>
@@ -34,6 +35,11 @@
             <groupId>com.googlecode.lanterna</groupId>
             <artifactId>lanterna</artifactId>
             <version>${lanterna.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.pdfbox</groupId>
+            <artifactId>pdfbox</artifactId>
+            <version>${pdfbox.version}</version>
         </dependency>
 
         <dependency>

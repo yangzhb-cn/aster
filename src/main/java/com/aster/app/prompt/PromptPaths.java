@@ -19,6 +19,7 @@ public final class PromptPaths {
     public static final String PLAN_TASK_EXECUTOR_SYSTEM = "/prompts/plan/task-executor-system.md";
     public static final String PLAN_FINAL_SUMMARY_USER = "/prompts/plan/final-summary-user.md";
     public static final String ROOM_AGENT_WRAPPER_SYSTEM = "/prompts/room/agent-wrapper-system.md";
+    public static final String RAG_ANSWER_SYSTEM = "/prompts/rag/answer-system.md";
 
     private PromptPaths() {
     }

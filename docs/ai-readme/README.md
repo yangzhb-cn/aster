@@ -2,21 +2,21 @@
 
 ## 项目总览
 
-Aster 是一个教学版 Java Agent Runtime MVP，用于演示流式 LLM、AgentLoop、Tool Calling、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、TUI/Web/Telegram 多入口、固定 Agent Team、动态 DAG Plan、Web 多 Agent 聊天室和归档中心的最小可运行架构。
+Aster 是一个教学版 Java Agent Runtime MVP，用于演示流式 LLM、AgentLoop、Tool Calling、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、TUI/Web/Telegram 多入口、固定 Agent Team、动态 DAG Plan、Web 多 Agent 聊天室、RAG 知识库问答和归档中心的最小可运行架构。
 
 ```mermaid
 flowchart LR
     UI["ui: TUI / Web / Telegram"] --> Runtime["app/runtime: AgentRuntime"]
     Runtime --> Core["core: AgentLoop / Context / Tool / Event"]
     Core --> LLM["llm: OpenAI-compatible SSE"]
-    Runtime --> App["app: tools / MCP / memory / background / schedule / plan / team / room"]
+    Runtime --> App["app: tools / MCP / memory / background / schedule / plan / team / room / rag"]
 ```
 
 ## 生成信息
 
 - 生成时间：2026-06-04 14:24
 - 生成分支：master
-- 最近同步：2026-06-08，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照、增量 JSONL 补齐、Web context 进度展示、主 Chat 模型切换、多 Agent 模型路由、Web 左栏底部 MCP/Skill 状态、Web Schedule 可视化、Web Todo/Schedule 折叠布局、Web 审批模式、Web 空启动规则和 prompt 迁移规则
+- 最近同步：2026-06-08，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照、增量 JSONL 补齐、Web context 进度展示、主 Chat 模型切换、多 Agent 模型路由、Web 左栏底部 MCP/Skill 状态、Web Schedule 可视化、Web Todo/Schedule 折叠布局、Web 审批模式、Web 空启动规则、prompt 迁移规则、llm 层 chat/embedding/speech/image 能力拆分和 Ollama 配置入口，以及 Web Knowledge RAG 的上传、入库、检索和流式回答链路
 
 ## 入口功能矩阵
 
@@ -41,6 +41,7 @@ flowchart LR
 | `/plan` 动态 DAG | 已实现 | 已实现 | 已实现 | 支持 `/plan` 生成、`/start` 执行、`/plan cancel` 取消。 |
 | Web 多 Agent 聊天室 | 未实现 | 已实现 | 未实现 | 只有 Web 有 Room 页面、房间 CRUD、成员管理、Agent CRUD、`@name`/`@all` 触发。 |
 | Room Agent 配置管理 | 未实现 | 已实现 | 未实现 | Agent 的 name、role、model、alias、工具白名单、system prompt 在 Web 中维护；加入/移出聊天室由成员关系管理。 |
+| RAG 知识库问答 | 未实现 | 已实现 | 未实现 | Web Knowledge 页面支持 RAG session、知识库、文档上传、Ollama embedding、向量召回和 DeepSeek SSE 流式回答。 |
 | 归档中心 | 未实现 | 已实现 | 未实现 | Web Archive 页面集中恢复、单个物理删除或批量物理删除已归档 session、todo、room、room-agent。 |
 
 ## 快速导航

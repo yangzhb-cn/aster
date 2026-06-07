@@ -37,6 +37,12 @@ public final class WorkspacePaths {
     public static final Path ROOM_AGENT_INDEX = ROOM_AGENTS.resolve("agents.json");
     public static final Path ROOM_AGENT_PROMPTS = ROOM_AGENTS.resolve("prompts");
     public static final Path ROOM_AGENT_SESSIONS = ROOMS.resolve("agent-sessions");
+    public static final Path RAG = ROOT.resolve("rag");
+    public static final Path RAG_KNOWLEDGE_BASES = RAG.resolve("knowledge-bases");
+    public static final Path RAG_DOCUMENTS = RAG.resolve("documents");
+    public static final Path RAG_CHUNKS = RAG.resolve("chunks");
+    public static final Path RAG_INDEXES = RAG.resolve("indexes");
+    public static final Path RAG_SESSIONS = RAG.resolve("sessions");
 
     private WorkspacePaths() {
     }
@@ -61,5 +67,11 @@ public final class WorkspacePaths {
         Files.createDirectories(ROOM_AGENTS);
         Files.createDirectories(ROOM_AGENT_PROMPTS);
         Files.createDirectories(ROOM_AGENT_SESSIONS);
+        Files.createDirectories(RAG);
+        Files.createDirectories(RAG_KNOWLEDGE_BASES);
+        Files.createDirectories(RAG_DOCUMENTS);
+        Files.createDirectories(RAG_CHUNKS);
+        Files.createDirectories(RAG_INDEXES);
+        Files.createDirectories(RAG_SESSIONS);
     }
 }

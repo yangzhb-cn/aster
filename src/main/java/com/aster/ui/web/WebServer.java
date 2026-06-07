@@ -5,6 +5,22 @@ import com.aster.app.runtime.AgentRuntimeFactory;
 import com.aster.app.runtime.JsonContextWindowSnapshotStore;
 import com.aster.app.runtime.WorkspacePaths;
 import com.aster.app.hitl.model.ToolApprovalRequest;
+import com.aster.app.prompt.PromptLoader;
+import com.aster.app.prompt.PromptPaths;
+import com.aster.app.rag.JsonlRagSessionStore;
+import com.aster.app.rag.JsonlRagStore;
+import com.aster.app.rag.RagChatService;
+import com.aster.app.rag.RagIngestionService;
+import com.aster.app.rag.RagPromptBuilder;
+import com.aster.app.rag.chunk.SlidingWindowChunker;
+import com.aster.app.rag.model.KnowledgeBase;
+import com.aster.app.rag.model.RagAnswer;
+import com.aster.app.rag.model.RagDocument;
+import com.aster.app.rag.model.RagHit;
+import com.aster.app.rag.model.RagSessionRecord;
+import com.aster.app.rag.parse.PdfDocumentParser;
+import com.aster.app.rag.parse.PlainTextDocumentParser;
+import com.aster.app.rag.retrieve.VectorRetriever;
 import com.aster.app.room.model.ChatRoom;
 import com.aster.app.room.model.HubMessage;
 import com.aster.app.room.model.RoomAgentInput;
@@ -23,18 +39,27 @@ import com.aster.core.session.SessionIndex;
 import com.aster.core.session.model.SessionRecord;
 import com.aster.llm.model.Message;
 import com.aster.llm.model.ToolCall;
+import com.aster.llm.OllamaProvider;
+import com.aster.llm.OpenAiCompatibleChatClient;
+import com.aster.llm.OpenAiCompatibleProviderFactory;
+import com.aster.llm.StreamingChatClient;
+import com.aster.llm.embedding.OllamaEmbeddingClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import okhttp3.OkHttpClient;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.UncheckedIOException;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.time.DateTimeException;
+import java.time.Duration;
+import java.util.Base64;
 import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -59,20 +84,67 @@ public class WebServer implements AutoCloseable {
     private final WebNotificationSink notificationSink;
     private final WebSessionRuntimePool runtimePool;
     private final SessionIndex sessionIndex;
+    private final SessionIndex ragSessionIndex;
     private final JsonContextWindowSnapshotStore contextWindowSnapshotStore;
     private final TodoStore todoStore;
+    private final JsonlRagStore ragStore;
+    private final JsonlRagSessionStore ragSessionStore;
+    private final RagIngestionService ragIngestionService;
+    private final RagChatService ragChatService;
     private final Object runtimeLock = new Object();
     private final HttpServer server;
     private String currentSessionId;
     private String currentDisplayName;
+    private String currentRagSessionId;
 
     public WebServer(int port, AgentRuntimeFactory runtimeFactory, String sessionName) throws IOException {
         this.eventHandler = new WebAgentEventHandler(objectMapper, clients);
         this.notificationSink = new WebNotificationSink(objectMapper, clients);
         this.runtimePool = new WebSessionRuntimePool(Objects.requireNonNull(runtimeFactory), eventHandler, notificationSink);
         this.sessionIndex = new SessionIndex(objectMapper, WorkspacePaths.SESSIONS);
+        this.ragSessionIndex = new SessionIndex(objectMapper, WorkspacePaths.RAG_SESSIONS, "rag_sess_");
         this.contextWindowSnapshotStore = new JsonContextWindowSnapshotStore(objectMapper, WorkspacePaths.CONTEXT_WINDOWS);
         this.todoStore = new JsonTodoStore(objectMapper, WorkspacePaths.TODO_FILE);
+        this.ragStore = new JsonlRagStore(
+                objectMapper,
+                WorkspacePaths.RAG_KNOWLEDGE_BASES,
+                WorkspacePaths.RAG_DOCUMENTS,
+                WorkspacePaths.RAG_CHUNKS,
+                WorkspacePaths.RAG_INDEXES
+        );
+        this.ragStore.ensureDefaultKnowledgeBase();
+        this.ragSessionStore = new JsonlRagSessionStore(objectMapper, WorkspacePaths.RAG_SESSIONS);
+        OkHttpClient ragHttpClient = new OkHttpClient.Builder()
+                .connectTimeout(Duration.ofSeconds(30))
+                .readTimeout(Duration.ofSeconds(120))
+                .writeTimeout(Duration.ofSeconds(30))
+                .build();
+        var ragChatProvider = OpenAiCompatibleProviderFactory.fromEnvWithDeepSeekDefaults();
+        StreamingChatClient ragStreamingChatClient = OpenAiCompatibleChatClient.create(ragHttpClient, objectMapper, ragChatProvider);
+        OllamaProvider ollamaProvider = new OllamaProvider();
+        OllamaEmbeddingClient embeddingClient = OllamaEmbeddingClient.fromBaseUrl(
+                ragHttpClient,
+                objectMapper,
+                ollamaProvider.defaultBaseUrl(),
+                System.getenv(OllamaProvider.API_KEY_ENV)
+        );
+        this.ragIngestionService = new RagIngestionService(
+                ragStore,
+                List.of(new PdfDocumentParser(), new PlainTextDocumentParser()),
+                new SlidingWindowChunker(1200, 200),
+                embeddingClient,
+                ollamaProvider.defaultEmbeddingModel(),
+                WorkspacePaths.RAG_DOCUMENTS
+        );
+        this.ragChatService = new RagChatService(
+                ragSessionIndex,
+                ragSessionStore,
+                new VectorRetriever(ragStore, embeddingClient, ollamaProvider.defaultEmbeddingModel()),
+                ragStreamingChatClient,
+                ragChatProvider,
+                new PromptLoader().load(PromptPaths.RAG_ANSWER_SYSTEM),
+                new RagPromptBuilder()
+        );
         SessionRecord session = initialSession(sessionName);
         if (session == null) {
             clearCurrentSession();
@@ -121,6 +193,7 @@ public class WebServer implements AutoCloseable {
         server.createContext("/api/rooms", this::handleRooms);
         server.createContext("/api/room-agents", this::handleRoomAgents);
         server.createContext("/api/archives", this::handleArchives);
+        server.createContext("/api/rag", this::handleRag);
     }
 
     private void handleEvents(HttpExchange exchange) throws IOException {
@@ -545,6 +618,210 @@ public class WebServer implements AutoCloseable {
         }
     }
 
+    /**
+     * 处理 RAG 知识库问答 API。
+     */
+    private void handleRag(HttpExchange exchange) throws IOException {
+        String path = exchange.getRequestURI().getPath();
+        if ("/api/rag/query".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+            try {
+                handleRagQuery(exchange);
+            } catch (IllegalArgumentException e) {
+                sendJson(exchange, 400, Map.of("error", e.getMessage()));
+            }
+            return;
+        }
+
+        try {
+            if ("/api/rag/status".equals(path) && "GET".equals(exchange.getRequestMethod())) {
+                sendJson(exchange, 200, ragPayload());
+                return;
+            }
+            if ("/api/rag/sessions".equals(path)) {
+                if ("GET".equals(exchange.getRequestMethod())) {
+                    sendJson(exchange, 200, ragSessionsPayload());
+                    return;
+                }
+                if ("POST".equals(exchange.getRequestMethod())) {
+                    createRagSession(exchange);
+                    return;
+                }
+            }
+            if ("/api/rag/sessions/use".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                useRagSession(exchange);
+                return;
+            }
+            if ("/api/rag/sessions/rename".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                renameRagSession(exchange);
+                return;
+            }
+            if ("/api/rag/sessions/archive".equals(path) && "POST".equals(exchange.getRequestMethod())) {
+                archiveRagSession(exchange);
+                return;
+            }
+            String ragSessionId = ragSessionMessageId(path);
+            if (ragSessionId != null) {
+                handleRagSessionMessages(exchange, ragSessionId);
+                return;
+            }
+            if ("/api/rag/kbs".equals(path)) {
+                if ("GET".equals(exchange.getRequestMethod())) {
+                    sendJson(exchange, 200, ragKnowledgeBasesPayload());
+                    return;
+                }
+                if ("POST".equals(exchange.getRequestMethod())) {
+                    createRagKnowledgeBase(exchange);
+                    return;
+                }
+            }
+            if ("/api/rag/documents".equals(path)) {
+                if ("GET".equals(exchange.getRequestMethod())) {
+                    sendJson(exchange, 200, ragDocumentsPayload(queryParam(exchange, "kbId", JsonlRagStore.DEFAULT_KB_ID)));
+                    return;
+                }
+                if ("POST".equals(exchange.getRequestMethod())) {
+                    uploadRagDocument(exchange);
+                    return;
+                }
+            }
+            sendJson(exchange, 404, Map.of("error", "Not Found"));
+        } catch (IllegalArgumentException e) {
+            sendJson(exchange, 400, Map.of("error", e.getMessage()));
+        } catch (IOException e) {
+            sendJson(exchange, ragErrorStatus(e), Map.of("error", e.getMessage()));
+        }
+    }
+
+    private void createRagSession(HttpExchange exchange) throws IOException {
+        String displayName = readStringPayload(exchange, "displayName");
+        SessionRecord session = ragSessionIndex.create(displayName.isBlank() ? "新知识库问答" : displayName);
+        currentRagSessionId = session.id();
+        sendJson(exchange, 201, ragSessionsPayload());
+    }
+
+    private void useRagSession(HttpExchange exchange) throws IOException {
+        String sessionId = readRequiredPayload(exchange, "id");
+        currentRagSessionId = activeRagSession(sessionId).id();
+        sendJson(exchange, 200, ragSessionsPayload());
+    }
+
+    private void renameRagSession(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        SessionRecord session = ragSessionIndex.rename(requiredValue(payload, "id"), requiredValue(payload, "displayName"));
+        if (session.id().equals(currentRagSessionId)) {
+            currentRagSessionId = session.id();
+        }
+        sendJson(exchange, 200, ragSessionsPayload());
+    }
+
+    private void archiveRagSession(HttpExchange exchange) throws IOException {
+        String sessionId = readRequiredPayload(exchange, "id");
+        activeRagSession(sessionId);
+        ragSessionIndex.archive(sessionId);
+        if (sessionId.equals(currentRagSessionId)) {
+            currentRagSessionId = ragSessionIndex.listActive().stream().findFirst().map(SessionRecord::id).orElse("");
+        }
+        sendJson(exchange, 200, ragSessionsPayload());
+    }
+
+    private void handleRagSessionMessages(HttpExchange exchange, String sessionId) throws IOException {
+        if (!"GET".equals(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, Map.of("error", "Method Not Allowed"));
+            return;
+        }
+        activeRagSession(sessionId);
+        sendJson(exchange, 200, Map.of("messages", ragSessionStore.load(sessionId).stream()
+                .map(this::ragSessionRecordPayload)
+                .toList()));
+    }
+
+    private void createRagKnowledgeBase(HttpExchange exchange) throws IOException {
+        String name = readStringPayload(exchange, "name");
+        ragStore.createKnowledgeBase(name);
+        sendJson(exchange, 201, ragKnowledgeBasesPayload());
+    }
+
+    private void uploadRagDocument(HttpExchange exchange) throws IOException {
+        Map<?, ?> payload = readPayload(exchange);
+        String kbId = stringValue(payload, "kbId");
+        if (kbId.isBlank()) {
+            kbId = JsonlRagStore.DEFAULT_KB_ID;
+        }
+        String contentBase64 = requiredValue(payload, "contentBase64");
+        byte[] bytes = Base64.getDecoder().decode(contentBase64);
+        RagDocument document = ragIngestionService.ingest(
+                kbId,
+                requiredValue(payload, "fileName"),
+                stringValue(payload, "contentType"),
+                bytes
+        );
+        sendJson(exchange, 201, Map.of(
+                "document", ragDocumentPayload(document),
+                "documents", ragStore.listDocuments(kbId).stream().map(this::ragDocumentPayload).toList()
+        ));
+    }
+
+    /**
+     * RAG 查询使用独立 SSE 响应，保证知识库问答第一版就是流式体验。
+     */
+    private void handleRagQuery(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, Map.of("error", "Method Not Allowed"));
+            return;
+        }
+
+        Map<?, ?> payload = readPayload(exchange);
+        String sessionId = stringValue(payload, "sessionId");
+        String kbId = stringValue(payload, "kbId");
+        if (kbId.isBlank()) {
+            kbId = JsonlRagStore.DEFAULT_KB_ID;
+        }
+        String question = requiredValue(payload, "question");
+        int topK = intValue(payload, "topK", 5);
+        String chatModel = stringValue(payload, "chatModel");
+
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Content-Type", "text/event-stream; charset=utf-8");
+        headers.set("Cache-Control", "no-cache");
+        headers.set("Connection", "keep-alive");
+        exchange.sendResponseHeaders(200, 0);
+
+        try (OutputStream output = exchange.getResponseBody()) {
+            SseResponseWriter writer = new SseResponseWriter(output);
+            try {
+                ragChatService.stream(sessionId, kbId, question, topK, chatModel, new RagChatService.RagStreamHandler() {
+                    @Override
+                    public void onStarted(RagChatService.RagStreamStart start) {
+                        currentRagSessionId = start.session().id();
+                        writer.event("started", Map.of(
+                                "session", sessionPayload(start.session()),
+                                "kbId", start.kbId(),
+                                "question", start.question(),
+                                "chatModel", start.chatModel(),
+                                "embeddingModel", start.embeddingModel(),
+                                "hits", start.hits().stream().map(WebServer.this::ragHitPayload).toList()
+                        ));
+                    }
+
+                    @Override
+                    public void onToken(String token) {
+                        writer.event("token", Map.of("text", token));
+                    }
+
+                    @Override
+                    public void onDone(RagAnswer result) {
+                        currentRagSessionId = result.session().id();
+                        writer.event("done", ragAnswerPayload(result));
+                    }
+                });
+            } catch (IOException | RuntimeException e) {
+                writer.event("error", Map.of("error", e.getMessage() == null ? "RAG query failed" : e.getMessage()));
+            }
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        }
+    }
+
     private void createTodo(HttpExchange exchange) throws IOException {
         Map<?, ?> payload = readPayload(exchange);
         todoStore.add(
@@ -724,6 +1001,7 @@ public class WebServer implements AutoCloseable {
         synchronized (runtimeLock) {
             switch (type) {
                 case "session" -> sessionIndex.restore(id);
+                case "rag-session" -> ragSessionIndex.restore(id);
                 case "todo" -> todoStore.restore(id);
                 case "room" -> currentRuntime().restoreRoom(id);
                 case "room-agent" -> currentRuntime().restoreRoomAgent(id);
@@ -760,6 +1038,7 @@ public class WebServer implements AutoCloseable {
                 sessionIndex.deletePermanently(id);
                 contextWindowSnapshotStore.deleteSession(id);
             }
+            case "rag-session" -> ragSessionIndex.deletePermanently(id);
             case "todo" -> todoStore.deletePermanently(id);
             case "room" -> currentRuntime().deleteRoomPermanently(id);
             case "room-agent" -> currentRuntime().deleteRoomAgentPermanently(id);
@@ -909,6 +1188,41 @@ public class WebServer implements AutoCloseable {
         }
     }
 
+    private int intValue(Map<?, ?> payload, String key, int defaultValue) throws IOException {
+        Object value = payload.get(key);
+        if (value == null) {
+            return defaultValue;
+        }
+        if (value instanceof Number number) {
+            return number.intValue();
+        }
+        String text = stringValue(payload, key);
+        if (text.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Integer.parseInt(text);
+        } catch (NumberFormatException e) {
+            throw new IOException(key + " must be a number", e);
+        }
+    }
+
+    private String queryParam(HttpExchange exchange, String key, String defaultValue) {
+        String query = exchange.getRequestURI().getRawQuery();
+        if (query == null || query.isBlank()) {
+            return defaultValue;
+        }
+        for (String part : query.split("&")) {
+            int index = part.indexOf('=');
+            String name = index < 0 ? part : part.substring(0, index);
+            if (URLDecoder.decode(name, StandardCharsets.UTF_8).equals(key)) {
+                String value = index < 0 ? "" : part.substring(index + 1);
+                return URLDecoder.decode(value, StandardCharsets.UTF_8);
+            }
+        }
+        return defaultValue;
+    }
+
     private List<ArchiveDeleteItem> archiveDeleteItems(Map<?, ?> payload) throws IOException {
         String key = "items";
         Object value = payload.get(key);
@@ -997,6 +1311,42 @@ public class WebServer implements AutoCloseable {
         return payload;
     }
 
+    private Map<String, Object> ragPayload() throws IOException {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.putAll(ragSessionsPayload());
+        payload.putAll(ragKnowledgeBasesPayload());
+        payload.putAll(ragDocumentsPayload(JsonlRagStore.DEFAULT_KB_ID));
+        payload.put("ragChatModel", ragChatService.defaultChatModel());
+        payload.put("ragAvailableChatModels", ragChatService.availableChatModels());
+        payload.put("ragEmbeddingModel", ragChatService.embeddingModel());
+        payload.put("ragTopK", 5);
+        return payload;
+    }
+
+    private Map<String, Object> ragSessionsPayload() throws IOException {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        List<SessionRecord> sessions = ragSessionIndex.listActive();
+        if ((currentRagSessionId == null || currentRagSessionId.isBlank()) && !sessions.isEmpty()) {
+            currentRagSessionId = sessions.getFirst().id();
+        }
+        payload.put("sessions", sessions.stream().map(this::sessionPayload).toList());
+        payload.put("currentSessionId", currentRagSessionId == null ? "" : currentRagSessionId);
+        return payload;
+    }
+
+    private Map<String, Object> ragKnowledgeBasesPayload() throws IOException {
+        return Map.of("knowledgeBases", ragStore.listKnowledgeBases().stream()
+                .map(this::knowledgeBasePayload)
+                .toList());
+    }
+
+    private Map<String, Object> ragDocumentsPayload(String kbId) throws IOException {
+        String selectedKbId = kbId == null || kbId.isBlank() ? JsonlRagStore.DEFAULT_KB_ID : kbId;
+        return Map.of("documents", ragStore.listDocuments(selectedKbId).stream()
+                .map(this::ragDocumentPayload)
+                .toList());
+    }
+
     private Map<String, Object> sessionStatusesPayload() throws IOException {
         List<String> sessionIds = sessionIndex.listActive().stream()
                 .map(SessionRecord::id)
@@ -1040,6 +1390,9 @@ public class WebServer implements AutoCloseable {
         Map<String, Object> payload = new LinkedHashMap<>();
         synchronized (runtimeLock) {
             payload.put("sessions", sessionIndex.listArchived().stream()
+                    .map(this::sessionPayload)
+                    .toList());
+            payload.put("ragSessions", ragSessionIndex.listArchived().stream()
                     .map(this::sessionPayload)
                     .toList());
             payload.put("todos", todoStore.listArchived().stream()
@@ -1193,6 +1546,65 @@ public class WebServer implements AutoCloseable {
         return payload;
     }
 
+    private Map<String, Object> knowledgeBasePayload(KnowledgeBase kb) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("kbId", kb.kbId());
+        payload.put("name", kb.name());
+        payload.put("createdAt", kb.createdAt());
+        payload.put("updatedAt", kb.updatedAt());
+        payload.put("archived", kb.archived());
+        return payload;
+    }
+
+    private Map<String, Object> ragDocumentPayload(RagDocument document) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("docId", document.docId());
+        payload.put("kbId", document.kbId());
+        payload.put("fileName", document.fileName());
+        payload.put("contentType", document.contentType());
+        payload.put("chunkCount", document.chunkCount());
+        payload.put("createdAt", document.createdAt());
+        payload.put("updatedAt", document.updatedAt());
+        payload.put("archived", document.archived());
+        return payload;
+    }
+
+    private Map<String, Object> ragSessionRecordPayload(RagSessionRecord record) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("type", record.type());
+        payload.put("content", record.content());
+        payload.put("kbId", record.kbId());
+        payload.put("chatModel", record.chatModel());
+        payload.put("embeddingModel", record.embeddingModel());
+        payload.put("hits", record.hits().stream().map(this::ragHitPayload).toList());
+        payload.put("createdAt", record.createdAt());
+        return payload;
+    }
+
+    private Map<String, Object> ragHitPayload(RagHit hit) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("kbId", hit.kbId());
+        payload.put("docId", hit.docId());
+        payload.put("chunkId", hit.chunkId());
+        payload.put("chunkIndex", hit.chunkIndex());
+        payload.put("sourceName", hit.sourceName());
+        payload.put("score", hit.score());
+        payload.put("text", hit.text());
+        return payload;
+    }
+
+    private Map<String, Object> ragAnswerPayload(RagAnswer answer) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("session", sessionPayload(answer.session()));
+        payload.put("kbId", answer.kbId());
+        payload.put("question", answer.question());
+        payload.put("answer", answer.answer());
+        payload.put("chatModel", answer.chatModel());
+        payload.put("embeddingModel", answer.embeddingModel());
+        payload.put("hits", answer.hits().stream().map(this::ragHitPayload).toList());
+        return payload;
+    }
+
     private Map<String, Object> sessionPayload(SessionRecord session) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("id", session.id());
@@ -1210,6 +1622,15 @@ public class WebServer implements AutoCloseable {
         return sessionIndex.get(sessionId)
                 .filter(record -> !record.archived())
                 .orElseThrow(() -> new IOException("session not found: " + sessionId));
+    }
+
+    private SessionRecord activeRagSession(String sessionId) throws IOException {
+        if (sessionId == null || sessionId.isBlank()) {
+            throw new IOException("rag session is required");
+        }
+        return ragSessionIndex.get(sessionId)
+                .filter(record -> !record.archived())
+                .orElseThrow(() -> new IOException("rag session not found: " + sessionId));
     }
 
     private String sessionIdFromPayload(Map<?, ?> payload) {
@@ -1304,6 +1725,19 @@ public class WebServer implements AutoCloseable {
         return URLDecoder.decode(raw, StandardCharsets.UTF_8);
     }
 
+    private String ragSessionMessageId(String path) {
+        String prefix = "/api/rag/sessions/";
+        String suffix = "/messages";
+        if (!path.startsWith(prefix) || !path.endsWith(suffix)) {
+            return null;
+        }
+        String raw = path.substring(prefix.length(), path.length() - suffix.length());
+        if (raw.isBlank() || raw.contains("/")) {
+            return null;
+        }
+        return URLDecoder.decode(raw, StandardCharsets.UTF_8);
+    }
+
     private RoomMemberRoute roomMemberRoute(String path) {
         String prefix = "/api/rooms/";
         String marker = "/members";
@@ -1384,6 +1818,31 @@ public class WebServer implements AutoCloseable {
     private record ArchiveDeleteItem(String type, String id) {
     }
 
+    /**
+     * RAG 查询专用 SSE 写入器。
+     */
+    private class SseResponseWriter {
+        private final OutputStream output;
+
+        private SseResponseWriter(OutputStream output) {
+            this.output = output;
+        }
+
+        /**
+         * 写入一个 SSE 事件。
+         */
+        private void event(String eventName, Object payload) {
+            try {
+                String data = objectMapper.writeValueAsString(payload);
+                output.write(("event: " + eventName + "\n").getBytes(StandardCharsets.UTF_8));
+                output.write(("data: " + data + "\n\n").getBytes(StandardCharsets.UTF_8));
+                output.flush();
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }
+    }
+
     private void sendJson(HttpExchange exchange, int status, Object body) throws IOException {
         sendText(exchange, status, objectMapper.writeValueAsString(body), "application/json; charset=utf-8");
     }
@@ -1417,6 +1876,14 @@ public class WebServer implements AutoCloseable {
         }
         if (message.contains("must be archived")) {
             return 409;
+        }
+        return 400;
+    }
+
+    private int ragErrorStatus(IOException error) {
+        String message = error.getMessage() == null ? "" : error.getMessage();
+        if (message.contains("not found")) {
+            return 404;
         }
         return 400;
     }

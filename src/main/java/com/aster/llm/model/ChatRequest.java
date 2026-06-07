@@ -50,6 +50,24 @@ public record ChatRequest(
             boolean thinkingEnabled,
             String reasoningEffort
     ) {
+        return streaming(model, messages, tools, toolChoice, thinkingEnabled, reasoningEffort, true);
+    }
+
+    /**
+     * 构造可配置 stream usage 的流式请求。
+     *
+     * <p>DeepSeek 需要 usage 统计用于 UI 展示；Ollama 等本地供应商可以关闭，
+     * 避免发送它们不一定支持的 OpenAI 扩展字段。</p>
+     */
+    public static ChatRequest streaming(
+            String model,
+            List<Message> messages,
+            List<Map<String, Object>> tools,
+            String toolChoice,
+            boolean thinkingEnabled,
+            String reasoningEffort,
+            boolean streamUsageEnabled
+    ) {
         return new ChatRequest(
                 model,
                 messages,
@@ -58,7 +76,7 @@ public record ChatRequest(
                 true,
                 thinkingEnabled ? Map.of("type", "enabled") : null,
                 thinkingEnabled ? reasoningEffort : null,
-                Map.of("include_usage", true)
+                streamUsageEnabled ? Map.of("include_usage", true) : null
         );
     }
 }

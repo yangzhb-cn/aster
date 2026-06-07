@@ -33,11 +33,17 @@ public class SessionIndex {
     private final ObjectMapper objectMapper;
     private final Path sessionsDirectory;
     private final Path indexFile;
+    private final String idPrefix;
 
     public SessionIndex(ObjectMapper objectMapper, Path sessionsDirectory) {
+        this(objectMapper, sessionsDirectory, "sess_");
+    }
+
+    public SessionIndex(ObjectMapper objectMapper, Path sessionsDirectory, String idPrefix) {
         this.objectMapper = Objects.requireNonNull(objectMapper);
         this.sessionsDirectory = Objects.requireNonNull(sessionsDirectory);
         this.indexFile = sessionsDirectory.resolve("index.json");
+        this.idPrefix = Objects.requireNonNull(idPrefix);
     }
 
     /**
@@ -228,10 +234,10 @@ public class SessionIndex {
     private String generateId(SessionIndexData data) {
         Predicate<String> indexed = id -> data.sessions().stream().anyMatch(record -> record.id().equals(id));
         String suffix = randomSuffix();
-        String id = "sess_" + ID_TIME_FORMATTER.format(Instant.now()) + "_" + suffix;
+        String id = idPrefix + ID_TIME_FORMATTER.format(Instant.now()) + "_" + suffix;
         while (indexed.test(id) || SessionCatalog.exists(sessionsDirectory, id)) {
             suffix = randomSuffix();
-            id = "sess_" + ID_TIME_FORMATTER.format(Instant.now()) + "_" + suffix;
+            id = idPrefix + ID_TIME_FORMATTER.format(Instant.now()) + "_" + suffix;
         }
         return id;
     }

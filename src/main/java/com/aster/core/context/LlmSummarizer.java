@@ -61,7 +61,8 @@ public class LlmSummarizer implements Summarizer {
                     List.of(),
                     null,
                     false,
-                    null
+                    null,
+                    false
             );
             String summary = streamSummary(request).strip();
             if (summary.isBlank()) {

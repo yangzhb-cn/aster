@@ -1,8 +1,8 @@
 # Aster
 
-Aster 是一个教学版 Java Agent Runtime MVP，用来拆开演示一个 Agent Harness 应该具备的核心能力：流式 LLM、AgentLoop、工具调用、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、Plan、Team、多 Agent 聊天室、RAG 知识库问答，以及 TUI / Web / Telegram 多入口。
+Aster 是一个Java Agent Runtime MVP，具备Agent Harness 应该具备的核心能力：流式 LLM、AgentLoop、工具调用、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、Plan、Team、多 Agent 聊天室、RAG 知识库问答，以及 TUI / Web / Telegram 多入口。
 
-它不是生产级多租户平台。项目目标是用尽量清晰的代码展示 Agent Runtime 的关键组成和边界。
+项目目标是用尽量清晰的代码展示 Agent Runtime 的关键组成和边界。
 
 详细项目规则、架构和历史经验见 [AGENTS.md](./AGENTS.md) 与 [docs/ai-readme/README.md](./docs/ai-readme/README.md)。
 

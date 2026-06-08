@@ -1,6 +1,6 @@
 package com.aster.core.session;
 
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 import java.io.IOException;
 import java.util.List;

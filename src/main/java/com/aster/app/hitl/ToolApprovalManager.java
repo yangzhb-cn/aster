@@ -6,7 +6,7 @@ import com.aster.core.event.AgentEventBus;
 import com.aster.core.event.model.AgentEvent;
 import com.aster.core.hook.BeforeToolCallContext;
 import com.aster.core.hook.ToolHookDecision;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 
 import java.io.IOException;
 import java.time.Instant;

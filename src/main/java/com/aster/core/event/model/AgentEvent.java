@@ -1,6 +1,6 @@
 package com.aster.core.event.model;
 
-import com.aster.llm.model.TokenUsage;
+import com.aster.llm.text.model.TokenUsage;
 
 /**
  * 流式 Agent 主循环发出的事件。

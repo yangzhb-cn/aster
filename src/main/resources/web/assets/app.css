@@ -1126,7 +1126,7 @@ th {
   z-index: 4;
   width: var(--chat-content-width);
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 12px;
   border: 1px solid var(--line);
   border-radius: 14px;
@@ -1143,9 +1143,15 @@ th {
   box-shadow: 0 18px 48px rgba(20, 33, 31, .13);
 }
 
-.composer textarea {
+.composer-main {
   flex: 1;
   min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.composer textarea {
+  width: 100%;
   min-height: 40px;
   max-height: 118px;
   border: 0;
@@ -1174,6 +1180,58 @@ th {
 
 .composer-bar {
   flex: 0 0 auto;
+}
+
+.vision-image-tray {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.vision-chip {
+  max-width: 220px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 8px;
+  border: 1px solid #a8e3db;
+  border-radius: 999px;
+  color: var(--accent-strong);
+  background: var(--primary-weak);
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.vision-chip span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vision-chip button {
+  width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border: 0;
+  color: var(--accent-strong);
+  background: transparent;
+}
+
+.secondary-action {
+  min-width: 58px;
+  min-height: 38px;
+  border-color: var(--line-strong);
+  border-radius: 10px;
+  color: var(--accent-strong);
+  background: rgba(255, 253, 248, .86);
+}
+
+.secondary-action:hover {
+  border-color: var(--accent);
+  background: var(--primary-weak);
 }
 
 #sendButton {
@@ -1298,6 +1356,10 @@ th {
 
 .mcp-row.loaded {
   border-left-color: var(--accent);
+}
+
+.mcp-row.skill-row {
+  padding: 8px 10px;
 }
 
 .mcp-row.failed {

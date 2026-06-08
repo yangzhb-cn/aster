@@ -9,8 +9,8 @@ import com.aster.core.context.model.ContextOptions;
 import com.aster.core.context.model.ContextWindowSnapshot;
 import com.aster.core.session.ContextWindowSessionStore;
 import com.aster.core.session.SessionStore;
-import com.aster.llm.model.Message;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.ToolCall;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;

@@ -1,7 +1,7 @@
 package com.aster.core.session;
 
 import com.aster.core.context.ToolProtocolValidator;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 import com.aster.core.session.model.SessionBranch;
 import com.aster.core.session.model.SessionEvent;
 import com.aster.core.session.model.SessionEventType;

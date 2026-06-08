@@ -2,7 +2,7 @@ package com.aster.app.tool.developer;
 
 import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.model.ToolResult;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 
 import java.nio.file.Files;
 import java.nio.file.Path;

@@ -11,8 +11,8 @@ import com.aster.app.todo.TodoStore;
 import com.aster.core.hook.HookRegistry;
 import com.aster.core.session.SessionStore;
 import com.aster.core.tool.ToolRegistry;
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.model.OpenAiCompatibleProvider;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.text.model.OpenAiCompatibleProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.OkHttpClient;
 

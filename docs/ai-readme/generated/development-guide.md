@@ -58,6 +58,8 @@
 | `OLLAMA_CHAT_MODEL` | Ollama 默认 chat 模型，当前示例为 `qwen3:latest` |
 | `OLLAMA_CHAT_MODELS` | Ollama 可切换 chat 模型列表，逗号分隔 |
 | `OLLAMA_EMBEDDING_MODEL` | Ollama 默认 embedding 模型，当前示例为 `nomic-embed-text:v1.5` |
+| `OLLAMA_MULTIMODAL_MODEL` | Web Chat 带图片时使用的 Ollama 多模态模型，当前示例为 `llava-llama3:latest` |
+| `OLLAMA_MULTIMODAL_MODELS` | Web 图片理解可切换模型列表，逗号分隔 |
 | `ASTER_WEB_PORT` | Web 端口，`aster2web` 默认 8081 |
 | `ASTER_SESSION` | 可选 Web 启动 session 名称；为空时不创建 `default`，已有活跃 session 会恢复，完全空仓库等待用户新建或首条发送 |
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot token |
@@ -86,8 +88,9 @@ flowchart LR
 - 默认脚本：`./aster2web`
 - 当前页面包含 Chat、Room、Knowledge、Archive 四个视图；Room 和 Knowledge 是 Web 独有入口。
 - Web 空启动不会自动创建 `default` session 或默认聊天室；没有会话时，点击 `+` 或直接发送第一条消息会创建新会话。
+- Chat 视图可上传图片并直接提问；有图片时顶部模型下拉切到 Ollama 多模态模型，后端走 `/api/vision/chat` SSE，第一版不写普通 session。
 - Chat 右栏包含审批模式、Todo 和 Schedule 面板；Todo/Schedule 新建表单和已有条目默认折叠，Schedule 面板创建的是当前 session 的自动化用户消息，例如每日整理长期记忆。
-- Knowledge 页面支持 RAG session、知识库、文档上传和流式问答；PDF 解析依赖 PDFBox，embedding 默认走本地 Ollama `nomic-embed-text:v1.5`，回答阶段走 DeepSeek/OpenAI-compatible SSE。
+- Knowledge 页面支持 RAG session、知识库、文档上传和流式问答；顶部模型下拉在该视图切换 RAG chat 模型；PDF 解析依赖 PDFBox，embedding 默认走本地 Ollama `nomic-embed-text:v1.5`，回答阶段走 DeepSeek/OpenAI-compatible SSE。
 - 如果端口被占用，`aster2web` 会打印占用进程，并提示：
   - `screen -S aster2web -X quit`
   - `ASTER_WEB_PORT=8082 ./aster2web`

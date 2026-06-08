@@ -10,6 +10,7 @@ flowchart TD
     Web["Web\nJDK HttpServer + SSE"] --> WebPool["WebSessionRuntimePool\nsessionId -> AgentRuntime"]
     WebPool --> Runtime
     Web --> Rag["RagChatService\nKnowledge SSE"]
+    Web --> Vision["MultimodalChatService\nChat image SSE"]
     Telegram["Telegram\nLong polling"] --> Runtime
 
     Runtime --> Coordinator["AgentRunCoordinator\nfollow-up / steer / stop"]
@@ -29,6 +30,7 @@ flowchart TD
     Room --> RoomHub["RoomHub\n共享 hub messages"]
     Rag --> RagStore["RagStore\nworkspace/rag"]
     Rag --> RagRetriever["VectorRetriever\nOllama embedding"]
+    Vision --> VisionClient["OllamaMultimodalChatClient"]
 
     Snapshot --> Context["ContextPipeline\nContextWindowCache + ContextBuilder"]
     AgentLoop --> Context
@@ -36,10 +38,11 @@ flowchart TD
     AgentLoop --> Tools["ToolRegistry + ParallelToolExecutor"]
     AgentLoop --> Session["SessionStore JSONL"]
     AgentLoop --> Events["AgentEventBus"]
-    AgentLoop --> LLM["llm chat\nStreamingChatClient + SSE"]
+    AgentLoop --> LLM["llm/text\nStreamingChatClient + SSE"]
     Rag --> LLM
     RagRetriever --> ModelCaps
-    LLM --> ModelCaps["llm capabilities\nchat / embedding / speech / image"]
+    VisionClient --> ModelCaps
+    LLM --> ModelCaps["llm capabilities\ntext / embedding / speech / image / multimodal"]
     Context --> Summary["LlmSummarizer\n无工具流式摘要"]
     Summary --> LLM
 ```
@@ -52,7 +55,7 @@ flowchart TD
 | app/runtime | Runtime 创建、入口互斥、普通 run / Team / Plan / Room 调度 | `AgentRuntimeFactory`、`AgentRuntime`、`AgentRunCoordinator`、`PlanModeCoordinator` |
 | app capabilities | 具体工具、MCP、Skill、Memory、HITL、Todo、Background、Schedule、Plan、Team、Room、RAG | `app/tool/*`、`app/mcp/*`、`app/memory/*`、`app/schedule/*`、`app/plan/*`、`app/team/*`、`app/room/*`、`app/rag/*` |
 | core | AgentLoop、Context、Tool、Hook、Event、Session、Stage 抽象 | `AgentLoop`、`ContextPipeline`、`ToolRegistry`、`HookRegistry`、`AgentEventBus` |
-| llm | 模型能力层；chat 走 OpenAI-compatible SSE，embedding/语音/图片按能力拆接口 | `StreamingChatClient`、`OpenAiCompatibleChatClient`、`OllamaProvider`、`EmbeddingClient`、`SpeechToTextClient`、`ImageUnderstandingClient` |
+| llm | 模型能力层；text chat 走 OpenAI-compatible SSE，embedding/语音/图片/多模态按能力拆接口；数据模型统一放各能力的 `model/` 子包 | `text/StreamingChatClient`、`text/model/*`、`embedding/EmbeddingClient`、`embedding/model/*`、`speech/model/*`、`image/model/*`、`multimodal/model/*` |
 | resources | Prompt 和 Web 静态资源 | `src/main/resources/prompts/`、`src/main/resources/web/` |
 
 ## 技术栈
@@ -75,7 +78,8 @@ flowchart TD
 | --- | --- | --- |
 | 只保留流式 LLM 主路径 | `StreamingChatClient` + SSE parser | TUI/Web/Telegram 都消费流式事件，避免维护流式和非流式两套路径 |
 | 模型路由按生命周期拆分 | `AgentRuntime.chatModel()`、`TeamRunRequest`、`RoomAgentProfile.model`、Plan 固定模型 | Chat 按 session 切换；Team 单次运行快照；Room Agent 按配置；Plan planner=pro、worker=flash |
-| 模型供应商与能力拆分 | `ModelProviderDefinition`、`ModelCapability`、`EmbeddingClient` | DeepSeek 负责 chat；Ollama 可作为本地 chat/embedding provider；后续语音和图片模型不挤进 AgentLoop |
+| 模型供应商与能力拆分 | `llm/text`、`llm/embedding`、`llm/speech`、`llm/image`、`llm/multimodal` | DeepSeek 负责 text chat；Ollama 可作为本地 chat/embedding/multimodal provider；语音、图片和多模态不挤进 AgentLoop |
+| Web 图片理解先做独立分支 | `MultimodalChatService` + `/api/vision/chat` | 第一版只跑通 Chat 上传图片后的流式回答，不写普通 session，不触发工具，不改变 AgentLoop 协议 |
 | Context 压缩使用运行态窗口 | `ContextWindowCache` + `ContextPipeline` | 请求上下文只保留旧摘要和最近完整 turn，避免每轮请求全量 replay |
 | Context 快照恢复压缩进度 | `JsonContextWindowSnapshotStore` + `ContextWindowSnapshotSessionStore` | 快照保存到 `workspace/context-windows/*.json`；启动时先读快照，校验版本、session、prompt hash、summarizer、last seq/hash，有效则只用 `loadMessageRecordsAfter(lastSeq)` 补齐新增消息 |
 | Context 摘要优先使用 LLM | `LlmSummarizer` + `TranscriptSummarizer` | 压缩时走无工具、无 thinking 的流式 LLM 语义摘要；失败或空摘要时回退确定性转写摘要 |
@@ -183,6 +187,7 @@ flowchart LR
 - Web 普通 Chat 支持多个 session runtime 并行；运行中 session 不能归档或物理删除，直到它空闲。
 - Web Room 当前是同步 HTTP 回复，不是 token 流式聊天室；Room Agent 事件总线使用 noop，页面只展示最终回复。
 - Web Knowledge RAG 是 SSE 流式问答；第一版只有 PDF/文本/Markdown 上传、固定滑动分块、Ollama embedding、纯向量召回和来源展示，还没有 BM25、rerank、文档删除或多路召回。
+- Web Chat 图片理解是独立 SSE 分支，默认使用 Ollama `llava-llama3:latest`；当前不进入 AgentLoop、普通 Session、工具调用或上下文压缩，后续接入 AgentLoop 时再统一多模态消息协议。
 - Room 当前只在 Web 入口实现；TUI 和 Telegram 没有 Room 页面或 Agent CRUD。
 - Room `@all` 只触发当前聊天室成员。Agent 并行执行，回复按成员顺序写回，避免完成时间影响消息顺序。
 - Archive Center 当前只在 Web 入口实现，集中处理已归档 session、todo、room、room-agent，并支持批量物理删除。

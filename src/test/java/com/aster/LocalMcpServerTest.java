@@ -1,7 +1,7 @@
 package com.aster;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.app.mcp.McpClient;
 import com.aster.app.mcp.server.LocalMcpHttpServer;
 import com.aster.app.mcp.server.LocalMcpServer;

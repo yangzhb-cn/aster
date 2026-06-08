@@ -24,7 +24,7 @@ import com.aster.app.skill.model.SkillMetadata;
 import com.aster.app.team.AgentTeamRunner;
 import com.aster.app.team.model.TeamRunOutput;
 import com.aster.core.event.model.AgentEvent;
-import com.aster.llm.model.OpenAiCompatibleProvider;
+import com.aster.llm.text.model.OpenAiCompatibleProvider;
 import com.aster.app.mcp.McpToolExecutor;
 import com.aster.app.mcp.McpToolExecutor.McpServerStatus;
 import com.aster.core.tool.ParallelToolExecutor;

@@ -1,11 +1,11 @@
 package com.aster;
 
-import com.aster.llm.ModelCapability;
-import com.aster.llm.OllamaProvider;
-import com.aster.llm.embedding.EmbeddingRequest;
-import com.aster.llm.embedding.EmbeddingResponse;
-import com.aster.llm.embedding.OllamaEmbeddingClient;
-import com.aster.llm.model.OpenAiCompatibleProvider;
+import com.aster.llm.common.ModelCapability;
+import com.aster.llm.text.ollama.OllamaProvider;
+import com.aster.llm.embedding.model.EmbeddingRequest;
+import com.aster.llm.embedding.model.EmbeddingResponse;
+import com.aster.llm.embedding.ollama.OllamaEmbeddingClient;
+import com.aster.llm.text.model.OpenAiCompatibleProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.OkHttpClient;

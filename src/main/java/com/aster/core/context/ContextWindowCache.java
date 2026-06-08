@@ -7,7 +7,7 @@ import com.aster.core.context.model.Turn;
 import com.aster.core.context.model.TurnType;
 import com.aster.core.session.model.SessionMessageRecord;
 import com.aster.core.session.SessionStore;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 import java.io.IOException;
 import java.time.Instant;

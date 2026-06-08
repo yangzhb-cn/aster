@@ -36,6 +36,7 @@
 | Web “默认通过”不应改 HITL 核心默认策略 | 有时用户希望当前 Web 会话自动批准工具，但 TUI/IM 仍应保持显式审批 | Web 入口保存本地审批模式；选择默认通过时自动调用已有 approve API，不改变 `ToolApprovalHook` 的保护工具列表 | `app.js`, `ToolApprovalManager` |
 | Team 子 Agent 工具事件太多 | 多个 reader/reviewer 并行 read/grep 会产生大量工具事件，UI 会被刷屏 | Team 只转发成员正文和关键状态，不展示每个工具调用 | `TeamAgentFactory.teamEventBus` |
 | RAG 问答不该退回一次性响应 | 用户在 Agent Harness 里把“流式是第一要义”作为体验底线；知识库问答如果等完整答案再返回，会和主 Chat 体验割裂 | Web Knowledge 使用独立 `/api/rag/query` SSE；先推送检索来源，再逐 token 输出回答，最后写入 RAG session | `WebServer.handleRagQuery`, `RagChatService.stream`, `app.js` |
+| 多模态第一版不应急着塞进 AgentLoop | 图片消息会影响 Message 结构、session 持久化、工具协议和上下文压缩，贸然接入主链路会扩大改动面 | 先做 Web Chat 图片分支：`ContentPart` + Ollama OpenAI-compatible SSE；不写普通 session、不触发工具，后续再统一多模态 AgentLoop 协议 | `MultimodalChatService`, `OllamaMultimodalChatClient`, `/api/vision/chat` |
 | Team 探索完不应直接结束 | 用户要的是“主 Agent -> Team -> 主 Agent”，不是 Team 自己给终稿 | Team 完整材料交回主 Agent，由主 Agent 基于材料整理最终回答 | `AgentRuntime.runTeam` |
 | Team max tool rounds 过低会过早失败 | 代码探索类任务工具调用次数多，8 轮不够 | Team/Agent 工具轮数调到 100，减少探索中断 | `MAX_TOOL_ROUNDS` |
 | Plan 和 Team 容易混淆 | Team 是固定 DAG 探索；Plan 是动态 DAG 编排和执行 | `/team` 做探索；`/plan` 先列 DAG，用户 `/start` 后按依赖执行 | `app/team`, `app/plan` |

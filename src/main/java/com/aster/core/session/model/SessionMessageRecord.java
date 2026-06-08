@@ -1,6 +1,6 @@
 package com.aster.core.session.model;
 
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 /**
  * JSONL 中一条可见 message_appended 事件的回放结果。

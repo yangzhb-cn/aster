@@ -2,7 +2,7 @@ package com.aster.core.stage;
 
 import com.aster.core.context.ContextBuilder;
 import com.aster.core.context.model.ContextBuildResult;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 import java.util.List;
 import java.util.Objects;

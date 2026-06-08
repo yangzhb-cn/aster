@@ -1,6 +1,6 @@
 package com.aster.core.agent.control;
 
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 /**
  * 用户主动停止当前 Agent run。

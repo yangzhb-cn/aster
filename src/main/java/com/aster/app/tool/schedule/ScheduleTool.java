@@ -5,7 +5,7 @@ import com.aster.app.schedule.model.ScheduledUserMessage;
 import com.aster.core.tool.ToolRegistry;
 import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.model.ToolResult;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 
 import java.util.List;
 import java.util.Map;

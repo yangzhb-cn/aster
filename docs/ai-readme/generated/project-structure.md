@@ -16,7 +16,7 @@ Aster/
 ├── src/
 │   ├── main/
 │   │   ├── java/com/aster/
-│   │   │   ├── llm/                # 模型能力层：chat / embedding / speech / image
+│   │   │   ├── llm/                # 模型能力层：text / embedding / speech / image / multimodal
 │   │   │   ├── core/               # Agent 主流程和抽象契约
 │   │   │   ├── app/                # 具体能力实现和运行时装配
 │   │   │   └── ui/                 # TUI / Web / Telegram 入口
@@ -32,7 +32,7 @@ Aster/
 
 | 目录 | 职责 | 关键文件 |
 | --- | --- | --- |
-| `src/main/java/com/aster/llm/` | 模型能力层；chat 走 OpenAI-compatible SSE，embedding/语音/图片按能力拆接口 | `OpenAiCompatibleChatClient.java`、`OpenAiCompatibleStreamParser.java`、`OpenAiCompatibleProviderFactory.java`、`OllamaProvider.java`、`embedding/EmbeddingClient.java` |
+| `src/main/java/com/aster/llm/` | 模型能力层；text chat 走 OpenAI-compatible SSE，embedding/语音/图片/多模态按能力拆接口；各能力的 request/response/value object 放入对应 `model/` 子包 | `text/model/*`、`embedding/model/*`、`speech/model/*`、`image/model/*`、`multimodal/model/*`、`text/openai/OpenAiCompatibleChatClient.java`、`embedding/EmbeddingClient.java`、`multimodal/MultimodalChatClient.java` |
 | `src/main/java/com/aster/core/agent/` | Agent 流式主循环和 assistant message 拼接 | `AgentLoop.java`、`AssistantMessageBuilder.java`、`control/AgentRunControl.java` |
 | `src/main/java/com/aster/core/context/` | 上下文构建、运行态窗口缓存、LLM/回退摘要、快照模型、工具协议校验 | `ContextWindowCache.java`、`ContextBuilder.java`、`ContextPipeline.java`、`LlmSummarizer.java`、`TranscriptSummarizer.java`、`model/ContextWindowSnapshot.java`、`ToolProtocolValidator.java` |
 | `src/main/java/com/aster/core/event/` | Agent 事件总线和事件模型 | `AgentEventBus.java`、`AgentEventHandler.java`、`model/AgentEvent.java` |
@@ -52,6 +52,7 @@ Aster/
 | `src/main/java/com/aster/app/team/` | 固定 DAG Agent Team | `AgentTeamRunner.java`、`TeamPlanFactory.java`、`TeamAgentFactory.java` |
 | `src/main/java/com/aster/app/room/` | Web 多 Agent 聊天室、房间消息、Agent 配置和上下文注入 | `RoomCoordinator.java`、`RoomAgentRunner.java`、`RoomContextInjectHook.java`、`JsonRoomStore.java` |
 | `src/main/java/com/aster/app/rag/` | Web Knowledge 知识库问答、文档解析、滑动分块、embedding 入库、向量召回和流式回答 | `RagIngestionService.java`、`RagChatService.java`、`JsonlRagStore.java`、`VectorRetriever.java` |
+| `src/main/java/com/aster/app/multimodal/` | Web Chat 图片理解分支，不进入普通 AgentLoop 或 Session | `MultimodalChatService.java` |
 | `src/main/java/com/aster/ui/tui/` | Lanterna 终端界面 | `TuiMain.java`、`AgentTuiWindow.java`、`command/SlashCommandRegistry.java` |
 | `src/main/java/com/aster/ui/web/` | JDK HttpServer Web Chat 和 SSE | `WebMain.java`、`WebServer.java`、`WebAgentEventMapper.java` |
 | `src/main/java/com/aster/ui/im/telegram/` | Telegram long polling IM 入口 | `TelegramMain.java`、`TelegramUpdatePoller.java`、`TelegramRuntimeManager.java` |
@@ -66,7 +67,7 @@ flowchart TD
     Runtime --> App["app/*\nTools / MCP / Memory / Plan / Team / Room / RAG"]
     Runtime --> Core["core/*\nAgentLoop / Context / Tool / Event"]
     App --> Core
-    Core --> LLM["llm/*\nchat / embedding / speech / image"]
+    Core --> LLM["llm/*\ntext / embedding / speech / image / multimodal"]
     Core --> Resources["resources/prompts\nPrompt files"]
     UI --> ResourcesWeb["resources/web\nWeb assets"]
 ```

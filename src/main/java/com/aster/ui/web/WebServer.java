@@ -7,6 +7,7 @@ import com.aster.app.runtime.WorkspacePaths;
 import com.aster.app.hitl.model.ToolApprovalRequest;
 import com.aster.app.prompt.PromptLoader;
 import com.aster.app.prompt.PromptPaths;
+import com.aster.app.multimodal.MultimodalChatService;
 import com.aster.app.rag.JsonlRagSessionStore;
 import com.aster.app.rag.JsonlRagStore;
 import com.aster.app.rag.RagChatService;
@@ -37,13 +38,15 @@ import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionCatalog;
 import com.aster.core.session.SessionIndex;
 import com.aster.core.session.model.SessionRecord;
-import com.aster.llm.model.Message;
-import com.aster.llm.model.ToolCall;
-import com.aster.llm.OllamaProvider;
-import com.aster.llm.OpenAiCompatibleChatClient;
-import com.aster.llm.OpenAiCompatibleProviderFactory;
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.embedding.OllamaEmbeddingClient;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.ToolCall;
+import com.aster.llm.text.ollama.OllamaProvider;
+import com.aster.llm.text.openai.OpenAiCompatibleChatClient;
+import com.aster.llm.text.openai.OpenAiCompatibleProviderFactory;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.embedding.ollama.OllamaEmbeddingClient;
+import com.aster.llm.multimodal.ollama.OllamaMultimodalChatClient;
+import com.aster.llm.multimodal.ollama.OllamaMultimodalProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.Headers;
 import com.sun.net.httpserver.HttpExchange;
@@ -91,6 +94,7 @@ public class WebServer implements AutoCloseable {
     private final JsonlRagSessionStore ragSessionStore;
     private final RagIngestionService ragIngestionService;
     private final RagChatService ragChatService;
+    private final MultimodalChatService multimodalChatService;
     private final Object runtimeLock = new Object();
     private final HttpServer server;
     private String currentSessionId;
@@ -145,6 +149,11 @@ public class WebServer implements AutoCloseable {
                 new PromptLoader().load(PromptPaths.RAG_ANSWER_SYSTEM),
                 new RagPromptBuilder()
         );
+        OllamaMultimodalProvider multimodalProvider = new OllamaMultimodalProvider();
+        this.multimodalChatService = new MultimodalChatService(
+                OllamaMultimodalChatClient.fromProvider(ragHttpClient, objectMapper, multimodalProvider),
+                multimodalProvider
+        );
         SessionRecord session = initialSession(sessionName);
         if (session == null) {
             clearCurrentSession();
@@ -194,6 +203,7 @@ public class WebServer implements AutoCloseable {
         server.createContext("/api/room-agents", this::handleRoomAgents);
         server.createContext("/api/archives", this::handleArchives);
         server.createContext("/api/rag", this::handleRag);
+        server.createContext("/api/vision/chat", this::handleVisionChat);
     }
 
     private void handleEvents(HttpExchange exchange) throws IOException {
@@ -822,6 +832,62 @@ public class WebServer implements AutoCloseable {
         }
     }
 
+    /**
+     * 处理 Web Chat 图片分支。
+     *
+     * <p>该接口只做“图文输入 -> Ollama 多模态流式回答”，不进入 AgentLoop，
+     * 因此不会污染普通 Session、工具调用协议和上下文压缩状态。</p>
+     */
+    private void handleVisionChat(HttpExchange exchange) throws IOException {
+        if (!"POST".equals(exchange.getRequestMethod())) {
+            sendJson(exchange, 405, Map.of("error", "Method Not Allowed"));
+            return;
+        }
+
+        Map<?, ?> payload = readPayload(exchange);
+        String text = stringValue(payload, "text");
+        String model = stringValue(payload, "model");
+        List<MultimodalChatService.ImageAttachment> images = visionImages(payload.get("images"));
+
+        Headers headers = exchange.getResponseHeaders();
+        headers.set("Content-Type", "text/event-stream; charset=utf-8");
+        headers.set("Cache-Control", "no-cache");
+        headers.set("Connection", "keep-alive");
+        exchange.sendResponseHeaders(200, 0);
+
+        try (OutputStream output = exchange.getResponseBody()) {
+            SseResponseWriter writer = new SseResponseWriter(output);
+            try {
+                multimodalChatService.stream(text, images, model, new MultimodalChatService.MultimodalStreamHandler() {
+                    @Override
+                    public void onStarted(MultimodalChatService.MultimodalStreamStart start) {
+                        writer.event("started", Map.of(
+                                "model", start.model(),
+                                "imageCount", start.imageCount()
+                        ));
+                    }
+
+                    @Override
+                    public void onToken(String token) {
+                        writer.event("token", Map.of("text", token));
+                    }
+
+                    @Override
+                    public void onDone(MultimodalChatService.MultimodalAnswer answer) {
+                        writer.event("done", Map.of(
+                                "model", answer.model(),
+                                "answer", answer.answer()
+                        ));
+                    }
+                });
+            } catch (IOException | RuntimeException e) {
+                writer.event("error", Map.of("error", e.getMessage() == null ? "vision chat failed" : e.getMessage()));
+            }
+        } catch (UncheckedIOException e) {
+            throw e.getCause();
+        }
+    }
+
     private void createTodo(HttpExchange exchange) throws IOException {
         Map<?, ?> payload = readPayload(exchange);
         todoStore.add(
@@ -1244,8 +1310,32 @@ public class WebServer implements AutoCloseable {
         return result;
     }
 
+    /**
+     * 解析 Web 上传的多模态图片列表。
+     */
+    private List<MultimodalChatService.ImageAttachment> visionImages(Object raw) throws IOException {
+        if (!(raw instanceof List<?> rawList) || rawList.isEmpty()) {
+            throw new IOException("images is required");
+        }
+        List<MultimodalChatService.ImageAttachment> images = new java.util.ArrayList<>();
+        for (Object item : rawList) {
+            if (!(item instanceof Map<?, ?> imageMap)) {
+                throw new IOException("images must contain objects");
+            }
+            String contentBase64 = requiredValue(imageMap, "contentBase64");
+            images.add(new MultimodalChatService.ImageAttachment(
+                    stringValue(imageMap, "fileName"),
+                    stringValue(imageMap, "mimeType"),
+                    contentBase64
+            ));
+        }
+        return images;
+    }
+
     private Map<String, Object> statusPayload() throws IOException {
         Map<String, Object> status = new LinkedHashMap<>();
+        status.put("multimodalModel", multimodalChatService.defaultModel());
+        status.put("multimodalAvailableModels", multimodalChatService.availableModels());
         synchronized (runtimeLock) {
             status.put("currentSessionId", currentSessionId);
             status.put("sessionId", currentSessionId);

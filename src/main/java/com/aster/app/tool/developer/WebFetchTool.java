@@ -2,7 +2,7 @@ package com.aster.app.tool.developer;
 
 import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.model.ToolResult;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;

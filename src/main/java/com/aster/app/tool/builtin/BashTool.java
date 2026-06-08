@@ -1,6 +1,6 @@
 package com.aster.app.tool.builtin;
 
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.app.tool.builtin.model.BashToolParams;
 import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.model.ToolResult;

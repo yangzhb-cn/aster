@@ -2,10 +2,10 @@ package com.aster;
 
 import com.aster.core.context.LlmSummarizer;
 import com.aster.core.context.Summarizer;
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.model.ChatRequest;
-import com.aster.llm.model.Message;
-import com.aster.llm.model.ProviderStreamEvent;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.text.model.ChatRequest;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.ProviderStreamEvent;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;

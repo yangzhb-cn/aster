@@ -1,9 +1,9 @@
 package com.aster.core.context;
 
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.model.ChatRequest;
-import com.aster.llm.model.Message;
-import com.aster.llm.model.ProviderStreamEvent;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.text.model.ChatRequest;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.ProviderStreamEvent;
 
 import java.io.IOException;
 import java.util.List;

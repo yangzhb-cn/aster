@@ -5,6 +5,10 @@ const state = {
   currentSessionId: "",
   model: "",
   availableModels: [],
+  visionImages: [],
+  visionModel: "",
+  visionAvailableModels: [],
+  visionBusy: false,
   mcpServers: [],
   skills: [],
   sessions: [],
@@ -45,6 +49,9 @@ const appShell = $(".app-shell");
 const messagesEl = $("#messages");
 const promptEl = $("#prompt");
 const sendButton = $("#sendButton");
+const attachImageButton = $("#attachImageButton");
+const visionImageInput = $("#visionImageInput");
+const visionImageTray = $("#visionImageTray");
 const stopButton = $("#stopButton");
 const chatViewButton = $("#chatViewButton");
 const roomViewButton = $("#roomViewButton");
@@ -613,9 +620,14 @@ function applyStatus(status) {
     state.model = status.model || "";
   }
   state.availableModels = Array.isArray(status.availableModels) ? status.availableModels : state.availableModels;
+  state.visionModel = status.multimodalModel || state.visionModel;
+  state.visionAvailableModels = Array.isArray(status.multimodalAvailableModels)
+    ? status.multimodalAvailableModels
+    : state.visionAvailableModels;
   state.mcpServers = Array.isArray(status.mcpServers) ? status.mcpServers : state.mcpServers;
   state.skills = Array.isArray(status.skills) ? status.skills : state.skills;
   renderModelSelect();
+  renderVisionImageTray();
   renderRoomAgentModelOptions();
   renderMcpServers();
   renderSkills();
@@ -627,8 +639,17 @@ function applyStatus(status) {
 }
 
 function renderModelSelect() {
-  const models = state.availableModels.length ? state.availableModels : (state.model ? [state.model] : []);
-  const signature = models.join("|");
+  const ragMode = state.view === "rag";
+  const visionMode = state.view === "chat" && (state.visionImages.length > 0 || state.visionBusy);
+  const models = ragMode
+    ? (state.ragAvailableChatModels.length ? state.ragAvailableChatModels : (state.ragChatModel ? [state.ragChatModel] : []))
+    : (visionMode
+      ? (state.visionAvailableModels.length ? state.visionAvailableModels : (state.visionModel ? [state.visionModel] : []))
+      : (state.availableModels.length ? state.availableModels : (state.model ? [state.model] : [])));
+  const selectedModel = ragMode ? state.ragChatModel : (visionMode ? state.visionModel : state.model);
+  const mode = ragMode ? "rag" : (visionMode ? "vision" : "chat");
+  const signature = `${mode}:${models.join("|")}`;
+  modelSelect.setAttribute("aria-label", ragMode ? "切换 RAG 模型" : (visionMode ? "切换图片理解模型" : "切换 Chat 模型"));
   if (!models.length) {
     modelSelect.innerHTML = '<option value="">选择模型</option>';
     modelSelect.dataset.signature = "";
@@ -641,7 +662,7 @@ function renderModelSelect() {
       .join("");
     modelSelect.dataset.signature = signature;
   }
-  modelSelect.value = state.model || models[0] || "";
+  modelSelect.value = selectedModel || models[0] || "";
 }
 
 function renderRoomAgentModelOptions() {
@@ -731,10 +752,9 @@ function renderSkills() {
   }
   for (const skill of state.skills) {
     const row = document.createElement("div");
-    row.className = "mcp-row loaded";
+    row.className = "mcp-row skill-row loaded";
     row.innerHTML = `
       <strong>${escapeHtml(skill.name || "skill")}</strong>
-      <small>${escapeHtml(skill.description || "loaded")}</small>
     `;
     skillList.append(row);
   }
@@ -830,9 +850,14 @@ function applyRagPayload(payload = {}) {
       state.currentKbId = state.knowledgeBases[0].kbId;
     }
   }
-  if (Array.isArray(payload.documents)) state.ragDocuments = payload.documents;
-  if (Object.prototype.hasOwnProperty.call(payload, "ragChatModel")) state.ragChatModel = payload.ragChatModel || "";
   if (Array.isArray(payload.ragAvailableChatModels)) state.ragAvailableChatModels = payload.ragAvailableChatModels;
+  if (Array.isArray(payload.documents)) state.ragDocuments = payload.documents;
+  if (Object.prototype.hasOwnProperty.call(payload, "ragChatModel")) {
+    const defaultRagModel = payload.ragChatModel || "";
+    if (!state.ragChatModel || (state.ragAvailableChatModels.length && !state.ragAvailableChatModels.includes(state.ragChatModel))) {
+      state.ragChatModel = defaultRagModel;
+    }
+  }
   if (Object.prototype.hasOwnProperty.call(payload, "ragEmbeddingModel")) state.ragEmbeddingModel = payload.ragEmbeddingModel || "";
   if (Object.prototype.hasOwnProperty.call(payload, "ragTopK")) state.ragTopK = payload.ragTopK || 5;
   renderRagSessions();
@@ -926,6 +951,7 @@ function renderRagStatus() {
   if (ragChatModel) ragChatModel.textContent = state.ragChatModel || "-";
   if (ragEmbeddingModel) ragEmbeddingModel.textContent = state.ragEmbeddingModel || "-";
   if (ragTopK) ragTopK.textContent = String(state.ragTopK || 5);
+  renderModelSelect();
   renderRagSources(state.ragSources);
 }
 
@@ -1135,6 +1161,110 @@ async function fileToBase64(file) {
   return btoa(binary);
 }
 
+async function addVisionImages(files) {
+  const imageFiles = Array.from(files || []).filter((file) => file.type.startsWith("image/"));
+  if (!imageFiles.length) return;
+  const slots = Math.max(0, 4 - state.visionImages.length);
+  const selected = imageFiles.slice(0, slots);
+  for (const file of selected) {
+    const contentBase64 = await fileToBase64(file);
+    state.visionImages.push({
+      id: `vision_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      fileName: file.name || "image",
+      mimeType: file.type || "image/png",
+      contentBase64,
+    });
+  }
+  visionImageInput.value = "";
+  renderVisionImageTray();
+  renderModelSelect();
+}
+
+function removeVisionImage(id) {
+  state.visionImages = state.visionImages.filter((image) => image.id !== id);
+  renderVisionImageTray();
+  renderModelSelect();
+}
+
+function renderVisionImageTray() {
+  if (!visionImageTray) return;
+  const visible = state.view === "chat" && state.visionImages.length > 0;
+  visionImageTray.hidden = !visible;
+  if (!visible) {
+    visionImageTray.innerHTML = "";
+    return;
+  }
+  visionImageTray.innerHTML = state.visionImages
+    .map((image) => `
+      <span class="vision-chip" title="${escapeHtml(image.fileName)}">
+        <span>${escapeHtml(image.fileName)}</span>
+        <button type="button" data-remove-vision="${escapeHtml(image.id)}" aria-label="移除图片">×</button>
+      </span>
+    `)
+    .join("");
+}
+
+function formatVisionUserMessage(question, images) {
+  const names = images.map((image) => `- ${image.fileName || "image"}`).join("\n");
+  return `${question || "请描述这张图片。"}\n\n**图片**\n${names}`;
+}
+
+async function sendVisionMessage(text) {
+  const images = state.visionImages.slice();
+  const question = text || "请描述这张图片。";
+  state.visionBusy = true;
+  state.visionImages = [];
+  renderVisionImageTray();
+  renderModelSelect();
+  addMessage("user", formatVisionUserMessage(question, images));
+  const assistant = addMessage("assistant", "");
+  let answer = "";
+  sendButton.disabled = true;
+  try {
+    const response = await fetch("/api/vision/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        text: question,
+        model: state.visionModel,
+        images: images.map((image) => ({
+          fileName: image.fileName,
+          mimeType: image.mimeType,
+          contentBase64: image.contentBase64,
+        })),
+      }),
+    });
+    if (!response.ok || !response.body) {
+      const data = await response.json().catch(() => ({}));
+      throw new Error(data.error || `HTTP ${response.status}`);
+    }
+    await readRagStream(response.body, {
+      started: (data) => {
+        state.visionModel = data.model || state.visionModel;
+        renderModelSelect();
+      },
+      token: (data) => {
+        answer += data.text || "";
+        updateMessage(assistant, answer);
+      },
+      done: (data) => {
+        answer = data.answer || answer;
+        state.visionModel = data.model || state.visionModel;
+        updateMessage(assistant, answer);
+      },
+      error: (data) => {
+        addMessage("error", data.error || "图片理解失败");
+      },
+    });
+  } catch (error) {
+    addMessage("error", error.message);
+  } finally {
+    state.visionBusy = false;
+    renderModelSelect();
+    sendButton.disabled = false;
+  }
+}
+
 async function sendRagQuestion(question) {
   addMessage("user", question);
   const assistant = addMessage("assistant", "");
@@ -1286,6 +1416,7 @@ function setView(view) {
   chatRightPanel.classList.toggle("hidden", room || rag || archive);
   roomRightPanel.classList.toggle("hidden", !room || archive);
   ragRightPanel.classList.toggle("hidden", !rag || archive);
+  attachImageButton.hidden = view !== "chat";
   promptEl.placeholder = room
     ? "输入房间消息，使用 @Agent 或 @all 触发回复"
     : (rag ? "输入知识库问题" : "输入任务或问题");
@@ -1293,6 +1424,8 @@ function setView(view) {
   state.currentAssistant = null;
   state.currentReasoning = null;
   state.tools.clear();
+  renderVisionImageTray();
+  renderModelSelect();
   if (archive) {
     loadArchives();
   } else if (room) {
@@ -2471,7 +2604,8 @@ function connectEvents() {
 document.querySelector("#composer").addEventListener("submit", async (event) => {
   event.preventDefault();
   const text = promptEl.value.trim();
-  if (!text) return;
+  const hasVisionImages = state.view === "chat" && state.visionImages.length > 0;
+  if (!text && !hasVisionImages) return;
   promptEl.value = "";
   if (state.view === "room") {
     await sendRoomMessage(text);
@@ -2479,6 +2613,10 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
   }
   if (state.view === "rag") {
     await sendRagQuestion(text);
+    return;
+  }
+  if (hasVisionImages) {
+    await sendVisionMessage(text);
     return;
   }
   addMessage("user", text);
@@ -2497,6 +2635,24 @@ document.querySelector("#composer").addEventListener("submit", async (event) => 
   }
 });
 
+attachImageButton.addEventListener("click", () => {
+  visionImageInput.click();
+});
+
+visionImageInput.addEventListener("change", async () => {
+  try {
+    await addVisionImages(visionImageInput.files);
+  } catch (error) {
+    addMessage("error", error.message);
+  }
+});
+
+visionImageTray.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-remove-vision]");
+  if (!button) return;
+  removeVisionImage(button.dataset.removeVision);
+});
+
 stopButton.addEventListener("click", async () => {
   try {
     await postJson("/api/stop", { sessionId: state.currentSessionId });
@@ -2506,6 +2662,15 @@ stopButton.addEventListener("click", async () => {
 });
 
 modelSelect.addEventListener("change", async () => {
+  if (state.view === "rag") {
+    state.ragChatModel = modelSelect.value;
+    renderRagStatus();
+    return;
+  }
+  if (state.view === "chat" && state.visionImages.length > 0) {
+    state.visionModel = modelSelect.value;
+    return;
+  }
   try {
     await postJson("/api/model", {
       sessionId: state.currentSessionId,

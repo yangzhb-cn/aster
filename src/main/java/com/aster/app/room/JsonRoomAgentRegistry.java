@@ -3,7 +3,7 @@ package com.aster.app.room;
 import com.aster.app.room.model.RoomAgentIndexData;
 import com.aster.app.room.model.RoomAgentInput;
 import com.aster.app.room.model.RoomAgentProfile;
-import com.aster.llm.DeepSeekModels;
+import com.aster.llm.text.deepseek.DeepSeekModels;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;

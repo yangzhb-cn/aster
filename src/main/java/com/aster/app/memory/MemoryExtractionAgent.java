@@ -1,10 +1,10 @@
 package com.aster.app.memory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.model.ChatRequest;
-import com.aster.llm.model.Message;
-import com.aster.llm.model.ProviderStreamEvent;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.text.model.ChatRequest;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.ProviderStreamEvent;
 import com.aster.app.memory.model.MemoryExtractionResult;
 import com.aster.core.session.SessionStore;
 

@@ -8,7 +8,7 @@ import com.aster.app.tool.todo.TodoTool;
 import com.aster.core.tool.LocalToolExecutor;
 import com.aster.core.tool.ToolRegistry;
 import com.aster.core.tool.model.ToolResult;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

@@ -2,7 +2,7 @@ package com.aster.core.tool;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.model.ToolResult;
 

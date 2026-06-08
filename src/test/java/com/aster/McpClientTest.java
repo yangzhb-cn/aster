@@ -2,7 +2,7 @@ package com.aster;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.aster.app.mcp.McpToolExecutor;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.app.mcp.McpClient;
 import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.model.ToolResult;

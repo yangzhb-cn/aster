@@ -1,9 +1,9 @@
 package com.aster.core.agent;
 
-import com.aster.llm.model.Message;
-import com.aster.llm.model.ProviderStreamEvent;
-import com.aster.llm.model.ToolCall;
-import com.aster.llm.model.ToolCallDelta;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.ProviderStreamEvent;
+import com.aster.llm.text.model.ToolCall;
+import com.aster.llm.text.model.ToolCallDelta;
 
 import java.util.Comparator;
 import java.util.Map;

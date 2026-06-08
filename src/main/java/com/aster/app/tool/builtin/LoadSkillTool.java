@@ -1,6 +1,6 @@
 package com.aster.app.tool.builtin;
 
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.app.skill.SkillRepository;
 import com.aster.app.skill.model.SkillDocument;
 import com.aster.app.tool.builtin.model.LoadSkillToolParams;

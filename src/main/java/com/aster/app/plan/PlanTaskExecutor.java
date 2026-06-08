@@ -16,9 +16,9 @@ import com.aster.core.session.InMemorySessionStore;
 import com.aster.core.session.SessionStore;
 import com.aster.core.tool.ParallelToolExecutor;
 import com.aster.core.tool.ToolRegistry;
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.model.Message;
-import com.aster.llm.model.OpenAiCompatibleProvider;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.OpenAiCompatibleProvider;
 
 import java.util.Objects;
 

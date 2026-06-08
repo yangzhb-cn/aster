@@ -5,7 +5,7 @@ import com.aster.app.rag.model.RagChunk;
 import com.aster.app.rag.model.RagHit;
 import com.aster.app.rag.model.RagVector;
 import com.aster.llm.embedding.EmbeddingClient;
-import com.aster.llm.embedding.EmbeddingRequest;
+import com.aster.llm.embedding.model.EmbeddingRequest;
 
 import java.io.IOException;
 import java.util.Comparator;

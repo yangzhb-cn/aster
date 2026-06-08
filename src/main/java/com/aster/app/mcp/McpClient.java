@@ -2,7 +2,7 @@ package com.aster.app.mcp;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.app.mcp.model.JsonRpcRequest;
 import com.aster.app.mcp.model.JsonRpcResponse;
 import com.aster.app.mcp.transport.HttpMcpTransport;

@@ -2,7 +2,7 @@
 
 ## 项目总览
 
-Aster 是一个教学版 Java Agent Runtime MVP，用于演示流式 LLM、AgentLoop、Tool Calling、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、TUI/Web/Telegram 多入口、固定 Agent Team、动态 DAG Plan、Web 多 Agent 聊天室、RAG 知识库问答和归档中心的最小可运行架构。
+Aster 是一个教学版 Java Agent Runtime MVP，用于演示流式 LLM、AgentLoop、Tool Calling、上下文压缩、Session 持久化、HITL 工具审批、MCP、Skill、长期记忆、后台任务、自动化用户消息 schedule、TUI/Web/Telegram 多入口、固定 Agent Team、动态 DAG Plan、Web 多 Agent 聊天室、RAG 知识库问答、Web Chat 多模态图片理解和归档中心的最小可运行架构。
 
 ```mermaid
 flowchart LR
@@ -16,7 +16,7 @@ flowchart LR
 
 - 生成时间：2026-06-04 14:24
 - 生成分支：master
-- 最近同步：2026-06-08，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照、增量 JSONL 补齐、Web context 进度展示、主 Chat 模型切换、多 Agent 模型路由、Web 左栏底部 MCP/Skill 状态、Web Schedule 可视化、Web Todo/Schedule 折叠布局、Web 审批模式、Web 空启动规则、prompt 迁移规则、llm 层 chat/embedding/speech/image 能力拆分和 Ollama 配置入口，以及 Web Knowledge RAG 的上传、入库、检索和流式回答链路
+- 最近同步：2026-06-08，补充入口能力矩阵、Room、Archive、Web 多 session 并行 runtime、schedule/background 分离、LLM 上下文摘要、ContextWindow 快照、增量 JSONL 补齐、Web context 进度展示、主 Chat 模型切换、多 Agent 模型路由、Web 左栏底部 MCP/Skill 状态、Web Schedule 可视化、Web Todo/Schedule 折叠布局、Web 审批模式、Web 空启动规则、prompt 迁移规则、llm 层 text/embedding/speech/image/multimodal 能力拆分和 Ollama 配置入口，以及 Web Knowledge RAG 的上传、入库、检索和流式回答链路、Web Chat 图片理解分支
 
 ## 入口功能矩阵
 
@@ -24,6 +24,7 @@ flowchart LR
 | --- | --- | --- | --- | --- |
 | 普通 Agent 对话 | 已实现 | 已实现 | 已实现 | 三个入口都通过 `AgentRuntime.submit()` 进入同一主链路。 |
 | 流式响应展示 | 已实现 | 已实现 | 部分实现 | TUI/Web 展示 token 流；Telegram 缓存 token，最终一次性发送回答，避免刷屏。 |
+| 图片理解 Chat | 未实现 | 已实现 | 未实现 | Web Chat 上传图片后走 Ollama 多模态 SSE；第一版不进入 AgentLoop、工具协议或普通 Session。 |
 | 工具调用可视化 | 已实现 | 已实现 | 部分实现 | TUI/Web 展示工具状态；Web 合并调用和结果并支持折叠；Telegram 展示工具开始/完成，长内容截断。 |
 | HITL 工具审批 | 已实现 | 已实现 | 已实现 | `/approve [id]`、`/deny [id] [reason]`；Web 使用审批块按钮，并提供“需要审批 / 默认通过”模式切换。 |
 | 主 Chat 模型切换 | 已实现 | 已实现 | 已实现 | `/model [模型名]` 查看/切换；Web 顶部下拉切换当前 session runtime 的模型。Team 未指定模型时跟随当前 Chat 模型。 |

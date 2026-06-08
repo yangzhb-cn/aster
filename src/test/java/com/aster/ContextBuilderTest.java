@@ -1,7 +1,7 @@
 package com.aster;
 
-import com.aster.llm.model.Message;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.core.context.model.ContextBuildResult;
 import com.aster.core.context.ContextBuilder;
 import com.aster.core.context.model.ContextOptions;

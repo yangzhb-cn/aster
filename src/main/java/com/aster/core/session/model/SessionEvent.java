@@ -3,7 +3,7 @@ package com.aster.core.session.model;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonPropertyOrder;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 /**
  * JSONL session 的单行事件。

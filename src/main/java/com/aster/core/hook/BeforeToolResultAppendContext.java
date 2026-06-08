@@ -1,6 +1,6 @@
 package com.aster.core.hook;
 
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.core.tool.model.ToolResult;
 
 import java.util.Objects;

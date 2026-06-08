@@ -1,6 +1,6 @@
 package com.aster.core.context.model;
 
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 import java.util.List;
 

@@ -13,7 +13,7 @@ import com.googlecode.lanterna.input.KeyType;
 import com.googlecode.lanterna.screen.Screen;
 import com.aster.app.runtime.AgentRuntime;
 import com.aster.app.runtime.AgentRuntimeFactory;
-import com.aster.llm.model.TokenUsage;
+import com.aster.llm.text.model.TokenUsage;
 import com.aster.ui.tui.command.SlashCommand;
 import com.aster.ui.tui.command.SlashCommandContext;
 import com.aster.ui.tui.command.SlashCommandOption;

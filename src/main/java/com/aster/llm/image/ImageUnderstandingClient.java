@@ -1,5 +1,8 @@
 package com.aster.llm.image;
 
+import com.aster.llm.image.model.ImageUnderstandingRequest;
+import com.aster.llm.image.model.ImageUnderstandingResponse;
+
 import java.io.IOException;
 
 /**

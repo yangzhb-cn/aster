@@ -1,6 +1,6 @@
 package com.aster.core.hook;
 
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 
 /**
  * 工具执行前 Hook 上下文。

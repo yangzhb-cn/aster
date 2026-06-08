@@ -6,8 +6,8 @@ import com.aster.app.rag.model.RagDocument;
 import com.aster.app.rag.model.RagVector;
 import com.aster.app.rag.parse.DocumentParser;
 import com.aster.llm.embedding.EmbeddingClient;
-import com.aster.llm.embedding.EmbeddingRequest;
-import com.aster.llm.embedding.EmbeddingResponse;
+import com.aster.llm.embedding.model.EmbeddingRequest;
+import com.aster.llm.embedding.model.EmbeddingResponse;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;

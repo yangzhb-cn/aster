@@ -1,8 +1,8 @@
 package com.aster;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.aster.llm.model.Message;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.core.session.BootstrappedSessionStore;
 import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionReplayer;

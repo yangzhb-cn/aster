@@ -4,7 +4,7 @@ import com.aster.app.memory.MarkdownMemoryStore;
 import com.aster.app.memory.MemoryPromptRenderer;
 import com.aster.core.hook.BeforeLlmRequestContext;
 import com.aster.core.hook.HookHandler;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 import java.io.IOException;
 import java.time.ZonedDateTime;

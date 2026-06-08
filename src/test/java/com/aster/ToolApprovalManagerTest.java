@@ -7,7 +7,7 @@ import com.aster.core.event.model.AgentEvent;
 import com.aster.core.hook.BeforeToolCallContext;
 import com.aster.core.hook.ToolHookDecision;
 import com.aster.core.hook.ToolHookDecisionType;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;

@@ -1,6 +1,6 @@
 package com.aster.core.context;
 
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 import com.aster.core.context.model.ContextBuildResult;
 import com.aster.core.context.model.ContextOptions;
 import com.aster.core.context.model.Turn;

@@ -4,7 +4,7 @@ import com.aster.app.runtime.JsonContextWindowSnapshotStore;
 import com.aster.core.context.model.ContextWindowSnapshot;
 import com.aster.core.context.model.Turn;
 import com.aster.core.context.model.TurnType;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;

@@ -1,6 +1,6 @@
 package com.aster.app.room.model;
 
-import com.aster.llm.DeepSeekModels;
+import com.aster.llm.text.deepseek.DeepSeekModels;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 

@@ -1,7 +1,7 @@
 package com.aster.app.extension;
 
 import com.aster.core.hook.AgentHookPoints;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 import java.util.ArrayList;
 import java.util.List;

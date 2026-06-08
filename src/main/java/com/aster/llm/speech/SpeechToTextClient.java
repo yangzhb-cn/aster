@@ -1,5 +1,8 @@
 package com.aster.llm.speech;
 
+import com.aster.llm.speech.model.SpeechToTextRequest;
+import com.aster.llm.speech.model.SpeechToTextResponse;
+
 import java.io.IOException;
 
 /**

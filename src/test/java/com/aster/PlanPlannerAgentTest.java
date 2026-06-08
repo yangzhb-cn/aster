@@ -3,9 +3,9 @@ package com.aster;
 import com.aster.app.plan.PlanPlannerAgent;
 import com.aster.app.plan.model.ExecutionPlan;
 import com.aster.app.plan.model.PlanTaskType;
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.model.ChatRequest;
-import com.aster.llm.model.ProviderStreamEvent;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.text.model.ChatRequest;
+import com.aster.llm.text.model.ProviderStreamEvent;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 

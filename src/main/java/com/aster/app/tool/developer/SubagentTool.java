@@ -17,10 +17,10 @@ import com.aster.core.tool.ParallelToolExecutor;
 import com.aster.core.tool.ToolRegistry;
 import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.model.ToolResult;
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.model.Message;
-import com.aster.llm.model.OpenAiCompatibleProvider;
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.text.model.Message;
+import com.aster.llm.text.model.OpenAiCompatibleProvider;
+import com.aster.llm.text.model.ToolCall;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.OkHttpClient;
 

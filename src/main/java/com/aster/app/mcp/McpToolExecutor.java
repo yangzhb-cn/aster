@@ -1,6 +1,6 @@
 package com.aster.app.mcp;
 
-import com.aster.llm.model.ToolCall;
+import com.aster.llm.text.model.ToolCall;
 import com.aster.core.tool.model.Tool;
 import com.aster.core.tool.ToolExecutor;
 import com.aster.core.tool.model.ToolResult;

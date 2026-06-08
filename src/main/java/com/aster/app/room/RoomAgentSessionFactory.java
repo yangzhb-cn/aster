@@ -4,7 +4,7 @@ import com.aster.app.runtime.WorkspacePaths;
 import com.aster.core.session.BootstrappedSessionStore;
 import com.aster.core.session.JsonlSessionStore;
 import com.aster.core.session.SessionStore;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.IOException;

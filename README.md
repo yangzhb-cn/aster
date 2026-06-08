@@ -28,7 +28,7 @@ core/agent | core/context | core/tool | core/event | core/hook | core/session | 
 llm
 ```
 
-- `llm`：模型能力层；Chat 走 OpenAI-compatible SSE，Embedding / Speech / Image 按能力拆接口。
+- `llm`：模型能力层；Text Chat 走 OpenAI-compatible SSE，Embedding / Speech / Image / Multimodal 按能力拆接口。
 - `core`：AgentLoop、Context、Tool、Event、Hook、Session、Stage 等主流程和抽象。
 - `app`：运行时装配、内置/扩展工具、MCP、Skill、HITL、Memory、Background、Schedule、Todo、Plan、Team、Room、RAG。
 - `ui`：TUI、Web、Telegram 三个入口。
@@ -76,6 +76,7 @@ llm
 ### RAG 知识库问答
 
 - Web Knowledge 页面支持 RAG session、知识库、文档上传和流式问答。
+- 顶部模型下拉在 Knowledge 视图下切换 RAG chat 模型，当前支持 `deepseek-v4-flash` / `deepseek-v4-pro`。
 - 第一版使用本地文件存储：`workspace/rag/knowledge-bases`、`documents`、`chunks`、`indexes`、`sessions`。
 - PDF 使用 PDFBox 解析，Markdown/文本直接读取；分块使用 1200 字符窗口 + 200 字符重叠。
 - Embedding 固定走 Ollama `/api/embed`，默认模型 `nomic-embed-text:v1.5`。
@@ -86,6 +87,7 @@ llm
 - 多 session 并行运行：切到 B 时，A 可以继续跑。
 - 左侧 Session 列表、MCP / Skill 状态折叠展示。
 - 顶部模型下拉切换 `deepseek-v4-flash` / `deepseek-v4-pro`。
+- 普通 Chat 上传图片后走 Ollama 多模态模型流式回答，第一版不进入 AgentLoop 或 Session。
 - 右侧 Token / Context 进度、审批模式、Todo、Schedule。
 - 工具调用和工具结果合并为可折叠块，长内容截断。
 - Archive 页面集中恢复或物理删除已归档的 session、todo、room、room-agent。
@@ -149,6 +151,7 @@ mvn -q -Dexec.mainClass=com.aster.ui.im.telegram.TelegramMain exec:java
 - `DEEPSEEK_API_KEY`：DeepSeek API Key。
 - `OPENAI_COMPATIBLE_PROVIDER` / `OPENAI_COMPATIBLE_BASE_URL` / `OPENAI_COMPATIBLE_API_KEY` / `OPENAI_COMPATIBLE_MODEL`：OpenAI-compatible provider 覆盖配置。
 - `OLLAMA_BASE_URL` / `OLLAMA_CHAT_MODEL` / `OLLAMA_CHAT_MODELS` / `OLLAMA_EMBEDDING_MODEL`：Ollama 本地模型配置；RAG embedding 使用 `OLLAMA_EMBEDDING_MODEL`，chat 切到 Ollama 时使用 chat 配置。
+- `OLLAMA_MULTIMODAL_MODEL` / `OLLAMA_MULTIMODAL_MODELS`：Web Chat 带图片时使用的 Ollama 多模态模型，默认 `llava-llama3:latest`。
 - `ASTER_WEB_PORT`：Web 端口，`aster2web` 默认 `8081`。
 - `ASTER_SESSION`：可选启动 session；为空时 Web 不自动创建 `default`。
 - `TELEGRAM_BOT_TOKEN` / `TELEGRAM_ALLOWED_CHAT_IDS`：Telegram Bot 配置。

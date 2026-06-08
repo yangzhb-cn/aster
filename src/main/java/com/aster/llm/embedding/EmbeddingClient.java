@@ -1,5 +1,8 @@
 package com.aster.llm.embedding;
 
+import com.aster.llm.embedding.model.EmbeddingRequest;
+import com.aster.llm.embedding.model.EmbeddingResponse;
+
 import java.io.IOException;
 
 /**

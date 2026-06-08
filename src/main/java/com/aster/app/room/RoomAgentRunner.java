@@ -15,8 +15,8 @@ import com.aster.core.hook.HookRegistry;
 import com.aster.core.session.SessionStore;
 import com.aster.core.tool.ParallelToolExecutor;
 import com.aster.core.tool.ToolRegistry;
-import com.aster.llm.StreamingChatClient;
-import com.aster.llm.model.OpenAiCompatibleProvider;
+import com.aster.llm.text.StreamingChatClient;
+import com.aster.llm.text.model.OpenAiCompatibleProvider;
 
 import java.io.IOException;
 import java.util.List;

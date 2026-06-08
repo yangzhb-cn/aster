@@ -1,7 +1,7 @@
 package com.aster;
 
 import com.aster.core.context.TranscriptSummarizer;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;

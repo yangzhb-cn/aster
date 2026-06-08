@@ -2,7 +2,7 @@ package com.aster.app.room;
 
 import com.aster.core.hook.BeforeLlmRequestContext;
 import com.aster.core.hook.HookHandler;
-import com.aster.llm.model.Message;
+import com.aster.llm.text.model.Message;
 
 import java.util.ArrayList;
 import java.util.List;

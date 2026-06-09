@@ -26,6 +26,7 @@
 - 涉及业务规则、历史坑点、用户偏好沉淀时，读并更新 `docs/ai-readme/manual/`。
 - 涉及代码改动、架构变化、功能新增、入口能力变化或经验沉淀时，交付前评估是否同步 `docs/ai-readme/`。
 - 涉及 Agent Harness 的设计、实现、踩坑或取舍时，也要评估是否同步 `docs/agent-understanding-blog.md`。
+- 更新 `docs/agent-understanding-blog.md` 时，使用 `stop-slop` skill 做一次去 AI 味，删掉模板化开头、段尾金句和二元对照式表达，保留项目复盘口吻。
 
 ## 验证规则
 
